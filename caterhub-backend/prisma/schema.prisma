@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  username  String   @unique
+  password  String
+  role      Role     @default(CUSTOMER)
+  createdAt DateTime @default(now())
+  location  String?
+
+  bookings  Booking[]  @relation("CustomerBookings")
+  favorites Favorite[]
+  services  Service[]  @relation("CatererServices")
+
+  // NEW: back-relations for CaterApplication
+  submittedApplications CaterApplication[] @relation("ApplicationUser")
+  reviewedApplications  CaterApplication[] @relation("ApplicationReviewedBy")
+}
+
+model Service {
+  id           Int      @id @default(autoincrement())
+  name         String
+  description  String?
+  pricePerHead Int
+  imageUrl     String?
+  catererId    Int?
+  createdAt    DateTime @default(now())
+
+  bookings  Booking[]
+  favorites Favorite[]
+  caterer   User?      @relation("CatererServices", fields: [catererId], references: [id])
+
+  // Packages (JSON-first for now)
+  packages ServicePackage[]
+}
+
+model Booking {
+  id         Int           @id @default(autoincrement())
+  serviceId  Int
+  customerId Int
+  eventDate  DateTime
+  guests     Int
+  notes      String?
+  status     BookingStatus @default(PENDING)
+  createdAt  DateTime      @default(now())
+
+  customer User    @relation("CustomerBookings", fields: [customerId], references: [id])
+  service  Service @relation(fields: [serviceId], references: [id])
+}
+
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  serviceId Int
+  createdAt DateTime @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serviceId])
+}
+
+model CaterApplication {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  ownerName    String
+  businessName String
+  email        String
+  phone        String?
+  address      String?
+
+  // Link to the applicant user (optional if they were logged in)
+  userId Int?
+  user   User? @relation("ApplicationUser", fields: [userId], references: [id])
+
+  // Admin review linkage
+  status       ApplicationStatus @default(PENDING)
+  reviewedById Int?
+  reviewedBy   User?             @relation("ApplicationReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+  adminNote    String?
+}
+
+// New: JSON-first service packages to power Customize flow
+model ServicePackage {
+  id             Int    @id @default(autoincrement())
+  serviceId      Int
+  name           String
+  pricePerHead   Int
+  // FE expects categories like: { id, name, required, options: [{id,name}] }
+  categoriesJson Json
+
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+enum Role {
+  CUSTOMER
+  CATER
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  DECLINED // aligned with FE (rename from REJECTED)
+  COMPLETED // added2
+  CANCELLED
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
