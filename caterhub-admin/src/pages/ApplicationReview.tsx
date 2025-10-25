@@ -1,60 +1,38 @@
-import { useEffect, useMemo, useState } from 'react';
+// src/pages/ApplicationReview.tsx
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { actOnApp, listApps } from '../api';
-import { getToken } from '../auth';
 
-type AppRow = {
-  id: number;
-  createdAt: string;
-  ownerName: string;
-  businessName: string;
-  email: string;
-  phone?: string | null;
-  address?: string | null;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-};
-
-export default function ApplicationReview() {
-  const token = getToken();
+export default function ApplicationReview(){
   const { id } = useParams();
-  const appId = useMemo(() => Number(id), [id]);
   const nav = useNavigate();
-
-  const [row, setRow] = useState<AppRow | null>(null);
+  const [row, setRow] = useState<any>(null);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
 
-  useEffect(() => {
-    if (!token || !appId) return;
-    (async () => {
+  useEffect(()=> {
+    (async()=>{
       try {
-        const list: AppRow[] = await listApps(token, 'ALL');
-        const found = list.find((x) => x.id === appId) ?? null;
-        setRow(found);
-        setErr(found ? '' : 'Application not found');
-      } catch (e: any) {
+        // NEW: listApps takes only status now; token handled by fetchWithAuth
+        const list = await listApps('ALL');
+        setRow(list.find((x:any)=> String(x.id) === String(id)));
+      } catch(e:any){
         setErr(e?.message || 'Failed to load');
       }
     })();
-  }, [token, appId]);
+  }, [id]);
 
-  async function doAction(action: 'APPROVE' | 'REJECT') {
+  async function doAction(action: 'APPROVE'|'REJECT'){
     try {
-      await actOnApp(token, appId, action, note);
+      // NEW: actOnApp expects (id, action, note?)
+      await actOnApp(Number(id), action, note);
       nav('/admin/applications');
-    } catch (e: any) {
+    } catch(e:any){
       setErr(e?.message || 'Action failed');
     }
   }
 
-  if (!row) {
-    return (
-      <div style={{ padding: 24 }}>
-        <p>Loading…</p>
-        {err && <p style={{ color: 'crimson' }}>{err}</p>}
-      </div>
-    );
-  }
+  if (!row) return <div style={{ padding: 24 }}><p>Loading…</p></div>;
 
   return (
     <div style={{ padding: 24 }}>
@@ -70,19 +48,17 @@ export default function ApplicationReview() {
         <label>Admin note</label>
         <textarea
           value={note}
-          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-            setNote(e.currentTarget.value)
-          }
-          style={{ width: '100%', minHeight: 80 }}
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNote(e.currentTarget.value)}
+          style={{ width:'100%', minHeight: 80 }}
         />
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button onClick={() => doAction('APPROVE')}>Approve</button>
-        <button onClick={() => doAction('REJECT')}>Reject</button>
-        <button onClick={() => nav(-1)}>Back</button>
+        <button onClick={()=>doAction('APPROVE')}>Approve</button>
+        <button onClick={()=>doAction('REJECT')}>Reject</button>
+        <button onClick={()=>nav(-1)}>Back</button>
       </div>
-      {err && <p style={{ color: 'crimson' }}>{err}</p>}
+      {err && <p style={{ color:'crimson' }}>{err}</p>}
     </div>
   );
 }
