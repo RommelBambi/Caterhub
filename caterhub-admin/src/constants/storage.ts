@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
   PAYMENTS: "caterhub_payments_v1",
   SETTINGS: "caterhub_settings_v1",
   NOTIFICATIONS: "caterhub_notifications_v1",
+  NOTIF: "caterhub_notifications_v1",
 } as const;
 
 export const EMPTY_PARTNER_FORM = {

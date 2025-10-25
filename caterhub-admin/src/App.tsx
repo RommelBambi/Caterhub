@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { BrowserRouter as Router } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Container } from "./components/ui/Container";
-import { Card } from "./components/ui/Card";
 import { Button } from "./components/ui/Button";
 import { HomePage } from "./pages/HomePage";
 import { PartnersPage } from "./pages/PartnersPage";
@@ -27,7 +26,7 @@ async function sendApplicationToRecruitment(form: PartnerForm) {
   };
 
   try {
-    const raw = await loadJSON(STORAGE_KEYS.APPLICANTS, []);
+    const raw = await loadJSON<any[]>(STORAGE_KEYS.APPLICANTS, []);
     const list = Array.isArray(raw) ? raw : [];
     list.unshift(applicant);
     await saveJSON(STORAGE_KEYS.APPLICANTS, list);
@@ -37,7 +36,7 @@ async function sendApplicationToRecruitment(form: PartnerForm) {
   }
 
   try {
-    const rawN = await loadJSON(STORAGE_KEYS.NOTIF, []);
+    const rawN = await loadJSON<any[]>(STORAGE_KEYS.NOTIF, []);
     const notifs = Array.isArray(rawN) ? rawN : [];
     notifs.unshift({
       id: "N-" + Date.now(),
@@ -64,7 +63,7 @@ function App() {
 
   // Load user on mount
   useEffect(() => {
-    loadJSON(STORAGE_KEYS.AUTH, null).then((u) => {
+    loadJSON<AuthUser | null>(STORAGE_KEYS.AUTH, null).then((u) => {
       if (u?.username && (u.role === "admin" || u.role === "user")) {
         setUser(u);
       }
@@ -104,7 +103,7 @@ function App() {
 
   const handleLogout = () => {
     setUser(null);
-    clearJSON(STORAGE_KEYS.AUTH);
+    clearJSON();
     setRoute("home");
   };
 
@@ -134,7 +133,7 @@ function App() {
     try {
       await sendApplicationToRecruitment(form);
       setStep("success");
-      clearJSON(STORAGE_KEYS.FORM);
+      clearJSON();
       setForm(EMPTY_PARTNER_FORM);
     } catch (error) {
       console.error("Submission error:", error);
@@ -189,12 +188,12 @@ function App() {
                     <Button 
                       label="Location" 
                       variant="ghost" 
-                      onPress={() => alert("Location", "Branch locator coming soon.")} 
+                      onPress={() => alert("Branch locator coming soon.")} 
                     />
                     <Button 
                       label="Contact us" 
                       variant="ghost" 
-                      onPress={() => alert("Contact", "support@caterhub.io")} 
+                      onPress={() => alert("support@caterhub.io")} 
                     />
                   </div>
                   
