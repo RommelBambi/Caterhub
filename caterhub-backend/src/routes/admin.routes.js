@@ -18,31 +18,33 @@ r.get('/cater-applications', async (req, res) => {
 });
 
 // Approve / Reject
-r.patch('/cater-applications/:id', async (req, res) => {
-  const id = Number(req.params.id);
-  const { action, note } = req.body || {};
-  const now = new Date();
+r.get('/cater-applications', async (req, res) => {
+  const status = (req.query.status || 'PENDING').toString().toUpperCase();
+  const q = (req.query.q || '').toString().trim();
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(5, Number(req.query.limit) || 10));
+  const where = {
+    ...(status === 'ALL' ? {} : { status }),
+    ...(q ? {
+      OR: [
+        { ownerName: { contains: q, mode: 'insensitive' } },
+        { businessName: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+      ]
+    } : {})
+  };
 
-  if (!['APPROVE', 'REJECT'].includes((action || '').toUpperCase())) {
-    return res.status(400).json({ error: 'Invalid action' });
-  }
+  const [rows, total] = await Promise.all([
+    prisma.caterApplication.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit
+    }),
+    prisma.caterApplication.count({ where })
+  ]);
 
-  const updated = await prisma.caterApplication.update({
-    where: { id },
-    data: {
-      status: action.toUpperCase() === 'APPROVE' ? 'APPROVED' : 'REJECTED',
-      reviewedById: req.user.id,
-      reviewedAt: now,
-      adminNote: note ?? null,
-    }
-  });
-
-  // If linked to a user, promote to CATER on approve
-  if (updated.status === 'APPROVED' && updated.userId) {
-    await prisma.user.update({ where: { id: updated.userId }, data: { role: 'CATER' } });
-  }
-
-  res.json(updated);
+  res.json({ rows, total, page, limit, pages: Math.ceil(total / limit) });
 });
 
 export default r;

@@ -57,35 +57,25 @@ router.get('/:id', authRequired, async (req, res) => {
   }
 });
 
-/** Update/CANCEL a booking I own */
-router.patch('/:id', authRequired, async (req, res) => {
+/** Cancel a booking I own (allowed from PENDING or CONFIRMED) */
+router.post('/:id/cancel', authRequired, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { status } = req.body;
-
-    const b = await prisma.booking.findUnique({ where: { id } });
-    if (!b || b.customerId !== req.user.id) {
-      return res.status(404).json({ error: 'Not found' });
+    const b = await prisma.booking.findFirst({
+      where: { id, customerId: req.user.id }
+    });
+    if (!b) return res.status(404).json({ error: 'Not found' });
+    if (!['PENDING','CONFIRMED'].includes(b.status)) {
+      return res.status(400).json({ error: `Cannot cancel booking in ${b.status} state` });
     }
-    // Only allow cancelling if not already terminal
-    const terminal = new Set(['CANCELLED', 'COMPLETED', 'DECLINED']);
-    if (terminal.has(b.status)) {
-      return res.status(400).json({ error: `Cannot change booking in ${b.status} state` });
-    }
-
-    const next = (status || 'CANCELLED').toUpperCase();
-    if (next !== 'CANCELLED') {
-      return res.status(400).json({ error: 'Only CANCELLED is allowed for customers' });
-    }
-
     const updated = await prisma.booking.update({
       where: { id },
-      data: { status: 'CANCELLED' },
+      data: { status: 'CANCELLED' }
     });
     res.json(updated);
   } catch (e) {
     console.error(e);
-    res.status(400).json({ error: 'Update booking failed' });
+    res.status(400).json({ error: 'Cancel booking failed' });
   }
 });
 
