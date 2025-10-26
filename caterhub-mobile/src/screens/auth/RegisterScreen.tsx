@@ -3,6 +3,7 @@ import { View, Image, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { register } from '../../services/api';
 
 type Form = {
@@ -19,6 +20,7 @@ export default function RegisterScreen({ navigation }: any) {
   const [showPw, setShowPw] = useState(false);
   const [showPw2, setShowPw2] = useState(false);
   const [loading, setLoading] = useState(false);
+  const insets = useSafeAreaInsets();
 
   // Watch fields live
   const watchUsername = watch('username');
@@ -53,7 +55,10 @@ export default function RegisterScreen({ navigation }: any) {
     <View style={styles.container}>
       {/* Top section with background and image */}
       <View style={styles.topSection}>
-        <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity 
+          style={[styles.closeButton, { top: insets.top + 10 }]} 
+          onPress={() => navigation.goBack()}
+        >
           <Ionicons name="close" size={28} color="#fff" />
         </TouchableOpacity>
 

@@ -3,6 +3,7 @@ import { View, Image, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../store/auth';
 
 export default function LoginScreen({ navigation }: any) {
@@ -10,6 +11,7 @@ export default function LoginScreen({ navigation }: any) {
   const { control, handleSubmit, watch } = useForm({ defaultValues: { email: '', password: '' } });
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const watchEmail = watch('email');
   const watchPass = watch('password');
@@ -33,7 +35,10 @@ export default function LoginScreen({ navigation }: any) {
     <View style={styles.container}>
       {/* Top section with background and image */}
       <View style={styles.topSection}>
-        <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity 
+          style={[styles.closeButton, { top: insets.top + 10 }]} 
+          onPress={() => navigation.goBack()}
+        >
           <Ionicons name="close" size={28} color="#fff" />
         </TouchableOpacity>
 

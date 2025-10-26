@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Text, Searchbar, Card, ActivityIndicator } from 'react-native-paper';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../store/auth';
 import {
@@ -27,6 +28,7 @@ export default function HomeScreen({ navigation }: any) {
   const { user, updateMe } = useAuth();
   const [query, setQuery] = React.useState('');
   const [loading, setLoading] = React.useState(true);
+  const insets = useSafeAreaInsets();
 
   const [featured, setFeatured] = React.useState<Service[]>([]);
   const [mostLiked, setMostLiked] = React.useState<Service[]>([]);
@@ -135,7 +137,7 @@ export default function HomeScreen({ navigation }: any) {
         colors={['#C836F9', '#a855f7']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.header}
+        style={[styles.header, { paddingTop: insets.top }]}
       >
         <View style={styles.headerRow}>
           <TouchableOpacity
