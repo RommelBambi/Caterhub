@@ -137,6 +137,41 @@ export interface Database {
           created_at?: string;
         };
       };
+      user_locations: {
+        Row: {
+          id: string;
+          user_id: string; // UUID string
+          latitude: number;
+          longitude: number;
+          address: string;
+          location_name: string | null;
+          is_primary: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string; // UUID string
+          latitude: number;
+          longitude: number;
+          address: string;
+          location_name?: string | null;
+          is_primary?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string; // UUID string
+          latitude?: number;
+          longitude?: number;
+          address?: string;
+          location_name?: string | null;
+          is_primary?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
   };
 }

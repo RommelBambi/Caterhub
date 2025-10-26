@@ -23,6 +23,9 @@ import {
   getMyFavorites,
   Service,
 } from '../../services/services';
+import InteractiveMapPicker from '../../components/InteractiveMapPicker';
+import { filterServicesByDistance, getServiceDistance, formatDistance } from '../../services/location';
+import { getPrimaryLocation } from '../../services/userLocations';
 
 export default function HomeScreen({ navigation }: any) {
   const { user, updateMe } = useAuth();
@@ -35,6 +38,27 @@ export default function HomeScreen({ navigation }: any) {
   const [mostBooked, setMostBooked] = React.useState<Service[]>([]);
   const [all, setAll] = React.useState<Service[]>([]);
   const [favIds, setFavIds] = React.useState<number[]>([]);
+  const [showLocationPicker, setShowLocationPicker] = React.useState(false);
+  const [userLocation, setUserLocation] = React.useState<{ latitude: number; longitude: number; address: string } | null>(null);
+
+  // Load saved location
+  const loadSavedLocation = async () => {
+    try {
+      const savedLocation = await getPrimaryLocation();
+      if (savedLocation) {
+        setUserLocation({
+          latitude: savedLocation.latitude,
+          longitude: savedLocation.longitude,
+          address: savedLocation.address,
+        });
+      }
+    } catch (error) {
+      // Only log authentication errors, don't show to user
+      if (error instanceof Error && !error.message.includes('not authenticated')) {
+        console.error('Failed to load saved location:', error);
+      }
+    }
+  };
 
   // Initial load
   React.useEffect(() => {
@@ -77,6 +101,13 @@ export default function HomeScreen({ navigation }: any) {
     };
   }, [user?.id]);
 
+  // Load saved location when user is authenticated
+  React.useEffect(() => {
+    if (user) {
+      loadSavedLocation();
+    }
+  }, [user]);
+
   // Refresh favorites when returning to Home (fixes heart mismatch after navigating back)
   useFocusEffect(
     React.useCallback(() => {
@@ -110,25 +141,31 @@ export default function HomeScreen({ navigation }: any) {
   };
 
   const onPressLocation = () => {
-    Alert.alert(
-      'Set Location',
-      'Pick a quick location to save.',
-      [
-        { text: 'Manila, PH', onPress: () => updateMe?.({ location: 'Manila, PH' }) },
-        { text: 'Quezon City, PH', onPress: () => updateMe?.({ location: 'Quezon City, PH' }) },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-      { cancelable: true }
-    );
+    setShowLocationPicker(true);
+  };
+
+  const handleLocationSelect = async (location: { latitude: number; longitude: number; address: string }) => {
+    setUserLocation(location);
+    // Update user location in database
+    await updateMe?.({ location: location.address });
   };
 
   const goToDetails = (svc: Service) => {
     navigation.navigate('ServiceDetails', { service: svc });
   };
 
-  const filtered = all.filter((s) =>
-    query ? s.name.toLowerCase().includes(query.toLowerCase()) : true
-  );
+  // Filter services by search query and location
+  const filtered = all.filter((s) => {
+    const matchesQuery = query ? s.name.toLowerCase().includes(query.toLowerCase()) : true;
+    
+    // If user has set location, filter by distance
+    if (userLocation) {
+      const nearbyServices = filterServicesByDistance([s], userLocation, 50);
+      return matchesQuery && nearbyServices.length > 0;
+    }
+    
+    return matchesQuery;
+  });
 
   return (
     <View style={styles.container}>
@@ -147,7 +184,7 @@ export default function HomeScreen({ navigation }: any) {
           >
             <Ionicons name="location-outline" size={18} color="#fff" />
             <Text style={styles.headerLocation}>
-              {user?.location ?? 'Set location'}
+              {userLocation?.address || user?.location || 'Set location'}
             </Text>
           </TouchableOpacity>
 
@@ -329,10 +366,82 @@ export default function HomeScreen({ navigation }: any) {
               </>
             )}
 
-            {/* Service list (search filtered) */}
-            <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
-              All services
-            </Text>
+             {/* Nearby Services (when location is set) */}
+             {userLocation && (
+               <>
+                 <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
+                   Nearby Services
+                 </Text>
+                 <View style={{ paddingHorizontal: 16 }}>
+                   {filtered.slice(0, 3).map((svc) => (
+                     <TouchableOpacity
+                       key={svc.id}
+                       onPress={() => goToDetails(svc)}
+                       activeOpacity={0.8}
+                     >
+                       <View style={styles.serviceRow}>
+                         <Image
+                           source={{
+                             uri:
+                               svc.imageUrl ||
+                               svc.logoUrl ||
+                               'https://picsum.photos/200/200',
+                           }}
+                           style={styles.serviceImg}
+                         />
+                         <View style={{ flex: 1 }}>
+                           <Text style={styles.serviceName}>{svc.name}</Text>
+                           <Text style={styles.servicePrice}>
+                             price start at {svc.pricePerHead} per head
+                           </Text>
+                           <View
+                             style={{
+                               flexDirection: 'row',
+                               alignItems: 'center',
+                               marginTop: 2,
+                               gap: 12,
+                             }}
+                           >
+                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                               <Ionicons name="star" size={14} color="#f59e0b" />
+                               <Text style={{ marginLeft: 4, color: '#4b5563' }}>
+                                 {(svc.rating ?? 4.8).toFixed(1)}
+                               </Text>
+                             </View>
+                             {(() => {
+                               const distance = getServiceDistance(svc, userLocation);
+                               return distance ? (
+                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                   <Ionicons name="location-outline" size={12} color="#6b7280" />
+                                   <Text style={{ marginLeft: 2, color: '#6b7280', fontSize: 12 }}>
+                                     {formatDistance(distance)}
+                                   </Text>
+                                 </View>
+                               ) : null;
+                             })()}
+                           </View>
+                         </View>
+                         <TouchableOpacity
+                           onPress={() => toggleFav(svc.id)}
+                           style={{ padding: 6 }}
+                         >
+                           <Ionicons
+                             name={isFav(svc.id) ? 'heart' : 'heart-outline'}
+                             size={22}
+                             color={isFav(svc.id) ? '#ef4444' : '#9ca3af'}
+                           />
+                         </TouchableOpacity>
+                       </View>
+                     </TouchableOpacity>
+                   ))}
+                 </View>
+               </>
+             )}
+
+             {/* Service list (search filtered) */}
+             <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
+               {userLocation ? 'All services' : 'All services'}
+             </Text>
             <View style={{ paddingHorizontal: 16 }}>
               {filtered.map((svc) => (
                 <TouchableOpacity
@@ -350,24 +459,38 @@ export default function HomeScreen({ navigation }: any) {
                       }}
                       style={styles.serviceImg}
                     />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.serviceName}>{svc.name}</Text>
-                      <Text style={styles.servicePrice}>
-                        price start at {svc.pricePerHead} per head
-                      </Text>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          marginTop: 2,
-                        }}
-                      >
-                        <Ionicons name="star" size={14} color="#f59e0b" />
-                        <Text style={{ marginLeft: 4, color: '#4b5563' }}>
-                          {(svc.rating ?? 4.8).toFixed(1)}
-                        </Text>
-                      </View>
-                    </View>
+                     <View style={{ flex: 1 }}>
+                       <Text style={styles.serviceName}>{svc.name}</Text>
+                       <Text style={styles.servicePrice}>
+                         price start at {svc.pricePerHead} per head
+                       </Text>
+                       <View
+                         style={{
+                           flexDirection: 'row',
+                           alignItems: 'center',
+                           marginTop: 2,
+                           gap: 12,
+                         }}
+                       >
+                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                           <Ionicons name="star" size={14} color="#f59e0b" />
+                           <Text style={{ marginLeft: 4, color: '#4b5563' }}>
+                             {(svc.rating ?? 4.8).toFixed(1)}
+                           </Text>
+                         </View>
+                         {userLocation && (() => {
+                           const distance = getServiceDistance(svc, userLocation);
+                           return distance ? (
+                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                               <Ionicons name="location-outline" size={12} color="#6b7280" />
+                               <Text style={{ marginLeft: 2, color: '#6b7280', fontSize: 12 }}>
+                                 {formatDistance(distance)}
+                               </Text>
+                             </View>
+                           ) : null;
+                         })()}
+                       </View>
+                     </View>
                     <TouchableOpacity
                       onPress={() => toggleFav(svc.id)}
                       style={{ padding: 6 }}
@@ -385,6 +508,14 @@ export default function HomeScreen({ navigation }: any) {
           </>
         )}
       </ScrollView>
+
+      {/* Location Picker Modal */}
+      <InteractiveMapPicker
+        visible={showLocationPicker}
+        onClose={() => setShowLocationPicker(false)}
+        onLocationSelect={handleLocationSelect}
+        currentLocation={userLocation || undefined}
+      />
     </View>
   );
 }
