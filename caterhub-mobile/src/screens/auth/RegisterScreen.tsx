@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { View, Image, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Image, StyleSheet, TouchableOpacity, Alert, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { register } from '../../services/api';
+
+const { width, height } = Dimensions.get('window');
+const isWeb = Platform.OS === 'web';
 
 type Form = {
   username: string;
@@ -53,25 +56,30 @@ export default function RegisterScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      {/* Top section with background and image */}
-      <View style={styles.topSection}>
-        <TouchableOpacity 
-          style={[styles.closeButton, { top: insets.top + 10 }]} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="close" size={28} color="#fff" />
-        </TouchableOpacity>
+      {isWeb ? (
+        // Web layout - side by side
+        <View style={styles.webLayout}>
+          {/* Left side - Branding */}
+          <View style={styles.webLeftSide}>
+            <TouchableOpacity 
+              style={[styles.closeButton, { top: insets.top + 10 }]} 
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
 
-        <Image
-          source={require('../../../assets/blacklogo.png')}
-          style={styles.heroImage}
-          resizeMode="contain"
-        />
-      </View>
+            <Image
+              source={require('../../../assets/blacklogo.png')}
+              style={styles.webHeroImage}
+              resizeMode="contain"
+            />
+          </View>
 
-      {/* Bottom card section */}
-      <View style={styles.bottomCard}>
-        <Text style={styles.title}>Sign up</Text>
+          {/* Right side - Form */}
+          <View style={styles.webRightSide}>
+            <View style={styles.webFormCard}>
+              <Text style={styles.webTitle}>Create Account</Text>
+              <Text style={styles.webSubtitle}>Join CaterHub today</Text>
         <Controller
           control={control}
           name="username"
@@ -84,6 +92,11 @@ export default function RegisterScreen({ navigation }: any) {
               onChangeText={onChange}
               autoCapitalize="none"
               style={styles.input}
+              outlineColor="#d1d5db"
+              activeOutlineColor="#C836F9"
+              textColor="#000000"
+              placeholderTextColor="#9ca3af"
+              selectionColor="#C836F9"
             />
           )}
         />
@@ -101,6 +114,11 @@ export default function RegisterScreen({ navigation }: any) {
               autoCapitalize="none"
               keyboardType="email-address"
               style={styles.input}
+              outlineColor="#d1d5db"
+              activeOutlineColor="#C836F9"
+              textColor="#000000"
+              placeholderTextColor="#9ca3af"
+              selectionColor="#C836F9"
             />
           )}
         />
@@ -123,6 +141,11 @@ export default function RegisterScreen({ navigation }: any) {
                 />
               }
               style={styles.input}
+              outlineColor="#d1d5db"
+              activeOutlineColor="#C836F9"
+              textColor="#000000"
+              placeholderTextColor="#9ca3af"
+              selectionColor="#C836F9"
             />
           )}
         />
@@ -145,6 +168,11 @@ export default function RegisterScreen({ navigation }: any) {
                 />
               }
               style={styles.input}
+              outlineColor="#d1d5db"
+              activeOutlineColor="#C836F9"
+              textColor="#000000"
+              placeholderTextColor="#9ca3af"
+              selectionColor="#C836F9"
             />
           )}
         />
@@ -167,22 +195,222 @@ export default function RegisterScreen({ navigation }: any) {
           <View style={styles.line} />
         </View>
 
-        {/* Link back to login */}
-        <Button
-          mode="text"
-          onPress={() => navigation.navigate('Login')}
-          textColor="#C836F9"
-          style={{ marginTop: 4 }}
-        >
-          already have an account? log in
-        </Button>
-      </View>
+              {/* Link back to login */}
+              <Button
+                mode="text"
+                onPress={() => navigation.navigate('Login')}
+                textColor="#C836F9"
+                style={{ marginTop: 4 }}
+              >
+                already have an account? log in
+              </Button>
+            </View>
+          </View>
+        </View>
+      ) : (
+        // Mobile layout - stacked
+        <>
+          {/* Top section with background and image */}
+          <View style={styles.topSection}>
+            <TouchableOpacity 
+              style={[styles.closeButton, { top: insets.top + 10 }]} 
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+
+            <Image
+              source={require('../../../assets/blacklogo.png')}
+              style={styles.heroImage}
+              resizeMode="contain"
+            />
+          </View>
+
+          {/* Bottom card section */}
+          <View style={styles.bottomCard}>
+            <Text style={styles.title}>Sign up</Text>
+
+            <Controller
+              control={control}
+              name="username"
+              rules={{ required: true }}
+              render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Username"
+                  value={value}
+                  onChangeText={onChange}
+                  style={styles.input}
+                  outlineColor="#d1d5db"
+                  activeOutlineColor="#C836F9"
+                  textColor="#000000"
+                  placeholderTextColor="#9ca3af"
+              selectionColor="#C836F9"
+                />
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="email"
+              rules={{ required: true, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ }}
+              render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Email"
+                  value={value}
+                  onChangeText={onChange}
+                  style={styles.input}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  outlineColor="#d1d5db"
+                  activeOutlineColor="#C836F9"
+                  textColor="#000000"
+                  placeholderTextColor="#9ca3af"
+              selectionColor="#C836F9"
+                />
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="password"
+              rules={{ required: true, minLength: 6 }}
+              render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Password"
+                  value={value}
+                  onChangeText={onChange}
+                  style={styles.input}
+                  secureTextEntry={!showPw}
+                  right={
+                    <TextInput.Icon
+                      icon={showPw ? 'eye-off' : 'eye'}
+                      onPress={() => setShowPw((s) => !s)}
+                    />
+                  }
+                  outlineColor="#d1d5db"
+                  activeOutlineColor="#C836F9"
+                  textColor="#000000"
+                  placeholderTextColor="#9ca3af"
+              selectionColor="#C836F9"
+                />
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="confirm"
+              rules={{ required: true, minLength: 6 }}
+              render={({ field: { onChange, value } }) => (
+                <TextInput
+                  mode="outlined"
+                  label="Confirm Password"
+                  value={value}
+                  onChangeText={onChange}
+                  secureTextEntry={!showPw2}
+                  right={
+                    <TextInput.Icon
+                      icon={showPw2 ? 'eye-off' : 'eye'}
+                      onPress={() => setShowPw2((s) => !s)}
+                    />
+                  }
+                  style={styles.input}
+                  outlineColor="#d1d5db"
+                  activeOutlineColor="#C836F9"
+                  textColor="#000000"
+                  placeholderTextColor="#9ca3af"
+              selectionColor="#C836F9"
+                />
+              )}
+            />
+
+            <Button
+              mode="contained"
+              onPress={handleSubmit(onSubmit)}
+              style={[
+                styles.primaryBtn,
+                { backgroundColor: formFilled ? '#C836F9' : '#ccc' },
+              ]}
+              disabled={!formFilled || loading}
+              loading={loading}
+            >
+              Sign up
+            </Button>
+
+            {/* Divider */}
+            <View style={styles.dividerWrap}>
+              <View style={styles.line} />
+            </View>
+
+            {/* Link back to login */}
+            <Button
+              mode="text"
+              onPress={() => navigation.navigate('Login')}
+              textColor="#C836F9"
+              style={{ marginTop: 4 }}
+            >
+              already have an account? log in
+            </Button>
+          </View>
+        </>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#C836F9', position: 'relative' },
+  
+  // Web-specific styles
+  webLayout: {
+    flex: 1,
+    flexDirection: 'row',
+    minHeight: height,
+  },
+  webLeftSide: {
+    flex: 1,
+    backgroundColor: '#C836F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    minHeight: height,
+  },
+  webRightSide: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  webFormCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 40,
+    width: '100%',
+    maxWidth: 400,
+    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+  },
+  webTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  webSubtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+    marginBottom: 32,
+    textAlign: 'center',
+  },
+  webHeroImage: {
+    width: 300,
+    height: 300,
+  },
+  
+  // Mobile styles
   topSection: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   closeButton: { position: 'absolute', top: 50, left: 20 },
   heroImage: { width: 450, height: 450 },
@@ -195,7 +423,10 @@ const styles = StyleSheet.create({
     marginTop: -50,
   },
   title: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
-  input: { marginTop: 10 },
+  input: { 
+    marginTop: 10,
+    backgroundColor: '#ffffff',
+  },
   primaryBtn: { marginTop: 16, paddingVertical: 6, backgroundColor: '#C836F9' },
   dividerWrap: { marginTop: 22, marginBottom: 8 },
   line: { height: 1, backgroundColor: '#e5e7eb' },

@@ -23,7 +23,17 @@
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/transparentLogo.png"
+      "favicon": "./assets/transparentLogo.png",
+      "bundler": "metro",
+      "output": "single",
+      "name": "CaterHub",
+      "shortName": "CaterHub",
+      "description": "Find and book catering services near you",
+      "startUrl": "/",
+      "display": "standalone",
+      "orientation": "portrait",
+      "themeColor": "#C836F9",
+      "backgroundColor": "#ffffff"
     },
     "plugins": [
       "expo-secure-store"

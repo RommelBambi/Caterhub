@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import { Text, Searchbar, Card, ActivityIndicator } from 'react-native-paper';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -35,6 +37,12 @@ export default function HomeScreen({ navigation }: any) {
   const [isSearching, setIsSearching] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const insets = useSafeAreaInsets();
+  
+  // Web detection and responsive dimensions
+  const isWeb = Platform.OS === 'web';
+  const { width: screenWidth } = Dimensions.get('window');
+  const isTablet = screenWidth >= 768;
+  const isDesktop = screenWidth >= 1024;
 
   const [featured, setFeatured] = React.useState<Service[]>([]);
   const [mostBooked, setMostBooked] = React.useState<Service[]>([]);
@@ -186,38 +194,54 @@ export default function HomeScreen({ navigation }: any) {
   const filtered = query.trim() ? searchResults : all;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isWeb && styles.webContainer]}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top }]}>
-        <View style={styles.headerRow}>
-        <Searchbar
-          placeholder="Search catering or cuisine"
-          value={query}
-          onChangeText={setQuery}
-          style={styles.search}
-          inputStyle={{ 
-            fontSize: 16, 
-            color: '#1f2937',
-            paddingVertical: 4,
-          }}
-          placeholderTextColor="#9ca3af"
-          loading={isSearching}
-        />
+      <View style={[
+        styles.header, 
+        { paddingTop: insets.top },
+        isWeb && styles.webHeader
+      ]}>
+        <View style={[
+          styles.headerRow,
+          isWeb && styles.webHeaderRow
+        ]}>
+          <Searchbar
+            placeholder="Search catering or cuisine"
+            value={query}
+            onChangeText={setQuery}
+            style={[
+              styles.search,
+              isWeb && styles.webSearch
+            ]}
+            inputStyle={{ 
+              fontSize: isWeb ? 14 : 16, 
+              color: '#1f2937',
+              paddingVertical: 4,
+            }}
+            placeholderTextColor="#9ca3af"
+            loading={isSearching}
+          />
           
           <TouchableOpacity
             onPress={onPressLocation}
-            style={styles.locationIconButton}
+            style={[
+              styles.locationIconButton,
+              isWeb && styles.webLocationButton
+            ]}
             hitSlop={12}
           >
-            <Ionicons name="location" size={26} color="#C836F9" />
-          </TouchableOpacity>
+            <Ionicons name="location" size={isWeb ? 20 : 26} color="#C836F9" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
       {/* Body */}
       <ScrollView
-        style={styles.body}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        style={[styles.body, isWeb && styles.webBody]}
+        contentContainerStyle={[
+          { paddingBottom: 24 },
+          isWeb && styles.webBodyContent
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {loading ? (
@@ -307,19 +331,80 @@ export default function HomeScreen({ navigation }: any) {
         ) : (
           <>
             {/* Featured */}
-            <Text style={styles.sectionTitle}>Featured</Text>
+            <Text style={[styles.sectionTitle, isWeb && styles.webSectionTitle]}>Featured</Text>
+            {isDesktop ? (
+              <View style={styles.webGridContainer}>
+                {featured.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    onPress={() => goToDetails(item)}
+                    activeOpacity={0.8}
+                    style={styles.webCardWrapper}
+                  >
+                    <Card style={[
+                      styles.featuredCard,
+                      styles.webFeaturedCard
+                    ]}>
+                      <Image
+                        source={{
+                          uri:
+                            item.imageUrl ||
+                            item.logoUrl ||
+                            'https://picsum.photos/300/200',
+                        }}
+                        style={styles.featuredImg}
+                      />
+                      <View style={{ padding: 12 }}>
+                        <Text style={styles.featuredName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            marginTop: 4,
+                            gap: 8,
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Ionicons name="star" size={14} color="#f59e0b" />
+                            <Text style={{ marginLeft: 4, color: '#4b5563', fontSize: 12 }}>
+                              {(item.rating ?? 4.8).toFixed(1)}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => toggleFav(item.id)}
+                            style={{ padding: 4 }}
+                          >
+                            <Ionicons
+                              name={isFav(item.id) ? 'heart' : 'heart-outline'}
+                              size={16}
+                              color={isFav(item.id) ? '#ef4444' : '#9ca3af'}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </Card>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
             >
               {featured.map((item) => (
                 <TouchableOpacity
                   key={item.id}
                   onPress={() => goToDetails(item)}
                   activeOpacity={0.8}
+                  style={isDesktop && styles.webCardWrapper}
                 >
-                  <Card style={styles.featuredCard}>
+                  <Card style={[
+                    styles.featuredCard,
+                    isWeb && styles.webFeaturedCard
+                  ]}>
                     <Image
                       source={{
                         uri:
@@ -366,64 +451,173 @@ export default function HomeScreen({ navigation }: any) {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            )}
 
 
             {/* Most popular */}
-            <Text style={styles.sectionTitle}>
+            <Text style={[styles.sectionTitle, isWeb && styles.webSectionTitle]}>
               Most popular
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
-            >
-              {mostBooked.map((svc) => (
-                <TouchableOpacity
-                  key={svc.id}
-                  onPress={() => goToDetails(svc)}
-                  activeOpacity={0.8}
+                </Text>
+            {isDesktop ? (
+              <View style={styles.webGridContainer}>
+                {mostBooked.map((svc) => (
+                    <TouchableOpacity
+                      key={svc.id}
+                      onPress={() => goToDetails(svc)}
+                      activeOpacity={0.8}
+                    style={styles.webCardWrapper}
+                    >
+                    <Card style={[
+                      styles.smallCard,
+                      styles.webSmallCard
+                    ]}>
+                        <Image
+                          source={{
+                            uri:
+                              svc.imageUrl ||
+                              svc.logoUrl ||
+                              'https://picsum.photos/300/200',
+                          }}
+                          style={styles.smallImg}
+                        />
+                      <View style={{ padding: 12 }}>
+                          <Text style={styles.smallName} numberOfLines={1}>
+                            {svc.name}
+                          </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                          <Ionicons name="calendar-outline" size={12} color="#6b7280" />
+                          <Text style={styles.metaText}>
+                            {svc.bookingsCount || 0} bookings
+                          </Text>
+                        </View>
+                        </View>
+                      </Card>
+                    </TouchableOpacity>
+                  ))}
+              </View>
+            ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
                 >
-                  <Card style={styles.smallCard}>
-                    <Image
-                      source={{
-                        uri:
-                          svc.imageUrl ||
-                          svc.logoUrl ||
-                          'https://picsum.photos/300/200',
-                      }}
-                      style={styles.smallImg}
-                    />
-                    <View style={{ padding: 8 }}>
-                      <Text style={styles.smallName} numberOfLines={1}>
-                        {svc.name}
-                      </Text>
-                      <Text style={styles.metaText}>
+                  {mostBooked.map((svc) => (
+                    <TouchableOpacity
+                      key={svc.id}
+                      onPress={() => goToDetails(svc)}
+                      activeOpacity={0.8}
+                  style={isDesktop && styles.webCardWrapper}
+                    >
+                  <Card style={[
+                    styles.smallCard,
+                    isWeb && styles.webSmallCard
+                  ]}>
+                        <Image
+                          source={{
+                            uri:
+                              svc.imageUrl ||
+                              svc.logoUrl ||
+                              'https://picsum.photos/300/200',
+                          }}
+                          style={styles.smallImg}
+                        />
+                        <View style={{ padding: 8 }}>
+                          <Text style={styles.smallName} numberOfLines={1}>
+                            {svc.name}
+                          </Text>
+                          <Text style={styles.metaText}>
                         📅 {svc.bookingsCount ?? 0} bookings
-                      </Text>
-                    </View>
-                  </Card>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                          </Text>
+                        </View>
+                      </Card>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+            )}
 
              {/* Nearby Services (when location is set) */}
              {userLocation && (
                <>
-                 <Text style={styles.sectionTitle}>
+                 <Text style={[styles.sectionTitle, isWeb && styles.webSectionTitle]}>
                    Nearby Services
                  </Text>
-                 <ScrollView
-                   horizontal
-                   showsHorizontalScrollIndicator={false}
-                   contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
-                 >
+                 {isDesktop ? (
+                   <View style={styles.webGridContainer}>
+                     {filtered.slice(0, 3).map((svc) => (
+                       <TouchableOpacity
+                         key={svc.id}
+                         onPress={() => goToDetails(svc)}
+                         activeOpacity={0.8}
+                         style={styles.webCardWrapper}
+                       >
+                         <Card style={[
+                           styles.nearbyCard,
+                           styles.webNearbyCard
+                         ]}>
+                           <Image
+                             source={{
+                               uri:
+                                 svc.imageUrl ||
+                                 svc.logoUrl ||
+                                 'https://picsum.photos/300/200',
+                             }}
+                             style={styles.nearbyImg}
+                           />
+                           <View style={{ padding: 12 }}>
+                             <Text style={styles.nearbyName} numberOfLines={1}>
+                               {svc.name}
+                             </Text>
+                             <Text style={styles.nearbyPrice} numberOfLines={1}>
+                               ₱{svc.pricePerHead || 0} per head
+                             </Text>
+                             <View
+                               style={{
+                                 flexDirection: 'row',
+                                 alignItems: 'center',
+                                 marginTop: 4,
+                                 gap: 8,
+                               }}
+                             >
+                               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                 <Ionicons name="star" size={12} color="#f59e0b" />
+                                 <Text style={{ marginLeft: 4, color: '#4b5563', fontSize: 11 }}>
+                                   {(svc.rating ?? 4.8).toFixed(1)}
+                                 </Text>
+                               </View>
+                               {(() => {
+                                 const distance = getServiceDistance(svc, userLocation);
+                                 return distance ? (
+                                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                     <Ionicons name="location-outline" size={10} color="#6b7280" />
+                                     <Text style={{ marginLeft: 2, color: '#6b7280', fontSize: 10 }}>
+                                       {formatDistance(distance)}
+                                     </Text>
+                                   </View>
+                                 ) : null;
+                               })()}
+                             </View>
+                           </View>
+                         </Card>
+                       </TouchableOpacity>
+                     ))}
+                   </View>
+                 ) : (
+                   <ScrollView
+                     horizontal
+                     showsHorizontalScrollIndicator={false}
+                     contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
+                   >
                    {filtered.slice(0, 3).map((svc) => (
                      <TouchableOpacity
                        key={svc.id}
                        onPress={() => goToDetails(svc)}
                        activeOpacity={0.8}
+                       style={isDesktop && styles.webCardWrapper}
                      >
-                       <Card style={styles.nearbyCard}>
+                       <Card style={[
+                         styles.nearbyCard,
+                         isWeb && styles.webNearbyCard
+                       ]}>
                          <Image
                            source={{
                              uri:
@@ -480,30 +674,37 @@ export default function HomeScreen({ navigation }: any) {
                        </Card>
                      </TouchableOpacity>
                    ))}
-                 </ScrollView>
+                   </ScrollView>
+                 )}
                  
                  {/* View All Services Button */}
-                 <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+                 <View style={[
+                   { paddingHorizontal: 16, marginTop: 20 },
+                   isWeb && { paddingHorizontal: 0, alignItems: 'center' }
+                 ]}>
                    <TouchableOpacity
                      onPress={() => setShowAllServicesModal(true)}
-                     style={styles.viewAllButton}
+                     style={[
+                       styles.viewAllButton,
+                       isWeb && styles.webViewAllButton
+                     ]}
                      activeOpacity={0.8}
                    >
                      <Text style={styles.viewAllButtonText}>View All Services</Text>
                      <Ionicons name="arrow-forward" size={20} color="#C836F9" />
                    </TouchableOpacity>
                  </View>
-               </>
-             )}
+              </>
+            )}
 
              {/* Service list (search filtered) - only show when no location is set */}
              {!userLocation && (
                <>
                  <Text style={styles.sectionTitle}>
-                   All services
-                 </Text>
-                 <View style={{ paddingHorizontal: 16 }}>
-                   {filtered.map((svc) => (
+              All services
+            </Text>
+            <View style={{ paddingHorizontal: 16 }}>
+              {filtered.map((svc) => (
                 <TouchableOpacity
                   key={svc.id}
                   onPress={() => goToDetails(svc)}
@@ -519,24 +720,24 @@ export default function HomeScreen({ navigation }: any) {
                       }}
                       style={styles.serviceImg}
                     />
-                     <View style={{ flex: 1 }}>
-                       <Text style={styles.serviceName}>{svc.name}</Text>
-                       <Text style={styles.servicePrice}>
-                         price start at {svc.pricePerHead} per head
-                       </Text>
-                       <View
-                         style={{
-                           flexDirection: 'row',
-                           alignItems: 'center',
-                           marginTop: 2,
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.serviceName}>{svc.name}</Text>
+                      <Text style={styles.servicePrice}>
+                        price start at {svc.pricePerHead} per head
+                      </Text>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          marginTop: 2,
                            gap: 12,
-                         }}
-                       >
+                        }}
+                      >
                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                           <Ionicons name="star" size={14} color="#f59e0b" />
-                           <Text style={{ marginLeft: 4, color: '#4b5563' }}>
-                             {(svc.rating ?? 4.8).toFixed(1)}
-                           </Text>
+                        <Ionicons name="star" size={14} color="#f59e0b" />
+                        <Text style={{ marginLeft: 4, color: '#4b5563' }}>
+                          {(svc.rating ?? 4.8).toFixed(1)}
+                        </Text>
                          </View>
                          {userLocation && (() => {
                            const distance = getServiceDistance(svc, userLocation);
@@ -549,8 +750,8 @@ export default function HomeScreen({ navigation }: any) {
                              </View>
                            ) : null;
                          })()}
-                       </View>
-                     </View>
+                      </View>
+                    </View>
                     <TouchableOpacity
                       onPress={() => toggleFav(svc.id)}
                       style={{ padding: 6 }}
@@ -564,9 +765,9 @@ export default function HomeScreen({ navigation }: any) {
                   </View>
                 </TouchableOpacity>
               ))}
-                 </View>
-               </>
-             )}
+            </View>
+          </>
+        )}
           </>
         )}
       </ScrollView>
@@ -582,11 +783,14 @@ export default function HomeScreen({ navigation }: any) {
       {/* All Services Modal */}
       <Modal
         visible={showAllServicesModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        animationType={isWeb ? "fade" : "slide"}
+        presentationStyle={isWeb ? "overFullScreen" : "pageSheet"}
         onRequestClose={() => setShowAllServicesModal(false)}
       >
-        <View style={styles.modalContainer}>
+        <View style={[
+          styles.modalContainer,
+          isWeb && styles.webModalContainer
+        ]}>
           {/* Modal Header */}
           <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
             <TouchableOpacity
@@ -682,7 +886,7 @@ export default function HomeScreen({ navigation }: any) {
                 </View>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+      </ScrollView>
         </View>
       </Modal>
     </View>
@@ -711,10 +915,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#f8fafc',
     elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
@@ -723,10 +924,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderRadius: 12,
     elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
@@ -750,14 +948,15 @@ const styles = StyleSheet.create({
     width: 220, 
     marginRight: 16, 
     borderRadius: 16, 
-    overflow: 'hidden',
     elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
   },
-  featuredImg: { width: '100%', height: 120 },
+  featuredImg: { 
+    width: '100%', 
+    height: 120,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
   featuredName: { fontWeight: '700', marginTop: 4, fontSize: 16 },
 
   // Small cards (most liked / most popular)
@@ -765,14 +964,15 @@ const styles = StyleSheet.create({
     width: 180, 
     marginRight: 16, 
     borderRadius: 16, 
-    overflow: 'hidden',
     elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',
   },
-  smallImg: { width: '100%', height: 100 },
+  smallImg: { 
+    width: '100%', 
+    height: 100,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
   smallName: { fontWeight: '700', fontSize: 14 },
   metaText: { color: '#6b7280', marginTop: 4, fontSize: 12 },
 
@@ -781,15 +981,16 @@ const styles = StyleSheet.create({
     width: 200, 
     marginRight: 16, 
     borderRadius: 16, 
-    overflow: 'hidden',
     backgroundColor: '#fff',
     elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
   },
-  nearbyImg: { width: '100%', height: 130 },
+  nearbyImg: { 
+    width: '100%', 
+    height: 130,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
   nearbyName: { 
     fontWeight: '700', 
     fontSize: 15,
@@ -897,5 +1098,83 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+
+  // Web-specific styles
+  webContainer: {
+    maxWidth: 1400,
+    marginHorizontal: 'auto',
+    width: '100%',
+  },
+  webHeader: {
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+  },
+  webHeaderRow: {
+    maxWidth: 800,
+    marginHorizontal: 'auto',
+  },
+  webSearch: {
+    maxWidth: 600,
+  },
+  webLocationButton: {
+    padding: 10,
+  },
+  webBody: {
+    backgroundColor: '#f8fafc',
+  },
+  webBodyContent: {
+    paddingHorizontal: 32,
+    maxWidth: 1400,
+    marginHorizontal: 'auto',
+    width: '100%',
+  },
+  webSectionTitle: {
+    fontSize: 24,
+    marginTop: 32,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  webGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 20,
+    paddingHorizontal: 0,
+    marginBottom: 20,
+  },
+  webCardWrapper: {
+    width: 320,
+    minWidth: 300,
+    maxWidth: 350,
+  },
+  webFeaturedCard: {
+    width: '100%',
+    marginRight: 0,
+    marginBottom: 16,
+  },
+  webSmallCard: {
+    width: '100%',
+    marginRight: 0,
+    marginBottom: 16,
+  },
+  webNearbyCard: {
+    width: '100%',
+    marginRight: 0,
+    marginBottom: 16,
+  },
+  webViewAllButton: {
+    maxWidth: 300,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+  },
+  webModalContainer: {
+    maxWidth: 800,
+    marginHorizontal: 'auto',
+    marginVertical: 40,
+    borderRadius: 16,
+    overflow: 'hidden',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
   },
 });
