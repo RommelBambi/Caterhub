@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
-import { api } from "../services/api";
+import { supabase } from "../services/supabase";
+import { login, register, getCurrentUser } from "../services/api";
 
-type Role = "CUSTOMER" | "CATER" | "ADMIN";
+type Role = "CUSTOMER" | "CATER" | "ADMIN" | "CUSTOM";
 
 export type User = {
-  id: number;
+  id: string; // UUID string, not number
   email: string;
   username: string;
   role: Role;
@@ -33,23 +34,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Helper: set/unset axios Authorization header consistently
   const setAxiosAuthHeader = (tok?: string | null) => {
-    if (tok) {
-      api.defaults.headers.common["Authorization"] = `Bearer ${tok}`;
-    } else {
-      delete api.defaults.headers.common["Authorization"];
-    }
+    // Note: We're using Supabase client directly, so no need for axios headers
+    // This function is kept for compatibility but doesn't do anything
   };
 
-  // Bootstrap: restore token from SecureStore and fetch /auth/me
+  // Bootstrap: restore session and fetch user profile
   useEffect(() => {
     (async () => {
       try {
-        const saved = await SecureStore.getItemAsync(TOKEN_KEY);
-        if (saved) {
-          setToken(saved);
-          setAxiosAuthHeader(saved);
-          const { data } = await api.get("/auth/me");
-          setUser(data as User);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setToken(session.access_token);
+          setAxiosAuthHeader(session.access_token);
+          const userProfile = await getCurrentUser();
+          setUser(userProfile as User);
         }
       } catch {
         setUser(null);
@@ -62,24 +60,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     })();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const loginUser = async (email: string, password: string) => {
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/login", { email, password });
-      const tok = data.token as string;
+      const { token, user: userProfile } = await login(email, password);
 
       // persist + set header
-      await SecureStore.setItemAsync(TOKEN_KEY, tok);
-      setAxiosAuthHeader(tok);
+      await SecureStore.setItemAsync(TOKEN_KEY, token);
+      setAxiosAuthHeader(token);
 
-      setToken(tok);
-      setUser({
-        id: data.id,
-        email: data.email,
-        username: data.username,
-        role: data.role as Role,
-        location: data.location ?? null,
-      });
+      setToken(token);
+      setUser(userProfile as User);
     } catch (e) {
       throw e; // bubble up so UI can show error
     } finally {
@@ -88,6 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
     setToken(null);
     setAxiosAuthHeader(null);
@@ -96,12 +88,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateMe = async (patch: { location?: string; username?: string }) => {
     if (!token) return;
-    const { data } = await api.patch("/users/me", patch);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    
+    const { data, error } = await supabase
+      .from('users')
+      .update(patch)
+      .eq('id', user.id)
+      .select()
+      .single();
+      
+    if (error) throw error;
     setUser((u) => (u ? { ...u, ...data } : data));
   };
 
   return (
-    <Ctx.Provider value={{ user, token, loading, login, logout, updateMe }}>
+    <Ctx.Provider value={{ user, token, loading, login: loginUser, logout, updateMe }}>
       {children}
     </Ctx.Provider>
   );

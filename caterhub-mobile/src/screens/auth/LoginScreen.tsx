@@ -7,23 +7,23 @@ import { useAuth } from '../../store/auth';
 
 export default function LoginScreen({ navigation }: any) {
   const { login } = useAuth();
-  const { control, handleSubmit, watch } = useForm({ defaultValues: { user: '', password: '' } });
+  const { control, handleSubmit, watch } = useForm({ defaultValues: { email: '', password: '' } });
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const watchUser = watch('user');
+  const watchEmail = watch('email');
   const watchPass = watch('password');
-  const formFilled = watchUser.trim() !== '' && watchPass.trim() !== '';
+  const formFilled = watchEmail.trim() !== '' && watchPass.trim() !== '';
 
-  // Check if user input is a valid email
-  const isEmail = watchUser.includes('@') && watchUser.includes('.');
+  // Check if email input is valid
+  const isValidEmail = watchEmail.includes('@') && watchEmail.includes('.');
 
-  const onSubmit = async (d: { user: string; password: string }) => {
+  const onSubmit = async (d: { email: string; password: string }) => {
     setLoading(true);
     try {
-      await login(d.user, d.password);
+      await login(d.email, d.password);
     } catch (err: any) {
-      Alert.alert('Login Failed', 'Account does not exist. Username or password is incorrect.');
+      Alert.alert('Login Failed', err?.message || 'Invalid email or password.');
     } finally {
       setLoading(false);
     }
@@ -50,15 +50,16 @@ export default function LoginScreen({ navigation }: any) {
 
         <Controller
           control={control}
-          name="user"
-          rules={{ required: true }}
+          name="email"
+          rules={{ required: true, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ }}
           render={({ field: { onChange, value } }) => (
             <TextInput
-              label={isEmail ? 'Email' : 'Username'}
+              label="Email"
               mode="outlined"
               value={value}
               onChangeText={onChange}
               autoCapitalize="none"
+              keyboardType="email-address"
               style={styles.input}
             />
           )}
@@ -91,9 +92,9 @@ export default function LoginScreen({ navigation }: any) {
           onPress={handleSubmit(onSubmit)}
           style={[
             styles.loginBtn,
-            { backgroundColor: formFilled ? '#C836F9' : '#ccc' },
+            { backgroundColor: formFilled && isValidEmail ? '#C836F9' : '#ccc' },
           ]}
-          disabled={!formFilled || loading}
+          disabled={!formFilled || !isValidEmail || loading}
           loading={loading}
         >
           Login

@@ -3,7 +3,7 @@ import { View, Image, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
-import { api } from '../../services/api';
+import { register } from '../../services/api';
 
 type Form = {
   username: string;
@@ -39,15 +39,11 @@ export default function RegisterScreen({ navigation }: any) {
     }
     setLoading(true);
     try {
-      await api.post('/auth/register', {
-        username: d.username,
-        email: d.email,
-        password: d.password,
-      });
+      await register(d.email, d.password, d.username);
       Alert.alert('Success', 'Account created! You can now log in.');
       navigation.navigate('Login');
     } catch (e: any) {
-      Alert.alert('Registration Failed', e?.response?.data?.error ?? 'Unknown error');
+      Alert.alert('Registration Failed', e?.message ?? 'Unknown error');
     } finally {
       setLoading(false);
     }
