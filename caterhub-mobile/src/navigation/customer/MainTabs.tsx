@@ -33,6 +33,9 @@ function FavoritesStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="FavoritesScreen" component={FavoritesScreen} />
+      <Stack.Screen name="ServiceDetails" component={ServiceDetails} />
+      <Stack.Screen name="CustomizePackage" component={CustomizePackage} />
+      <Stack.Screen name="BookingForm" component={BookingForm} />
     </Stack.Navigator>
   );
 }
@@ -42,6 +45,7 @@ function BookingsStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="BookingsList" component={BookingsList} />
       <Stack.Screen name="BookingDetails" component={BookingDetails} />
+      <Stack.Screen name="ServiceDetails" component={ServiceDetails} />
     </Stack.Navigator>
   );
 }
