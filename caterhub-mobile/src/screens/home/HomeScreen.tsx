@@ -7,8 +7,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Modal,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Text, Searchbar, Card, ActivityIndicator } from 'react-native-paper';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,6 +21,7 @@ import {
   addFavorite,
   removeFavorite,
   getMyFavorites,
+  searchServices,
   Service,
 } from '../../services/services';
 import InteractiveMapPicker from '../../components/InteractiveMapPicker';
@@ -30,16 +31,18 @@ import { getPrimaryLocation } from '../../services/userLocations';
 export default function HomeScreen({ navigation }: any) {
   const { user, updateMe } = useAuth();
   const [query, setQuery] = React.useState('');
+  const [searchResults, setSearchResults] = React.useState<Service[]>([]);
+  const [isSearching, setIsSearching] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const insets = useSafeAreaInsets();
 
   const [featured, setFeatured] = React.useState<Service[]>([]);
-  const [mostLiked, setMostLiked] = React.useState<Service[]>([]);
   const [mostBooked, setMostBooked] = React.useState<Service[]>([]);
   const [all, setAll] = React.useState<Service[]>([]);
   const [favIds, setFavIds] = React.useState<number[]>([]);
   const [showLocationPicker, setShowLocationPicker] = React.useState(false);
   const [userLocation, setUserLocation] = React.useState<{ latitude: number; longitude: number; address: string } | null>(null);
+  const [showAllServicesModal, setShowAllServicesModal] = React.useState(false);
 
   // Load saved location
   const loadSavedLocation = async () => {
@@ -66,23 +69,19 @@ export default function HomeScreen({ navigation }: any) {
     (async () => {
       try {
         setLoading(true);
-        const [services, topLikesRaw, topBookedRaw] = await Promise.all([
+        const [services, topBookedRaw] = await Promise.all([
           fetchServices(),
-          fetchTopServices('likes', 8),
           fetchTopServices('bookings', 8),
         ]);
 
-        const topLikes = (topLikesRaw || []).filter(
-          (s: any) => (s.favoritesCount ?? 0) > 0
-        );
-        const topBooked = (topBookedRaw || []).filter(
-          (s: any) => (s.bookingsCount ?? 0) > 0
+        // Show all services for "Most Popular" section, sorted by bookings count
+        const topBooked = (topBookedRaw || []).sort(
+          (a: any, b: any) => (b.bookingsCount ?? 0) - (a.bookingsCount ?? 0)
         );
 
         if (!mounted) return;
         setAll(services);
         setFeatured(services.slice(0, 6));
-        setMostLiked(topLikes);
         setMostBooked(topBooked);
 
         if (user) {
@@ -154,62 +153,66 @@ export default function HomeScreen({ navigation }: any) {
     navigation.navigate('ServiceDetails', { service: svc });
   };
 
-  // Filter services by search query and location
-  const filtered = all.filter((s) => {
-    const matchesQuery = query ? s.name.toLowerCase().includes(query.toLowerCase()) : true;
-    
-    // If user has set location, filter by distance
-    if (userLocation) {
-      const nearbyServices = filterServicesByDistance([s], userLocation, 50);
-      return matchesQuery && nearbyServices.length > 0;
+  // Debounced search function
+  const performSearch = React.useCallback(async (searchQuery: string) => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
     }
-    
-    return matchesQuery;
-  });
+
+    setIsSearching(true);
+    try {
+      const results = await searchServices(searchQuery);
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  // Debounce search input
+  React.useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      performSearch(query);
+    }, 500); // 500ms delay
+
+    return () => clearTimeout(timeoutId);
+  }, [query, performSearch]);
+
+  // Use search results if query exists, otherwise use all services
+  const filtered = query.trim() ? searchResults : all;
 
   return (
     <View style={styles.container}>
       {/* Header */}
-      <LinearGradient
-        colors={['#C836F9', '#a855f7']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.header, { paddingTop: insets.top }]}
-      >
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <View style={styles.headerRow}>
-          <TouchableOpacity
-            onPress={onPressLocation}
-            style={{ flexDirection: 'row', alignItems: 'center' }}
-            hitSlop={12}
-          >
-            <Ionicons name="location-outline" size={18} color="#fff" />
-            <Text style={styles.headerLocation}>
-              {userLocation?.address || user?.location || 'Set location'}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={{ flexDirection: 'row', gap: 14 }}>
-            {/* Heart icon to navigate to Favorites screen */}
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Favorites')}
-              hitSlop={12}
-            >
-              <Feather name="heart" size={20} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Bookings')} hitSlop={12}>
-              <Feather name="calendar" size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
         <Searchbar
           placeholder="Search catering or cuisine"
           value={query}
           onChangeText={setQuery}
           style={styles.search}
-          inputStyle={{ fontSize: 14 }}
+          inputStyle={{ 
+            fontSize: 16, 
+            color: '#1f2937',
+            paddingVertical: 4,
+          }}
+          placeholderTextColor="#9ca3af"
+          loading={isSearching}
         />
-      </LinearGradient>
+          
+          <TouchableOpacity
+            onPress={onPressLocation}
+            style={styles.locationIconButton}
+            hitSlop={12}
+          >
+            <Ionicons name="location" size={26} color="#C836F9" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Body */}
       <ScrollView
@@ -219,6 +222,88 @@ export default function HomeScreen({ navigation }: any) {
       >
         {loading ? (
           <ActivityIndicator style={{ marginTop: 24 }} />
+        ) : query.trim() ? (
+          /* Search Results */
+          <>
+            <Text style={styles.sectionTitle}>
+              Search Results ({searchResults.length})
+            </Text>
+            <View style={{ paddingHorizontal: 16 }}>
+              {isSearching ? (
+                <ActivityIndicator style={{ marginVertical: 20 }} />
+              ) : searchResults.length > 0 ? (
+                searchResults.map((svc) => (
+                  <TouchableOpacity
+                    key={svc.id}
+                    onPress={() => goToDetails(svc)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.serviceRow}>
+                      <Image
+                        source={{
+                          uri:
+                            svc.imageUrl ||
+                            svc.logoUrl ||
+                            'https://picsum.photos/300/200',
+                        }}
+                        style={styles.serviceImg}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.serviceName}>{svc.name}</Text>
+                        <Text style={styles.servicePrice}>
+                          ₱{svc.pricePerHead || 0} per head
+                        </Text>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            marginTop: 2,
+                            gap: 12,
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Ionicons name="star" size={14} color="#f59e0b" />
+                            <Text style={{ marginLeft: 4, color: '#4b5563' }}>
+                              {(svc.rating ?? 4.8).toFixed(1)}
+                            </Text>
+                          </View>
+                          {userLocation && (() => {
+                            const distance = getServiceDistance(svc, userLocation);
+                            return distance ? (
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Ionicons name="location-outline" size={12} color="#6b7280" />
+                                <Text style={{ marginLeft: 2, color: '#6b7280', fontSize: 12 }}>
+                                  {formatDistance(distance)}
+                                </Text>
+                              </View>
+                            ) : null;
+                          })()}
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => toggleFav(svc.id)}
+                        style={{ padding: 6 }}
+                      >
+                        <Ionicons
+                          name={isFav(svc.id) ? 'heart' : 'heart-outline'}
+                          size={22}
+                          color={isFav(svc.id) ? '#ef4444' : '#9ca3af'}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.noResultsContainer}>
+                  <Ionicons name="search-outline" size={48} color="#9ca3af" />
+                  <Text style={styles.noResultsText}>No services found</Text>
+                  <Text style={styles.noResultsSubtext}>
+                    Try searching with different keywords
+                  </Text>
+                </View>
+              )}
+            </View>
+          </>
         ) : (
           <>
             {/* Featured */}
@@ -226,7 +311,7 @@ export default function HomeScreen({ navigation }: any) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16 }}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
             >
               {featured.map((item) => (
                 <TouchableOpacity
@@ -282,129 +367,90 @@ export default function HomeScreen({ navigation }: any) {
               ))}
             </ScrollView>
 
-            {/* Most liked */}
-            {mostLiked.length > 0 && (
-              <>
-                <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
-                  Most liked
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingHorizontal: 16 }}
-                >
-                  {mostLiked.map((svc) => (
-                    <TouchableOpacity
-                      key={svc.id}
-                      onPress={() => goToDetails(svc)}
-                      activeOpacity={0.8}
-                    >
-                      <Card style={styles.smallCard}>
-                        <Image
-                          source={{
-                            uri:
-                              svc.imageUrl ||
-                              svc.logoUrl ||
-                              'https://picsum.photos/300/200',
-                          }}
-                          style={styles.smallImg}
-                        />
-                        <View style={{ padding: 8 }}>
-                          <Text style={styles.smallName} numberOfLines={1}>
-                            {svc.name}
-                          </Text>
-                          <Text style={styles.metaText}>
-                            ❤️ {svc.favoritesCount ?? 0}
-                          </Text>
-                        </View>
-                      </Card>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </>
-            )}
 
-            {/* Most popular (most booked) */}
-            {mostBooked.length > 0 && (
-              <>
-                <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
-                  Most popular
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingHorizontal: 16 }}
+            {/* Most popular */}
+            <Text style={styles.sectionTitle}>
+              Most popular
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
+            >
+              {mostBooked.map((svc) => (
+                <TouchableOpacity
+                  key={svc.id}
+                  onPress={() => goToDetails(svc)}
+                  activeOpacity={0.8}
                 >
-                  {mostBooked.map((svc) => (
-                    <TouchableOpacity
-                      key={svc.id}
-                      onPress={() => goToDetails(svc)}
-                      activeOpacity={0.8}
-                    >
-                      <Card style={styles.smallCard}>
-                        <Image
-                          source={{
-                            uri:
-                              svc.imageUrl ||
-                              svc.logoUrl ||
-                              'https://picsum.photos/300/200',
-                          }}
-                          style={styles.smallImg}
-                        />
-                        <View style={{ padding: 8 }}>
-                          <Text style={styles.smallName} numberOfLines={1}>
-                            {svc.name}
-                          </Text>
-                          <Text style={styles.metaText}>
-                            📅 {svc.bookingsCount ?? 0}
-                          </Text>
-                        </View>
-                      </Card>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </>
-            )}
+                  <Card style={styles.smallCard}>
+                    <Image
+                      source={{
+                        uri:
+                          svc.imageUrl ||
+                          svc.logoUrl ||
+                          'https://picsum.photos/300/200',
+                      }}
+                      style={styles.smallImg}
+                    />
+                    <View style={{ padding: 8 }}>
+                      <Text style={styles.smallName} numberOfLines={1}>
+                        {svc.name}
+                      </Text>
+                      <Text style={styles.metaText}>
+                        📅 {svc.bookingsCount ?? 0} bookings
+                      </Text>
+                    </View>
+                  </Card>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
 
              {/* Nearby Services (when location is set) */}
              {userLocation && (
                <>
-                 <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
+                 <Text style={styles.sectionTitle}>
                    Nearby Services
                  </Text>
-                 <View style={{ paddingHorizontal: 16 }}>
+                 <ScrollView
+                   horizontal
+                   showsHorizontalScrollIndicator={false}
+                   contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
+                 >
                    {filtered.slice(0, 3).map((svc) => (
                      <TouchableOpacity
                        key={svc.id}
                        onPress={() => goToDetails(svc)}
                        activeOpacity={0.8}
                      >
-                       <View style={styles.serviceRow}>
+                       <Card style={styles.nearbyCard}>
                          <Image
                            source={{
                              uri:
                                svc.imageUrl ||
                                svc.logoUrl ||
-                               'https://picsum.photos/200/200',
+                               'https://picsum.photos/300/200',
                            }}
-                           style={styles.serviceImg}
+                           style={styles.nearbyImg}
                          />
-                         <View style={{ flex: 1 }}>
-                           <Text style={styles.serviceName}>{svc.name}</Text>
-                           <Text style={styles.servicePrice}>
-                             price start at {svc.pricePerHead} per head
+                         <View style={{ padding: 12 }}>
+                           <Text style={styles.nearbyName} numberOfLines={1}>
+                             {svc.name}
+                           </Text>
+                           <Text style={styles.nearbyPrice} numberOfLines={1}>
+                             ₱{svc.pricePerHead || 0} per head
                            </Text>
                            <View
                              style={{
                                flexDirection: 'row',
                                alignItems: 'center',
-                               marginTop: 2,
-                               gap: 12,
+                               marginTop: 6,
+                               gap: 8,
                              }}
                            >
                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                               <Ionicons name="star" size={14} color="#f59e0b" />
-                               <Text style={{ marginLeft: 4, color: '#4b5563' }}>
+                               <Ionicons name="star" size={12} color="#f59e0b" />
+                               <Text style={{ marginLeft: 2, color: '#4b5563', fontSize: 12 }}>
                                  {(svc.rating ?? 4.8).toFixed(1)}
                                </Text>
                              </View>
@@ -412,38 +458,52 @@ export default function HomeScreen({ navigation }: any) {
                                const distance = getServiceDistance(svc, userLocation);
                                return distance ? (
                                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                   <Ionicons name="location-outline" size={12} color="#6b7280" />
-                                   <Text style={{ marginLeft: 2, color: '#6b7280', fontSize: 12 }}>
+                                   <Ionicons name="location-outline" size={10} color="#6b7280" />
+                                   <Text style={{ marginLeft: 2, color: '#6b7280', fontSize: 11 }}>
                                      {formatDistance(distance)}
                                    </Text>
                                  </View>
                                ) : null;
                              })()}
                            </View>
+                           <TouchableOpacity
+                             onPress={() => toggleFav(svc.id)}
+                             style={styles.nearbyHeartButton}
+                           >
+                             <Ionicons
+                               name={isFav(svc.id) ? 'heart' : 'heart-outline'}
+                               size={18}
+                               color={isFav(svc.id) ? '#ef4444' : '#9ca3af'}
+                             />
+                           </TouchableOpacity>
                          </View>
-                         <TouchableOpacity
-                           onPress={() => toggleFav(svc.id)}
-                           style={{ padding: 6 }}
-                         >
-                           <Ionicons
-                             name={isFav(svc.id) ? 'heart' : 'heart-outline'}
-                             size={22}
-                             color={isFav(svc.id) ? '#ef4444' : '#9ca3af'}
-                           />
-                         </TouchableOpacity>
-                       </View>
+                       </Card>
                      </TouchableOpacity>
                    ))}
+                 </ScrollView>
+                 
+                 {/* View All Services Button */}
+                 <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+                   <TouchableOpacity
+                     onPress={() => setShowAllServicesModal(true)}
+                     style={styles.viewAllButton}
+                     activeOpacity={0.8}
+                   >
+                     <Text style={styles.viewAllButtonText}>View All Services</Text>
+                     <Ionicons name="arrow-forward" size={20} color="#C836F9" />
+                   </TouchableOpacity>
                  </View>
                </>
              )}
 
-             {/* Service list (search filtered) */}
-             <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
-               {userLocation ? 'All services' : 'All services'}
-             </Text>
-            <View style={{ paddingHorizontal: 16 }}>
-              {filtered.map((svc) => (
+             {/* Service list (search filtered) - only show when no location is set */}
+             {!userLocation && (
+               <>
+                 <Text style={styles.sectionTitle}>
+                   All services
+                 </Text>
+                 <View style={{ paddingHorizontal: 16 }}>
+                   {filtered.map((svc) => (
                 <TouchableOpacity
                   key={svc.id}
                   onPress={() => goToDetails(svc)}
@@ -504,7 +564,9 @@ export default function HomeScreen({ navigation }: any) {
                   </View>
                 </TouchableOpacity>
               ))}
-            </View>
+                 </View>
+               </>
+             )}
           </>
         )}
       </ScrollView>
@@ -516,6 +578,113 @@ export default function HomeScreen({ navigation }: any) {
         onLocationSelect={handleLocationSelect}
         currentLocation={userLocation || undefined}
       />
+
+      {/* All Services Modal */}
+      <Modal
+        visible={showAllServicesModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAllServicesModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          {/* Modal Header */}
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 10 }]}>
+            <TouchableOpacity
+              onPress={() => setShowAllServicesModal(false)}
+              style={styles.modalCloseButton}
+            >
+              <Ionicons name="close" size={24} color="#000" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>All Services</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          {/* Search Bar */}
+          <View style={styles.modalSearchContainer}>
+            <Searchbar
+              placeholder="Search catering or cuisine"
+              value={query}
+              onChangeText={setQuery}
+              style={styles.modalSearch}
+              inputStyle={{ fontSize: 14 }}
+            />
+          </View>
+
+          {/* Services List */}
+          <ScrollView
+            style={styles.modalScrollView}
+            contentContainerStyle={{ paddingBottom: 24 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {filtered.map((svc) => (
+              <TouchableOpacity
+                key={svc.id}
+                onPress={() => {
+                  setShowAllServicesModal(false);
+                  goToDetails(svc);
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={styles.serviceRow}>
+                  <Image
+                    source={{
+                      uri:
+                        svc.imageUrl ||
+                        svc.logoUrl ||
+                        'https://picsum.photos/300/200',
+                    }}
+                    style={styles.serviceImg}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.serviceName} numberOfLines={1}>
+                      {svc.name}
+                    </Text>
+                    <Text style={styles.servicePrice} numberOfLines={1}>
+                      ₱{svc.pricePerHead || 0} per head
+                    </Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        marginTop: 2,
+                        gap: 12,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Ionicons name="star" size={14} color="#f59e0b" />
+                        <Text style={{ marginLeft: 4, color: '#4b5563' }}>
+                          {(svc.rating ?? 4.8).toFixed(1)}
+                        </Text>
+                      </View>
+                      {userLocation && (() => {
+                        const distance = getServiceDistance(svc, userLocation);
+                        return distance ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Ionicons name="location-outline" size={12} color="#6b7280" />
+                            <Text style={{ marginLeft: 2, color: '#6b7280', fontSize: 12 }}>
+                              {formatDistance(distance)}
+                            </Text>
+                          </View>
+                        ) : null;
+                      })()}
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => toggleFav(svc.id)}
+                    style={{ padding: 6 }}
+                  >
+                    <Ionicons
+                      name={isFav(svc.id) ? 'heart' : 'heart-outline'}
+                      size={22}
+                      color={isFav(svc.id) ? '#ef4444' : '#9ca3af'}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -523,53 +692,141 @@ export default function HomeScreen({ navigation }: any) {
 const RADIUS = 24;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#C836F9' },
+  container: { flex: 1, backgroundColor: '#fff' },
 
   header: {
-    height: 180,
-    paddingTop: 18,
     paddingHorizontal: 16,
-    justifyContent: 'center',
+    paddingBottom: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
   },
   headerRow: {
-    marginTop: 16,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
-  headerLocation: { color: '#fff', fontWeight: '600', marginLeft: 6, fontSize: 14 },
   search: {
-    marginTop: 14,
+    flex: 1,
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  locationIconButton: {
+    padding: 12,
+    backgroundColor: '#f8fafc',
     borderRadius: 12,
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
 
   body: {
     flex: 1,
     backgroundColor: '#fff',
-    borderTopLeftRadius: RADIUS,
-    borderTopRightRadius: RADIUS,
-    marginTop: -20,
   },
 
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    marginTop: 16,
-    marginBottom: 8,
+    marginTop: 24,
+    marginBottom: 12,
     paddingHorizontal: 16,
+    color: '#1f2937',
   },
 
   // Featured
-  featuredCard: { width: 220, marginRight: 12, borderRadius: 12, overflow: 'hidden' },
-  featuredImg: { width: '100%', height: 110 },
-  featuredName: { fontWeight: '700', marginTop: 2 },
+  featuredCard: { 
+    width: 220, 
+    marginRight: 16, 
+    borderRadius: 16, 
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  featuredImg: { width: '100%', height: 120 },
+  featuredName: { fontWeight: '700', marginTop: 4, fontSize: 16 },
 
   // Small cards (most liked / most popular)
-  smallCard: { width: 170, marginRight: 12, borderRadius: 12, overflow: 'hidden' },
-  smallImg: { width: '100%', height: 90 },
-  smallName: { fontWeight: '700' },
-  metaText: { color: '#6b7280', marginTop: 2, fontSize: 12 },
+  smallCard: { 
+    width: 180, 
+    marginRight: 16, 
+    borderRadius: 16, 
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+  },
+  smallImg: { width: '100%', height: 100 },
+  smallName: { fontWeight: '700', fontSize: 14 },
+  metaText: { color: '#6b7280', marginTop: 4, fontSize: 12 },
+
+  // Nearby services cards (horizontal)
+  nearbyCard: { 
+    width: 200, 
+    marginRight: 16, 
+    borderRadius: 16, 
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  nearbyImg: { width: '100%', height: 130 },
+  nearbyName: { 
+    fontWeight: '700', 
+    fontSize: 15,
+    marginBottom: 4,
+  },
+  nearbyPrice: { 
+    color: '#6b7280', 
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  nearbyHeartButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    padding: 4,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 12,
+  },
+
+  // No results
+  noResultsContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  noResultsText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 16,
+  },
+  noResultsSubtext: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 8,
+    textAlign: 'center',
+  },
 
   serviceRow: {
     flexDirection: 'row',
@@ -584,4 +841,61 @@ const styles = StyleSheet.create({
   serviceImg: { width: 72, height: 72, borderRadius: 10 },
   serviceName: { fontWeight: '700', fontSize: 16 },
   servicePrice: { color: '#6b7280', marginTop: 2, fontSize: 12 },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C836F9',
+    backgroundColor: '#faf5ff',
+    gap: 8,
+  },
+  viewAllButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#C836F9',
+  },
+  
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    backgroundColor: '#fff',
+  },
+  modalCloseButton: {
+    padding: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  modalSearchContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  modalSearch: {
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+  },
+  modalScrollView: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
 });

@@ -6,6 +6,14 @@ export interface Location {
   address: string;
 }
 
+export interface ServiceWithLocation {
+  id: number;
+  name: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  // ... other service properties
+}
+
 // Calculate distance between two coordinates using Haversine formula
 export function calculateDistance(
   lat1: number,
@@ -32,17 +40,14 @@ export function filterServicesByDistance(
   maxDistanceKm: number = 50
 ): any[] {
   return services.filter(service => {
-    // For now, we'll use mock coordinates for services
-    // In a real app, you'd store coordinates in your database
-    const serviceCoords = getServiceCoordinates(service);
-    
-    if (!serviceCoords) return true; // Include if no coordinates available
+    // Use real coordinates from database
+    if (!service.latitude || !service.longitude) return true; // Include if no coordinates available
     
     const distance = calculateDistance(
       userLocation.latitude,
       userLocation.longitude,
-      serviceCoords.latitude,
-      serviceCoords.longitude
+      service.latitude,
+      service.longitude
     );
     
     return distance <= maxDistanceKm;
@@ -78,14 +83,13 @@ export function getServiceDistance(
   service: any,
   userLocation: Location
 ): number | null {
-  const serviceCoords = getServiceCoordinates(service);
-  
-  if (!serviceCoords) return null;
+  // Use real coordinates from database
+  if (!service.latitude || !service.longitude) return null;
   
   return calculateDistance(
     userLocation.latitude,
     userLocation.longitude,
-    serviceCoords.latitude,
-    serviceCoords.longitude
+    service.latitude,
+    service.longitude
   );
 }

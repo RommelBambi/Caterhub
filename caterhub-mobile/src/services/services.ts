@@ -33,6 +33,8 @@ export type Service = {
   
   favoritesCount?: number;
   bookingsCount?: number;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 
@@ -239,4 +241,22 @@ export async function removeFavorite(serviceId: number) {
     .eq('service_id', serviceId);
     
   if (error) throw error;
+}
+
+export async function searchServices(query: string): Promise<Service[]> {
+  if (!query.trim()) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('services')
+    .select('*')
+    .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
+    .order('name');
+
+  if (error) {
+    throw new Error(`Failed to search services: ${error.message}`);
+  }
+
+  return data || [];
 }

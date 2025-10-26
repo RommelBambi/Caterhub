@@ -50,6 +50,8 @@ export interface Database {
           price_per_head?: number;
           favorites_count?: number;
           bookings_count?: number;
+          latitude?: number | null;
+          longitude?: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -64,6 +66,8 @@ export interface Database {
           price_per_head?: number;
           favorites_count?: number;
           bookings_count?: number;
+          latitude?: number | null;
+          longitude?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -78,6 +82,8 @@ export interface Database {
           price_per_head?: number;
           favorites_count?: number;
           bookings_count?: number;
+          latitude?: number | null;
+          longitude?: number | null;
           created_at?: string;
           updated_at?: string;
         };

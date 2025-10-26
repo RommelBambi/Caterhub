@@ -29,6 +29,14 @@ function HomeStack() {
   );
 }
 
+function FavoritesStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="FavoritesScreen" component={FavoritesScreen} />
+    </Stack.Navigator>
+  );
+}
+
 function BookingsStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -58,6 +66,10 @@ export default function MainTabs() {
               ? focused
                 ? 'home'
                 : 'home-outline'
+              : route.name === 'Favorites'
+              ? focused
+                ? 'heart'
+                : 'heart-outline'
               : route.name === 'Bookings'
               ? focused
                 ? 'calendar'
@@ -70,6 +82,7 @@ export default function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeStack} />
+      <Tab.Screen name="Favorites" component={FavoritesStack} />
       <Tab.Screen name="Bookings" component={BookingsStack} />
       <Tab.Screen name="Account" component={AccountScreen} />
     </Tab.Navigator>
