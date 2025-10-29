@@ -44,13 +44,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLogin, onClose }) => {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ 
-          margin: "0 0 20px 0", 
-          color: COLORS.text, 
-          fontSize: "24px",
-          fontWeight: "900"
-        }}>
-          Admin Login
+        <h2
+          style={{
+            margin: "0 0 20px 0",
+            color: COLORS.text,
+            fontSize: "24px",
+            fontWeight: "900",
+          }}
+        >
+          Professional Login
         </h2>
         
         <form onSubmit={handleSubmit}>

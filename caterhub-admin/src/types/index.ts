@@ -7,7 +7,7 @@ export type AuthUser = {
 };
 
 export type StepKey = "hero" | "step1" | "step2" | "step3" | "step4" | "step5" | "success";
-export type RouteKey = "home" | "partners" | "admin";
+export type RouteKey = "home" | "admin";
 
 export type PartnerForm = {
   businessName: string;
