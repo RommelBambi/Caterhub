@@ -1,4 +1,4 @@
-// src/screens/customer/BookingDetails.tsx
+﻿// src/screens/customer/BookingDetails.tsx
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -7,7 +7,7 @@ import {
   Alert,
   TouchableOpacity,
 } from 'react-native';
-import { Text, ActivityIndicator, Card, Button, Chip } from 'react-native-paper';
+import { Text, ActivityIndicator, Card, Button, Chip, Divider } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchBookingDetails, cancelBooking } from '../../services/api';
 import { useAuth } from '../../store/auth';
@@ -107,6 +107,50 @@ const BookingDetails = ({ route, navigation }: any) => {
       optionName: p.optionName,
     })) ?? [];
 
+  const toNumber = (value: any): number => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const eventDateRaw = b.eventDate ?? b.event_date ?? null;
+  const eventDateObj = eventDateRaw ? new Date(eventDateRaw) : null;
+  const hasValidEventDate =
+    eventDateObj instanceof Date && !Number.isNaN(eventDateObj.getTime());
+  const eventDateDisplay = hasValidEventDate
+    ? eventDateObj.toLocaleDateString()
+    : 'Not set';
+
+  const serviceInfo = b.service ?? b.services ?? {};
+  const guestsCount = toNumber(
+    b.guests ?? meta.guests ?? meta.guestCount ?? meta.guestsCount ?? 0
+  );
+  const pricePerHead = toNumber(
+    serviceInfo.pricePerHead ??
+      serviceInfo.price_per_head ??
+      meta.pricePerHead ??
+      meta.price_per_head ??
+      meta.packagePrice ??
+      meta.price ??
+      0
+  );
+  const transportFee = toNumber(
+    meta.transportFee ??
+      meta.transport_fee ??
+      meta.deliveryFee ??
+      meta.delivery_fee ??
+      b.transportFee ??
+      b.transport_fee ??
+      0
+  );
+  const packageSubtotal = guestsCount * pricePerHead;
+  const totalCost = packageSubtotal + transportFee;
+
+  const formatCurrency = (amount: number) =>
+    `PHP ${toNumber(amount).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
   // Status color (same as BookingsList)
   const statusColor = (s?: string) =>
     s === 'CONFIRMED'
@@ -118,10 +162,6 @@ const BookingDetails = ({ route, navigation }: any) => {
       : s === 'CANCELLED'
       ? '#9ca3af'
       : '#f59e0b'; // PENDING
-
-  // Compute total (use service price or notes)
-  const price = b.service?.pricePerHead ?? meta.pricePerHead ?? 0;
-  const total = Number(price) * Number(b.guests ?? 0);
 
   return (
     <View style={styles.container}>
@@ -143,7 +183,7 @@ const BookingDetails = ({ route, navigation }: any) => {
         <Card style={styles.card}>
           <Card.Content>
             <View style={styles.rowBetween}>
-              <Text style={styles.title}>{b.service?.name}</Text>
+              <Text style={styles.title}>{serviceInfo?.name ?? 'Catering Service'}</Text>
               <Chip
                 compact
                 style={{
@@ -159,21 +199,17 @@ const BookingDetails = ({ route, navigation }: any) => {
             <View style={styles.infoBlock}>
               <View style={styles.row}>
                 <Ionicons name="calendar" size={18} color="#6b7280" />
-                <Text style={styles.label}>
-                  {new Date(b.eventDate).toLocaleDateString()}
-                </Text>
+                <Text style={styles.label}>{eventDateDisplay}</Text>
               </View>
 
               <View style={styles.row}>
                 <Ionicons name="people" size={18} color="#6b7280" />
-                <Text style={styles.label}>{b.guests} Guests</Text>
+                <Text style={styles.label}>{guestsCount} Guests</Text>
               </View>
 
               <View style={styles.row}>
                 <Ionicons name="cash-outline" size={18} color="#6b7280" />
-                <Text style={styles.label}>
-                  ₱{total ? total.toLocaleString() : '0'}
-                </Text>
+                <Text style={styles.label}>{formatCurrency(totalCost)}</Text>
               </View>
 
               {meta.address && (
@@ -218,6 +254,42 @@ const BookingDetails = ({ route, navigation }: any) => {
                 </View>
               </>
             )}
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>Receipt</Text>
+
+            <View style={styles.receiptRow}>
+              <View>
+                <Text style={styles.receiptLabel}>Package</Text>
+                <Text style={styles.receiptSubLabel}>
+                  {guestsCount} guests × {formatCurrency(pricePerHead)}
+                </Text>
+              </View>
+              <Text style={styles.receiptAmount}>
+                {formatCurrency(packageSubtotal)}
+              </Text>
+            </View>
+
+            <View style={styles.receiptRow}>
+              <Text style={styles.receiptLabel}>Transport fee</Text>
+              <Text style={styles.receiptAmount}>
+                {formatCurrency(transportFee)}
+              </Text>
+            </View>
+
+            <Divider style={{ marginVertical: 12 }} />
+
+            <View style={styles.receiptRow}>
+              <Text style={[styles.receiptLabel, styles.receiptTotalLabel]}>
+                Total
+              </Text>
+              <Text style={[styles.receiptAmount, styles.receiptTotalValue]}>
+                {formatCurrency(totalCost)}
+              </Text>
+            </View>
           </Card.Content>
         </Card>
 
@@ -288,6 +360,17 @@ const styles = StyleSheet.create({
   muted: { color: '#6b7280', marginTop: 6 },
   errorText: { color: '#ef4444', fontWeight: '600' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  receiptRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginTop: 12,
+  },
+  receiptLabel: { fontSize: 15, color: '#1f2937', fontWeight: '600' },
+  receiptSubLabel: { fontSize: 13, color: '#6b7280', marginTop: 2 },
+  receiptAmount: { fontSize: 15, color: '#111827', fontWeight: '600' },
+  receiptTotalLabel: { fontSize: 16 },
+  receiptTotalValue: { fontSize: 16, color: '#C836F9' },
 });
 
 export default BookingDetails;

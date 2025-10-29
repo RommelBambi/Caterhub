@@ -1,20 +1,11 @@
 import React from 'react';
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-} from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 
-import {
-  getMyFavorites,
-  Service,
-  fetchServices,
-} from '../../services/services';
+import { getMyFavorites, Service, fetchServices } from '../../services/services';
 import { useAuth } from '../../store/auth';
 
 export default function FavoritesScreen({ navigation }: any) {
@@ -24,28 +15,35 @@ export default function FavoritesScreen({ navigation }: any) {
   const [loading, setLoading] = React.useState(true);
   const [favorites, setFavorites] = React.useState<Service[]>([]);
 
-  React.useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        if (!user) return;
-        setLoading(true);
+  useFocusEffect(
+    React.useCallback(() => {
+      let isActive = true;
+      (async () => {
+        try {
+          setLoading(true);
+          if (!user) {
+            if (isActive) setFavorites([]);
+            return;
+          }
 
-        const favIds = await getMyFavorites();
-        const all = await fetchServices();
-        const favs = all.filter((s) => favIds.includes(Number(s.id)));
+          const [favIds, all] = await Promise.all([getMyFavorites(), fetchServices()]);
+          if (!isActive) return;
 
-        if (mounted) setFavorites(favs);
-      } catch (e) {
-        console.error('Favorites load error:', e);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [user?.id]);
+          const favs = all.filter((s) => favIds.includes(Number(s.id)));
+          setFavorites(favs);
+        } catch (e) {
+          console.error('Favorites load error:', e);
+          if (isActive) setFavorites([]);
+        } finally {
+          if (isActive) setLoading(false);
+        }
+      })();
+
+      return () => {
+        isActive = false;
+      };
+    }, [user?.id])
+  );
 
   const goToDetails = (svc: Service) =>
     navigation.navigate('ServiceDetails', { service: svc });

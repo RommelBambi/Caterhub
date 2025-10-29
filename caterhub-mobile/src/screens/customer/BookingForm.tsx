@@ -1,10 +1,14 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { Text, TextInput, Button, Card, RadioButton } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useForm, Controller } from 'react-hook-form';
 import { createBooking } from '../../services/services';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 
 type FormVals = {
   date: string;
@@ -27,6 +31,10 @@ export default function BookingForm({ route, navigation }: any) {
       notes: initialNotes ?? '',
     },
   });
+
+  const [showDatePicker, setShowDatePicker] = React.useState(false);
+  const [pickerDate, setPickerDate] = React.useState<Date>(new Date());
+  const iosOnChangeRef = React.useRef<((value: string) => void) | null>(null);
 
   const date = watch('date')?.trim() ?? '';
   const guestsStr = watch('guests')?.trim() ?? '';
@@ -71,6 +79,67 @@ export default function BookingForm({ route, navigation }: any) {
     navigation.navigate('Bookings', { flash: 'Booking created!' });
   };
 
+  const parseDateValue = React.useCallback((value?: string) => {
+    if (!value) {
+      return new Date();
+    }
+    const parsed = new Date(`${value}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  }, []);
+
+  const formatDateForDisplay = React.useCallback((value?: string) => {
+    if (!value) return '';
+    const parsed = parseDateValue(value);
+    return parsed.toLocaleDateString();
+  }, [parseDateValue]);
+
+  const formatDateForStorage = React.useCallback((value: Date) => {
+    return value.toISOString().split('T')[0];
+  }, []);
+
+  const openDatePicker = React.useCallback(
+    (currentValue: string | undefined, onChange: (value: string) => void) => {
+      const baseDate = parseDateValue(currentValue);
+
+      if (Platform.OS === 'android') {
+        DateTimePickerAndroid.open({
+          value: baseDate,
+          mode: 'date',
+          display: 'calendar',
+          onChange: (_event: DateTimePickerEvent, selectedDate?: Date) => {
+            if (selectedDate) {
+              onChange(formatDateForStorage(selectedDate));
+            }
+          },
+        });
+        return;
+      }
+
+      iosOnChangeRef.current = onChange;
+      setPickerDate(baseDate);
+      setShowDatePicker(true);
+    },
+    [formatDateForStorage, parseDateValue],
+  );
+
+  const closeIOSPicker = React.useCallback(() => {
+    setShowDatePicker(false);
+    iosOnChangeRef.current = null;
+  }, []);
+
+  const handleIOSDateChange = React.useCallback((_event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (selectedDate) {
+      setPickerDate(selectedDate);
+    }
+  }, []);
+
+  const confirmIOSPicker = React.useCallback(() => {
+    if (iosOnChangeRef.current) {
+      iosOnChangeRef.current(formatDateForStorage(pickerDate));
+    }
+    closeIOSPicker();
+  }, [closeIOSPicker, formatDateForStorage, pickerDate]);
+
   return (
     <View style={[styles.container, { paddingTop: insets.top + 12 }]}>
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
@@ -103,12 +172,35 @@ export default function BookingForm({ route, navigation }: any) {
           name="date"
           rules={{ required: true }}
           render={({ field: { onChange, value } }) => (
-            <TextInput
-              label="Event Date (YYYY-MM-DD)"
-              value={value}
-              onChangeText={onChange}
-              style={styles.input}
-            />
+            <>
+              <TouchableOpacity activeOpacity={0.8} onPress={() => openDatePicker(value, onChange)}>
+                <View pointerEvents="none">
+                  <TextInput
+                    label="Event Date"
+                    value={formatDateForDisplay(value)}
+                    style={styles.input}
+                    editable={false}
+                    right={<TextInput.Icon icon="calendar" forceTextInputFocus={false} />}
+                  />
+                </View>
+              </TouchableOpacity>
+
+              {Platform.OS === 'ios' && showDatePicker && (
+                <View style={styles.iosPickerContainer}>
+                  <View style={styles.iosPickerHeader}>
+                    <Button onPress={closeIOSPicker}>Cancel</Button>
+                    <Button onPress={confirmIOSPicker}>Done</Button>
+                  </View>
+                  <DateTimePicker
+                    value={pickerDate}
+                    mode="date"
+                    display="spinner"
+                    onChange={handleIOSDateChange}
+                    style={{ alignSelf: 'center' }}
+                  />
+                </View>
+              )}
+            </>
           )}
         />
 
@@ -217,4 +309,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   total: { fontWeight: '700', fontSize: 16 },
+  iosPickerContainer: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#f3f4f6',
+  },
+  iosPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
 });

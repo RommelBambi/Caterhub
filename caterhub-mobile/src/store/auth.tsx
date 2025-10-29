@@ -19,7 +19,8 @@ type AuthContext = {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  updateMe: (patch: { location?: string; username?: string }) => Promise<void>;
+  updateMe: (patch: { location?: string | null; username?: string }) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
 
 const Ctx = createContext<AuthContext>(null as any);
@@ -86,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await SecureStore.deleteItemAsync(TOKEN_KEY);
   };
 
-  const updateMe = async (patch: { location?: string; username?: string }) => {
+  const updateMe = async (patch: { location?: string | null; username?: string }) => {
     if (!token) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -102,8 +103,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser((u) => (u ? { ...u, ...data } : data));
   };
 
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!user?.email) throw new Error('Missing email for authenticated user');
+
+    // Re-authenticate to ensure the current password is valid
+    const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword,
+    });
+
+    if (loginError || !loginData.session) {
+      throw new Error('Current password is incorrect');
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const nextToken = sessionData.session?.access_token ?? loginData.session.access_token;
+    if (nextToken) {
+      await SecureStore.setItemAsync(TOKEN_KEY, nextToken);
+      setToken(nextToken);
+      setAxiosAuthHeader(nextToken);
+    }
+  };
+
   return (
-    <Ctx.Provider value={{ user, token, loading, login: loginUser, logout, updateMe }}>
+    <Ctx.Provider value={{ user, token, loading, login: loginUser, logout, updateMe, changePassword }}>
       {children}
     </Ctx.Provider>
   );
