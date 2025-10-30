@@ -6,6 +6,9 @@ import { useForm, Controller } from 'react-hook-form';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../store/auth';
 
+/**
+ * Mobile-optimized login screen
+ */
 export default function LoginScreen({ navigation }: any) {
   const { login } = useAuth();
   const { control, handleSubmit, watch } = useForm({ defaultValues: { email: '', password: '' } });
@@ -16,8 +19,6 @@ export default function LoginScreen({ navigation }: any) {
   const watchEmail = watch('email');
   const watchPass = watch('password');
   const formFilled = watchEmail.trim() !== '' && watchPass.trim() !== '';
-
-  // Check if email input is valid
   const isValidEmail = watchEmail.includes('@') && watchEmail.includes('.');
 
   const onSubmit = async (d: { email: string; password: string }) => {
@@ -25,7 +26,9 @@ export default function LoginScreen({ navigation }: any) {
     try {
       await login(d.email, d.password);
     } catch (err: any) {
-      Alert.alert('Login Failed', err?.message || 'Invalid email or password.');
+      console.error('Login error:', err);
+      const errorMessage = err?.message || err?.error?.message || 'Invalid email or password.';
+      Alert.alert('Login Failed', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -33,7 +36,6 @@ export default function LoginScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      {/* Top section with background and image */}
       <View style={styles.topSection}>
         <TouchableOpacity 
           style={[styles.closeButton, { top: insets.top + 10 }]} 
@@ -49,7 +51,6 @@ export default function LoginScreen({ navigation }: any) {
         />
       </View>
 
-      {/* Bottom card section */}
       <View style={styles.bottomCard}>
         <Text style={styles.title}>Log in or Sign up</Text>
 
@@ -105,12 +106,10 @@ export default function LoginScreen({ navigation }: any) {
           Login
         </Button>
 
-        {/* Divider */}
         <View style={styles.dividerWrap}>
           <View style={styles.line} />
         </View>
 
-        {/* Create account link */}
         <Button
           mode="text"
           onPress={() => navigation.navigate('Register')}
@@ -143,3 +142,4 @@ const styles = StyleSheet.create({
   dividerWrap: { marginTop: 22, marginBottom: 8 },
   line: { height: 1, backgroundColor: '#e5e7eb' },
 });
+

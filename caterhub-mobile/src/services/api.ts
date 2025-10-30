@@ -7,9 +7,13 @@ export async function login(email: string, password: string) {
     password,
   });
   
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase auth error:', error);
+    throw new Error(error.message || 'Invalid email or password.');
+  }
   
   if (!data.session || !data.user) {
+    console.error('No session or user data returned');
     throw new Error('Login failed - no session created');
   }
   
@@ -21,22 +25,32 @@ export async function login(email: string, password: string) {
     .single();
     
   if (profileError) {
-    throw new Error('Failed to fetch user profile');
+    console.error('Profile fetch error:', profileError);
+    // If profile doesn't exist, this might be a new user without a profile
+    if (profileError.code === 'PGRST116') {
+      throw new Error('User profile not found. Please contact support or sign up again.');
+    }
+    throw new Error(`Failed to fetch user profile: ${profileError.message || 'Unknown error'}`);
   }
-    
+  
+  if (!profile) {
+    throw new Error('User profile not found. Please contact support.');
+  }
+  
   return {
     token: data.session.access_token,
     user: profile,
   };
 }
 
-export async function register(email: string, password: string, username: string) {
+export async function register(email: string, password: string, username: string, role: "CUSTOMER" | "CATER" = "CUSTOMER") {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: {
-        username: username
+        username: username,
+        role: role
       }
     }
   });
@@ -44,13 +58,34 @@ export async function register(email: string, password: string, username: string
   if (error) throw error;
   
   // The user profile will be created automatically by the trigger
-  // We just need to return the user data
+  // But we need to update the role if it's CATER
   if (data.user) {
-    const { data: profile } = await supabase
+    // Give trigger a moment to create the user record
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    const { data: profile, error: profileError } = await supabase
       .from('users')
       .select('*')
       .eq('id', data.user.id)
       .single();
+      
+    if (profileError) {
+      throw new Error('Failed to fetch user profile');
+    }
+    
+    // Update role if needed
+    if (role === "CATER" && profile?.role !== "CATER") {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ role: 'CATER' })
+        .eq('id', data.user.id);
+        
+      if (updateError) {
+        console.warn('Failed to update role:', updateError);
+      } else if (profile) {
+        return { ...profile, role: 'CATER' };
+      }
+    }
       
     return profile;
   }

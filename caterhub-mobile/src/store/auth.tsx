@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import * as SecureStore from "expo-secure-store";
 import { supabase } from "../services/supabase";
 import { login, register, getCurrentUser } from "../services/api";
+import { storage } from "../utils/storage";
 
 type Role = "CUSTOMER" | "CATER" | "ADMIN" | "CUSTOM";
+
+const TOKEN_KEY = "caterhub_token";
 
 export type User = {
   id: string; // UUID string, not number
@@ -25,8 +27,6 @@ type AuthContext = {
 
 const Ctx = createContext<AuthContext>(null as any);
 export const useAuth = () => useContext(Ctx);
-
-const TOKEN_KEY = "caterhub_token";
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -54,7 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
         setToken(null);
         setAxiosAuthHeader(null);
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        await storage.removeItem(TOKEN_KEY);
       } finally {
         setLoading(false);
       }
@@ -67,7 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { token, user: userProfile } = await login(email, password);
 
       // persist + set header
-      await SecureStore.setItemAsync(TOKEN_KEY, token);
+      await storage.setItem(TOKEN_KEY, token);
       setAxiosAuthHeader(token);
 
       setToken(token);
@@ -84,7 +84,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setToken(null);
     setAxiosAuthHeader(null);
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await storage.removeItem(TOKEN_KEY);
   };
 
   const updateMe = async (patch: { location?: string | null; username?: string }) => {
@@ -122,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: sessionData } = await supabase.auth.getSession();
     const nextToken = sessionData.session?.access_token ?? loginData.session.access_token;
     if (nextToken) {
-      await SecureStore.setItemAsync(TOKEN_KEY, nextToken);
+      await storage.setItem(TOKEN_KEY, nextToken);
       setToken(nextToken);
       setAxiosAuthHeader(nextToken);
     }
