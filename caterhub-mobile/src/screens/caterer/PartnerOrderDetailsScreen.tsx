@@ -9,10 +9,10 @@ import {
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { PartnerStackParamList } from "../../navigation/partner/PartnerNav";
+import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 
-import Sidebar from "../../components/partner/Sidebar";
-import TopBar from "../../components/partner/TopBar";
+import Sidebar from "../../components/caterer/Sidebar";
+import TopBar from "../../components/caterer/TopBar";
 
 type OrderDetailsRouteParams = {
   order: {

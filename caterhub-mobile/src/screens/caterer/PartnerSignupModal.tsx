@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { PartnerStackParamList } from "../../navigation/partner/PartnerNav";
+import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { register } from "../../services/api";
 
 export default function PartnerSignupModal() {

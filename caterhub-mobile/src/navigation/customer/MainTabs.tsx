@@ -5,13 +5,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import HomeScreen from '../../screens/home/HomeScreen';
+import HomeScreen from '../../screens/customer/HomeScreen';
 import ServiceDetails from '../../screens/customer/ServiceDetails';
 import CustomizePackage from '../../screens/customer/CustomizePackage';
 import BookingForm from '../../screens/customer/BookingForm';
 import BookingsList from '../../screens/customer/BookingsList';
 import BookingDetails from '../../screens/customer/BookingDetails';
-import AccountScreen from '../../screens/common/AccountScreen';
+import AccountScreen from '../../screens/customer/AccountScreen';
 import FavoritesScreen from '../../screens/customer/FavoritesScreen';
 
 const Tab = createBottomTabNavigator();

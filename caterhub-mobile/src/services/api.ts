@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { Platform } from 'react-native';
 
 // Authentication functions
 export async function login(email: string, password: string) {
@@ -35,6 +36,22 @@ export async function login(email: string, password: string) {
   
   if (!profile) {
     throw new Error('User profile not found. Please contact support.');
+  }
+
+  // Validate role/platform combination
+  const isWeb = Platform.OS === 'web';
+  const userRole = profile.role;
+  
+  if (isWeb) {
+    // Web: Only ADMIN and CATER can login
+    if (userRole === 'CUSTOMER') {
+      throw new Error('Customer accounts can only be accessed on mobile devices. Please use the mobile app.');
+    }
+  } else {
+    // Mobile: Only CUSTOMER and CATER can login, not ADMIN
+    if (userRole === 'ADMIN') {
+      throw new Error('Admin accounts can only be accessed on web. Please log in through the web browser.');
+    }
   }
   
   return {

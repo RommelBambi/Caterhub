@@ -11,11 +11,11 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
-import { PartnerStackParamList } from "../../navigation/partner/PartnerNav";
+import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
 
-import Sidebar from "../../components/partner/Sidebar";
-import TopBar from "../../components/partner/TopBar";
+import Sidebar from "../../components/caterer/Sidebar";
+import TopBar from "../../components/caterer/TopBar";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -1025,7 +1025,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     alignSelf: "flex-start",
-    shadowColor人民币: "#000",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 12,

@@ -42,8 +42,8 @@ export default function LoginScreen({ navigation }: any) {
                 style={styles.logo}
                 resizeMode="contain"
               />
-              <Text style={styles.title}>Partner Login</Text>
-              <Text style={styles.subtitle}>Access your catering dashboard</Text>
+              <Text style={styles.title}>Partner & Admin Login</Text>
+              <Text style={styles.subtitle}>Login for partners and administrators (web only)</Text>
             </View>
 
             <View style={styles.form}>
@@ -60,8 +60,10 @@ export default function LoginScreen({ navigation }: any) {
                     autoCapitalize="none"
                     keyboardType="email-address"
                     style={styles.input}
+                    textColor="#1f2937"
                     outlineColor="#e5e7eb"
                     activeOutlineColor="#C836F9"
+                    contentStyle={styles.inputContent}
                   />
                 )}
               />
@@ -84,8 +86,10 @@ export default function LoginScreen({ navigation }: any) {
                       />
                     }
                     style={styles.input}
+                    textColor="#1f2937"
                     outlineColor="#e5e7eb"
                     activeOutlineColor="#C836F9"
+                    contentStyle={styles.inputContent}
                   />
                 )}
               />
@@ -176,6 +180,9 @@ const styles = StyleSheet.create({
   input: {
     marginBottom: 16,
     backgroundColor: '#fff',
+  },
+  inputContent: {
+    color: '#1f2937',
   },
   loginBtn: {
     marginTop: 8,

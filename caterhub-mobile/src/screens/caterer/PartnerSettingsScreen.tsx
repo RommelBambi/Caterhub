@@ -11,10 +11,10 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
-import Sidebar from "../../components/partner/Sidebar";
-import TopBar from "../../components/partner/TopBar";
+import Sidebar from "../../components/caterer/Sidebar";
+import TopBar from "../../components/caterer/TopBar";
 
-import { PartnerStackParamList } from "../../navigation/partner/PartnerNav";
+import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";

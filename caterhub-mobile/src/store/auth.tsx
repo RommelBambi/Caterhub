@@ -21,6 +21,7 @@ type AuthContext = {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   updateMe: (patch: { location?: string | null; username?: string }) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
@@ -80,11 +81,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    // Sign out from Supabase (this clears Supabase session)
     await supabase.auth.signOut();
+    
+    // Clear local state
     setUser(null);
     setToken(null);
     setAxiosAuthHeader(null);
     await storage.removeItem(TOKEN_KEY);
+    
+    // On web, also clear all Supabase-related localStorage items
+    if (typeof window !== 'undefined') {
+      const supabaseKeys = Object.keys(localStorage).filter(key => 
+        key.startsWith('sb-') || key.includes('supabase')
+      );
+      supabaseKeys.forEach(key => localStorage.removeItem(key));
+    }
+  };
+
+  const refreshUser = async () => {
+    try {
+      const userProfile = await getCurrentUser();
+      if (userProfile) {
+        setUser(userProfile as User);
+      }
+    } catch (error) {
+      console.error('Error refreshing user:', error);
+    }
   };
 
   const updateMe = async (patch: { location?: string | null; username?: string }) => {
@@ -129,7 +152,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <Ctx.Provider value={{ user, token, loading, login: loginUser, logout, updateMe, changePassword }}>
+    <Ctx.Provider value={{ user, token, loading, login: loginUser, logout, refreshUser, updateMe, changePassword }}>
       {children}
     </Ctx.Provider>
   );

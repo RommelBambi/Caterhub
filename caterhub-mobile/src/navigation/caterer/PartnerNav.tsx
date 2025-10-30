@@ -1,13 +1,13 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import PartnerHomeScreen from '../../screens/partner/PartnerHomeScreen';
-import PartnerDashboardScreen from '../../screens/partner/PartnerDashboardScreen';
-import PartnerOrdersScreen from '../../screens/partner/PartnerOrdersScreen';
-import PartnerOrderDetailsScreen from '../../screens/partner/PartnerOrderDetailsScreen';
-import PartnerManagePackagesScreen from '../../screens/partner/PartnerManagePackagesScreen';
-import PartnerSettingsScreen from '../../screens/partner/PartnerSettingsScreen';
-import PartnerLoginModal from '../../screens/partner/PartnerLoginModal';
-import PartnerSignupModal from '../../screens/partner/PartnerSignupModal';
+import PartnerHomeScreen from '../../screens/caterer/PartnerHomeScreen';
+import PartnerDashboardScreen from '../../screens/caterer/PartnerDashboardScreen';
+import PartnerOrdersScreen from '../../screens/caterer/PartnerOrdersScreen';
+import PartnerOrderDetailsScreen from '../../screens/caterer/PartnerOrderDetailsScreen';
+import PartnerManagePackagesScreen from '../../screens/caterer/PartnerManagePackagesScreen';
+import PartnerSettingsScreen from '../../screens/caterer/PartnerSettingsScreen';
+import PartnerLoginModal from '../../screens/caterer/PartnerLoginModal';
+import PartnerSignupModal from '../../screens/caterer/PartnerSignupModal';
 
 export type PartnerStackParamList = {
   PartnerHome: undefined;

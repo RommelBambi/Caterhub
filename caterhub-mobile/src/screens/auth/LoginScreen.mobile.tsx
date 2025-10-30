@@ -53,6 +53,7 @@ export default function LoginScreen({ navigation }: any) {
 
       <View style={styles.bottomCard}>
         <Text style={styles.title}>Log in or Sign up</Text>
+        <Text style={styles.subtitle}>For customers and partners (mobile app)</Text>
 
         <Controller
           control={control}
@@ -137,6 +138,7 @@ const styles = StyleSheet.create({
     marginTop: -50,
   },
   title: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
+  subtitle: { fontSize: 13, color: '#6b7280', marginBottom: 16 },
   input: { marginTop: 10 },
   loginBtn: { marginTop: 16, paddingVertical: 6 },
   dividerWrap: { marginTop: 22, marginBottom: 8 },

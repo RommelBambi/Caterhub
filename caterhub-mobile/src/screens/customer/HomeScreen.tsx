@@ -1,4 +1,4 @@
-// src/screens/home/HomeScreen.tsx
+// src/screens/customer/HomeScreen.tsx
 import React from 'react';
 import {
   View,

@@ -98,8 +98,10 @@ export default function RegisterScreen({ navigation }: any) {
                       onChangeText={onChange}
                       autoCapitalize="none"
                       style={styles.webInput}
+                      textColor="#1f2937"
                       outlineColor="#e5e7eb"
                       activeOutlineColor="#C836F9"
+                      contentStyle={styles.webInputContent}
                     />
                   )}
                 />
@@ -117,8 +119,10 @@ export default function RegisterScreen({ navigation }: any) {
                       autoCapitalize="none"
                       keyboardType="email-address"
                       style={styles.webInput}
+                      textColor="#1f2937"
                       outlineColor="#e5e7eb"
                       activeOutlineColor="#C836F9"
+                      contentStyle={styles.webInputContent}
                     />
                   )}
                 />
@@ -141,8 +145,10 @@ export default function RegisterScreen({ navigation }: any) {
                         />
                       }
                       style={styles.webInput}
+                      textColor="#1f2937"
                       outlineColor="#e5e7eb"
                       activeOutlineColor="#C836F9"
+                      contentStyle={styles.webInputContent}
                     />
                   )}
                 />
@@ -165,8 +171,10 @@ export default function RegisterScreen({ navigation }: any) {
                         />
                       }
                       style={styles.webInput}
+                      textColor="#1f2937"
                       outlineColor="#e5e7eb"
                       activeOutlineColor="#C836F9"
+                      contentStyle={styles.webInputContent}
                     />
                   )}
                 />
@@ -407,6 +415,9 @@ const styles = StyleSheet.create({
   webInput: {
     marginBottom: 16,
     backgroundColor: '#fff',
+  },
+  webInputContent: {
+    color: '#1f2937',
   },
   webSignupBtn: {
     marginTop: 8,

@@ -3,13 +3,13 @@ import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
-import { PartnerStackParamList } from "../../navigation/partner/PartnerNav";
+import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
 
-import Sidebar from "../../components/partner/Sidebar";
-import TopBar from "../../components/partner/TopBar";
-import KPIBlock from "../../components/partner/KPIBlock";
-import BookingList, { Booking } from "../../components/partner/BookingList";
+import Sidebar from "../../components/caterer/Sidebar";
+import TopBar from "../../components/caterer/TopBar";
+import KPIBlock from "../../components/caterer/KPIBlock";
+import BookingList, { Booking } from "../../components/caterer/BookingList";
 
 export default function PartnerDashboardScreen() {
   const navigation =
