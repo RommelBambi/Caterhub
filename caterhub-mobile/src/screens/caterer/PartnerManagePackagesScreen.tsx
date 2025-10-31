@@ -6,7 +6,9 @@ import {
   ScrollView,
   Pressable,
   Alert,
-  TextInput
+  TextInput,
+  ActivityIndicator,
+  TouchableOpacity
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -17,7 +19,7 @@ import { useAuth } from "../../store/auth";
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase } from "../../services/supabase";
 
 type CategoryKey = "pork" | "beef" | "chicken" | "vegetable" | "beverages";
 
@@ -54,6 +56,7 @@ export default function PartnerManagePackagesScreen() {
 
   // all saved packages for that caterer
   const [packages, setPackages] = useState<CateringPackage[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // which package are we editing (null = new)
   const [editingPackageId, setEditingPackageId] = useState<string | null>(
@@ -89,40 +92,43 @@ export default function PartnerManagePackagesScreen() {
       return;
     }
 
-    // TODO: Replace AsyncStorage with Supabase
-    (async () => {
-      const stored = await loadPackagesForUser(user.username);
-      setPackages(stored);
-    })();
+    loadPackagesFromSupabase();
   }, [navigation, user]);
 
-  // -------- storage helpers --------
-  // TODO: Replace with Supabase
-  async function loadPackagesForUser(username: string) {
+  // -------- Supabase storage helpers --------
+  async function loadPackagesFromSupabase() {
+    if (!user) return;
+    
+    setLoading(true);
     try {
-      const raw = await AsyncStorage.getItem(
-        "caterhub_packages_" + username
-      );
-      if (!raw) return [];
-      return JSON.parse(raw) as CateringPackage[];
-    } catch (err) {
-      console.warn("Failed to load packages", err);
-      return [];
-    }
-  }
+      const { data, error } = await supabase
+        .from('packages')
+        .select('*')
+        .eq('caterer_id', user.id)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
 
-  // TODO: Replace with Supabase
-  async function savePackagesForUser(
-    username: string,
-    pkgs: CateringPackage[]
-  ) {
-    try {
-      await AsyncStorage.setItem(
-        "caterhub_packages_" + username,
-        JSON.stringify(pkgs)
-      );
+      if (error) {
+        console.error('Error loading packages:', error);
+        Alert.alert('Error', 'Failed to load packages');
+        return;
+      }
+
+      // Transform Supabase data to CateringPackage format
+      const transformedPackages: CateringPackage[] = (data || []).map(pkg => ({
+        id: pkg.id,
+        name: pkg.name,
+        price: pkg.price,
+        sections: pkg.sections || [],
+        inclusions: pkg.inclusions || [],
+      }));
+
+      setPackages(transformedPackages);
     } catch (err) {
-      console.warn("Failed to save packages", err);
+      console.error('Failed to load packages', err);
+      Alert.alert('Error', 'Failed to load packages');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -158,13 +164,45 @@ export default function PartnerManagePackagesScreen() {
   const handleDeletePackage = useCallback(
     async (id: string) => {
       if (!user) return;
-      const filtered = packages.filter((p) => p.id !== id);
-      setPackages(filtered);
-      await savePackagesForUser(user.username, filtered);
 
-      if (editingPackageId === id) {
-        handleNewPackage();
-      }
+      Alert.alert(
+        'Delete Package',
+        'Are you sure you want to delete this package? This action cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                // Soft delete by setting is_active to false
+                const { error } = await supabase
+                  .from('packages')
+                  .update({ is_active: false })
+                  .eq('id', id)
+                  .eq('caterer_id', user.id);
+
+                if (error) {
+                  throw error;
+                }
+
+                // Remove from local state
+                const filtered = packages.filter((p) => p.id !== id);
+                setPackages(filtered);
+
+                if (editingPackageId === id) {
+                  handleNewPackage();
+                }
+
+                Alert.alert('Success', 'Package deleted successfully');
+              } catch (error: any) {
+                console.error('Error deleting package:', error);
+                Alert.alert('Error', error?.message || 'Failed to delete package');
+              }
+            },
+          },
+        ]
+      );
     },
     [editingPackageId, handleNewPackage, packages, user]
   );
@@ -252,7 +290,7 @@ export default function PartnerManagePackagesScreen() {
     setInclusions((prev) => prev.filter((_, i) => i !== index));
   }
 
-  // save package to storage (TODO: Supabase)
+  // save package to Supabase
   async function handleSavePackage() {
     if (!user) return;
 
@@ -284,40 +322,90 @@ export default function PartnerManagePackagesScreen() {
       return;
     }
 
-    const pkgToSave: CateringPackage = {
-      id: editingPackageId ? editingPackageId : `pkg_${Date.now()}`,
-      name: pkgName.trim(),
-      price: pkgPrice.trim(),
-      sections: sections,
-      inclusions: inclusions
-    };
+    try {
+      const packageData = {
+        caterer_id: user.id,
+        name: pkgName.trim(),
+        price: pkgPrice.trim(),
+        sections: sections,
+        inclusions: inclusions,
+        is_active: true,
+      };
 
-    let updated: CateringPackage[];
-    if (editingPackageId) {
-      updated = packages.map((p) =>
-        p.id === editingPackageId ? pkgToSave : p
+      let savedPackage;
+      if (editingPackageId) {
+        // Update existing package
+        const { data, error } = await supabase
+          .from('packages')
+          .update(packageData)
+          .eq('id', editingPackageId)
+          .eq('caterer_id', user.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        savedPackage = data;
+      } else {
+        // Create new package
+        const { data, error } = await supabase
+          .from('packages')
+          .insert(packageData)
+          .select()
+          .single();
+
+        if (error) throw error;
+        savedPackage = data;
+      }
+
+      // Transform to CateringPackage format
+      const pkgToSave: CateringPackage = {
+        id: savedPackage.id,
+        name: savedPackage.name,
+        price: savedPackage.price,
+        sections: savedPackage.sections || [],
+        inclusions: savedPackage.inclusions || [],
+      };
+
+      // Update local state
+      let updated: CateringPackage[];
+      if (editingPackageId) {
+        updated = packages.map((p) =>
+          p.id === editingPackageId ? pkgToSave : p
+        );
+      } else {
+        updated = [...packages, pkgToSave];
+      }
+      setPackages(updated);
+
+      Alert.alert(
+        "Saved",
+        editingPackageId
+          ? "Package updated successfully."
+          : "New package created successfully."
       );
-    } else {
-      updated = [...packages, pkgToSave];
+
+      // stay in edit mode with the same id
+      setEditingPackageId(pkgToSave.id);
+    } catch (error: any) {
+      console.error('Error saving package:', error);
+      Alert.alert('Error', error?.message || 'Failed to save package');
     }
-
-    setPackages(updated);
-    await savePackagesForUser(user.username, updated);
-
-    Alert.alert(
-      "Saved",
-      editingPackageId
-        ? "Package updated."
-        : "New package created."
-    );
-
-    // stay in edit mode with the same id
-    setEditingPackageId(pkgToSave.id);
   }
 
   // -------- subcomponents --------
 
   function SavedPackagesList() {
+    if (loading) {
+      return (
+        <View style={styles.emptyBox}>
+          <ActivityIndicator size="large" color="#9333ea" />
+          <Text style={[styles.emptyText, { marginTop: 16 }]}>
+            Loading packages...
+          </Text>
+        </View>
+      );
+    }
+
     if (packages.length === 0) {
       return (
         <View style={styles.emptyBox}>
@@ -356,19 +444,21 @@ export default function PartnerManagePackagesScreen() {
             </View>
 
             <View style={styles.savedBtnCol}>
-              <Pressable
+              <TouchableOpacity
                 style={[styles.smallBtn, styles.editBtn]}
                 onPress={() => handleEditPackage(pkg)}
+                activeOpacity={0.7}
               >
                 <Text style={styles.editBtnText}>Edit</Text>
-              </Pressable>
+              </TouchableOpacity>
 
-              <Pressable
+              <TouchableOpacity
                 style={[styles.smallBtn, styles.deleteBtn]}
                 onPress={() => handleDeletePackage(pkg.id)}
+                activeOpacity={0.7}
               >
                 <Text style={styles.deleteBtnText}>Delete</Text>
-              </Pressable>
+              </TouchableOpacity>
             </View>
           </View>
         ))}
@@ -808,29 +898,30 @@ const styles = StyleSheet.create({
     marginBottom: 16
   },
   pageTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827"
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 8
   },
   pageSubTitle: {
     color: "#6b7280",
-    fontSize: 13,
+    fontSize: 14,
     marginTop: 4,
-    maxWidth: 400,
-    lineHeight: 18
+    maxWidth: 600,
+    lineHeight: 20
   },
 
   sectionCard: {
     backgroundColor: "#fff",
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    borderRadius: 8,
-    padding: 16,
+    borderRadius: 12,
+    padding: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    elevation: 2
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3
   },
 
   sectionInnerCard: {
@@ -868,10 +959,10 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 18,
+    fontWeight: "800",
     color: "#111827",
-    marginBottom: 4
+    marginBottom: 8
   },
   smallMuted: {
     fontSize: 12,
@@ -881,33 +972,40 @@ const styles = StyleSheet.create({
   },
 
   savedWrapper: {
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 8,
-    backgroundColor: "#fff"
+    gap: 12
   },
   savedCard: {
     flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-    paddingHorizontal: 12,
-    paddingVertical: 12
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2
   },
   savedName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
-    color: "#111827"
+    color: "#111827",
+    marginBottom: 4
   },
   savedPrice: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "600",
-    color: "#4b5563",
-    marginTop: 2
+    color: "#9333ea",
+    marginTop: 2,
+    marginBottom: 8
   },
   savedSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#6b7280",
-    marginTop: 4
+    marginTop: 4,
+    lineHeight: 18
   },
   savedBtnCol: {
     justifyContent: "center",
@@ -915,12 +1013,17 @@ const styles = StyleSheet.create({
     marginLeft: 12
   },
   smallBtn: {
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    marginBottom: 6,
-    minWidth: 70,
-    alignItems: "center"
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    minWidth: 80,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2
   },
   editBtn: {
     backgroundColor: "#9333ea"
@@ -962,11 +1065,11 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    fontWeight: "600",
-    fontSize: 13,
+    fontWeight: "700",
+    fontSize: 14,
     color: "#111827",
-    marginBottom: 4,
-    marginTop: 12
+    marginBottom: 8,
+    marginTop: 16
   },
 
   input: {
@@ -975,9 +1078,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderRadius: 8,
     paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     fontSize: 14,
-    color: "#111827"
+    color: "#111827",
+    marginBottom: 4
   },
 
   /* add-section picker row */

@@ -242,6 +242,41 @@ export interface Database {
           updated_at?: string;
         };
       };
+      packages: {
+        Row: {
+          id: string;
+          caterer_id: string;
+          name: string;
+          price: string;
+          sections: any; // JSONB array of PackageSection
+          inclusions: any; // JSONB array of PackageInclusion
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          caterer_id: string;
+          name: string;
+          price: string;
+          sections?: any;
+          inclusions?: any;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          caterer_id?: string;
+          name?: string;
+          price?: string;
+          sections?: any;
+          inclusions?: any;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
   };
 }
