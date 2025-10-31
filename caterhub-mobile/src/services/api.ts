@@ -89,38 +89,120 @@ export async function register(email: string, password: string, username: string
   while (retries > 0 && !profile) {
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    const { data: fetchedProfile, error: profileError } = await supabase
+    // Try to fetch by ID first
+    let fetchedProfile = null;
+    let profileError = null;
+    
+    const { data: profileById, error: errorById } = await supabase
       .from('users')
       .select('*')
       .eq('id', data.user.id)
       .single();
       
-    if (!profileError && fetchedProfile) {
+    if (!errorById && profileById) {
+      fetchedProfile = profileById;
+    } else {
+      // If ID query fails (might be RLS issue), try by email
+      const { data: profileByEmail, error: errorByEmail } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', data.user.email || email)
+        .single();
+        
+      if (!errorByEmail && profileByEmail) {
+        fetchedProfile = profileByEmail;
+      } else {
+        profileError = errorById || errorByEmail;
+      }
+    }
+      
+    if (fetchedProfile) {
       profile = fetchedProfile;
       break;
     }
     
-    // If profile doesn't exist, try to create it manually
-    if (profileError && profileError.code === 'PGRST116') {
-      console.log('User profile not found, creating manually...');
-      const { data: newProfile, error: insertError } = await supabase
-        .from('users')
-        .insert({
-          id: data.user.id,
-          email: data.user.email || email,
-          username: username,
-          role: role
-        })
-        .select()
-        .single();
+      // If profile doesn't exist, wait a bit more and try again (trigger might be slow)
+      // PGRST116 = no rows returned, also check for 406 errors (RLS blocking)
+      if (profileError && (profileError.code === 'PGRST116' || profileError.code === 'PGRST406')) {
+        console.log('User profile not found, waiting for trigger...');
+        // Wait a bit longer for the trigger
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
-      if (!insertError && newProfile) {
-        profile = newProfile;
-        break;
-      } else {
-        console.error('Failed to create user profile manually:', insertError);
+        // Try fetching again
+        const { data: retryProfile, error: retryError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+          
+        if (!retryError && retryProfile) {
+          profile = retryProfile;
+          break;
+        }
+        
+        // If still not found, try to create it manually (should work with RLS policy)
+        console.log('Trigger did not create profile, attempting manual creation...');
+        
+        // Generate unique username if "Partner" is used (common default)
+        let finalUsername = username;
+        if (username === 'Partner' || !username || username.trim() === '') {
+          // Use email prefix or generate unique username
+          const emailPrefix = (data.user.email || email).split('@')[0];
+          finalUsername = emailPrefix || `user_${data.user.id.substring(0, 8)}`;
+        }
+        
+        // Check if username exists and generate unique one if needed
+        let uniqueUsername = finalUsername;
+        let usernameCounter = 0;
+        while (usernameCounter < 10) {
+          const { data: existingUser } = await supabase
+            .from('users')
+            .select('id')
+            .eq('username', uniqueUsername)
+            .single();
+            
+          if (!existingUser) {
+            // Username is available
+            break;
+          }
+          
+          // Username exists, try with number
+          usernameCounter++;
+          uniqueUsername = `${finalUsername}_${usernameCounter}`;
+        }
+        
+        const { data: newProfile, error: insertError } = await supabase
+          .from('users')
+          .insert({
+            id: data.user.id,
+            email: data.user.email || email,
+            username: uniqueUsername,
+            role: role
+          })
+          .select()
+          .single();
+          
+        if (!insertError && newProfile) {
+          profile = newProfile;
+          break;
+        } else {
+          console.error('Failed to create user profile manually:', insertError);
+          // If it's a duplicate username error, the profile might actually exist
+          if (insertError?.code === '23505' && insertError?.message?.includes('username')) {
+            // Try fetching by email instead
+            const { data: emailProfile } = await supabase
+              .from('users')
+              .select('*')
+              .eq('email', data.user.email || email)
+              .single();
+              
+            if (emailProfile) {
+              profile = emailProfile;
+              break;
+            }
+          }
+        }
       }
-    }
     
     retries--;
   }

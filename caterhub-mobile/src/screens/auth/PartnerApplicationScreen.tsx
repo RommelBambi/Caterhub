@@ -1075,7 +1075,23 @@ export default function PartnerApplicationScreen() {
   }, [step]);
 
   useEffect(() => {
-    loadForm().then(setForm);
+    const loadInitialData = async () => {
+      // Load form data
+      const formData = await loadForm();
+      setForm(formData);
+      
+      // Check if user is already logged in
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.email && !formData.ownerEmail) {
+        // User is logged in but form doesn't have email, update it
+        setForm((prev) => ({
+          ...prev,
+          ownerEmail: user.email || '',
+        }));
+      }
+    };
+    
+    loadInitialData();
   }, []);
 
   useEffect(() => {
@@ -1106,26 +1122,84 @@ export default function PartnerApplicationScreen() {
 
   const handleAccountCreation = async (email: string, password: string) => {
     try {
-      // Create the account with CATER role
-      const { register } = await import('../../services/api');
-      const userProfile = await register(email, password, form.ownerName || 'Partner', 'CATER');
+      // Check if user is already logged in
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
       
-      if (!userProfile?.id) {
-        throw new Error('Failed to get user ID after registration');
+      if (currentUser) {
+        // User is already logged in, just update the form with their email
+        const userEmail = currentUser.email || email;
+        const formWithEmail = {
+          ...form,
+          ownerEmail: userEmail,
+        };
+        setForm(formWithEmail);
+        
+        // Refresh auth state
+        await refreshUser();
+        
+        // Proceed to next step (Business Profile)
+        next();
+        return;
       }
 
-      // Update form with email (saveForm will be called automatically by useEffect)
-      const formWithEmail = {
-        ...form,
-        ownerEmail: email,
-      };
-      setForm(formWithEmail);
-      
-      // Refresh auth state to ensure user is logged in
-      await refreshUser();
-      
-      // Proceed to next step (Business Profile)
-      next();
+      // User is not logged in, create the account
+      try {
+        const { register } = await import('../../services/api');
+        const userProfile = await register(email, password, form.ownerName || 'Partner', 'CATER');
+        
+        if (!userProfile?.id) {
+          throw new Error('Failed to get user ID after registration');
+        }
+
+        // Update form with email (saveForm will be called automatically by useEffect)
+        const formWithEmail = {
+          ...form,
+          ownerEmail: email,
+        };
+        setForm(formWithEmail);
+        
+        // Refresh auth state to ensure user is logged in
+        await refreshUser();
+        
+        // Proceed to next step (Business Profile)
+        next();
+      } catch (regError: any) {
+        // If account already exists, try to sign in instead
+        if (regError?.message?.includes('already registered') || regError?.message?.includes('User already registered')) {
+          try {
+            const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+              email,
+              password,
+            });
+            
+            if (loginError || !loginData.user) {
+              throw new Error('Account exists but password is incorrect. Please use the correct password or reset it.');
+            }
+            
+            // User successfully logged in, update form
+            const formWithEmail = {
+              ...form,
+              ownerEmail: email,
+            };
+            setForm(formWithEmail);
+            
+            // Refresh auth state
+            await refreshUser();
+            
+            // Proceed to next step
+            next();
+          } catch (loginErr: any) {
+            console.error('Login error:', loginErr);
+            Alert.alert(
+              "Account Exists",
+              "An account with this email already exists. Please log in with your password, or use a different email address."
+            );
+            throw loginErr;
+          }
+        } else {
+          throw regError;
+        }
+      }
     } catch (error: any) {
       console.error('Account creation error:', error);
       const errorMessage = error?.message || 'Failed to create account. Please try again.';
