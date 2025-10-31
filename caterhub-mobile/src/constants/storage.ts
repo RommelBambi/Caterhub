@@ -14,15 +14,32 @@ export const STORAGE_KEYS = {
 
 export const EMPTY_PARTNER_FORM = {
   businessName: "",
-  city: "",
-  address: "",
+  locations: [
+    {
+      id: Date.now().toString(),
+      country: "",
+      province: "",
+      city: "",
+      postalCode: "",
+      address: "",
+    },
+  ] as Array<{
+    id: string;
+    country: string;
+    province: string;
+    city: string;
+    postalCode: string;
+    address: string;
+    latitude?: number;
+    longitude?: number;
+  }>,
   website: "",
-  years: "",
-  cuisines: [] as string[],
-  pricePerHead: "",
+  cuisineCategories: {} as { [category: string]: string[] },
   ownerName: "",
   ownerPhone: "",
   ownerEmail: "",
+  telephoneNumber: "",
+  contactNumber: "",
   bankName: "",
   bankAccountName: "",
   bankAccountNumber: "",

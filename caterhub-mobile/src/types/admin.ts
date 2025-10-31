@@ -6,20 +6,35 @@ export type AuthUser = {
   role: Role;
 };
 
-export type StepKey = "hero" | "step1" | "step2" | "step3" | "step4" | "step5" | "success";
+export type StepKey = "hero" | "step1" | "step2" | "step3" | "step4" | "step5" | "step6" | "waiting";
 export type RouteKey = "home" | "admin";
+
+export type BusinessLocation = {
+  id: string;
+  country: string;
+  province: string;
+  city: string;
+  postalCode: string;
+  address: string;
+  latitude?: number;
+  longitude?: number;
+};
+
+export type CuisineCategory = {
+  name: string;
+  items: string[];
+};
 
 export type PartnerForm = {
   businessName: string;
-  city: string;
-  address: string;
+  locations: BusinessLocation[];
   website: string;
-  years: string;
-  cuisines: string[];
-  pricePerHead: string;
+  cuisineCategories: { [category: string]: string[] }; // e.g., { "Italian": ["Pasta", "Pizza"] }
   ownerName: string;
   ownerPhone: string;
   ownerEmail: string;
+  telephoneNumber?: string;
+  contactNumber?: string;
   bankName: string;
   bankAccountName: string;
   bankAccountNumber: string;
@@ -32,6 +47,12 @@ export type PartnerForm = {
   foodSafety: boolean;
   agreeTerms: boolean;
   notes: string;
+  // Deprecated fields (kept for migration)
+  city?: string;
+  address?: string;
+  cuisines?: string[];
+  pricePerHead?: string;
+  years?: string;
 };
 
 // Admin types

@@ -3,8 +3,10 @@ import { View, Image, StyleSheet, TouchableOpacity, Alert, Platform } from 'reac
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button, Card } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { register } from '../../services/api';
+import PartnerApplicationScreen from './PartnerApplicationScreen';
 
 type Form = {
   username: string;
@@ -13,7 +15,8 @@ type Form = {
   confirm: string;
 };
 
-export default function RegisterScreen({ navigation }: any) {
+export default function RegisterScreen() {
+  const navigation = useNavigation<any>();
   const { control, handleSubmit, watch } = useForm<Form>({
     defaultValues: { username: '', email: '', password: '', confirm: '' },
   });
@@ -22,6 +25,7 @@ export default function RegisterScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
+  const canGoBack = navigation.canGoBack();
 
   // Watch fields live
   const watchUsername = watch('username');
@@ -68,10 +72,24 @@ export default function RegisterScreen({ navigation }: any) {
     }
   };
 
-  // Web-optimized layout for partners
+  // Web-optimized layout for partners - use multi-step application
   if (isWeb) {
+    return <PartnerApplicationScreen />;
+  }
+
+  // Original web layout (not used, but kept for reference)
+  if (false && isWeb) {
     return (
       <View style={styles.webContainer}>
+        {canGoBack && (
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.webBackButton}
+          >
+            <Ionicons name="arrow-back" size={24} color="#6b7280" />
+            <Text style={styles.webBackButtonText}>Back</Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.webCentered}>
           <Card style={styles.webCard}>
             <Card.Content style={styles.webCardContent}>
@@ -373,6 +391,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    position: 'relative',
+  },
+  webBackButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  webBackButtonText: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
   },
   webCentered: {
     width: '100%',

@@ -12,7 +12,7 @@ interface FieldProps {
   secureTextEntry?: boolean;
 }
 
-const Label: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+export const Label: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Text style={styles.label}>{children}</Text>
 );
 

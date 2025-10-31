@@ -1,17 +1,22 @@
 import React, { useState } from 'react';
-import { View, Image, StyleSheet } from 'react-native';
+import { View, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text, TextInput, Button, Card } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../store/auth';
 
 /**
  * Web-optimized login screen for partners
  */
-export default function LoginScreen({ navigation }: any) {
+export default function LoginScreen() {
+  const navigation = useNavigation<any>();
   const { login } = useAuth();
   const { control, handleSubmit, watch } = useForm({ defaultValues: { email: '', password: '' } });
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const canGoBack = navigation.canGoBack();
 
   const watchEmail = watch('email');
   const watchPass = watch('password');
@@ -33,6 +38,15 @@ export default function LoginScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
+      {canGoBack && (
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={24} color="#6b7280" />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+      )}
       <View style={styles.centered}>
         <Card style={styles.card}>
           <Card.Content style={styles.cardContent}>
@@ -138,6 +152,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    position: 'relative',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  backButtonText: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
   },
   centered: {
     width: '100%',

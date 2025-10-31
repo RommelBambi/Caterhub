@@ -8,7 +8,7 @@ interface StepperProps {
 }
 
 export const Stepper: React.FC<StepperProps> = ({ current }) => {
-  const items = ['Business', 'Owner', 'Menu', 'Compliance', 'Review'];
+  const items = ['Business', 'Owner', 'Compliance', 'Review', 'Account'];
 
   return (
     <Card pad={16}>
