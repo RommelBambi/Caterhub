@@ -8,6 +8,7 @@ import PartnerManagePackagesScreen from '../../screens/caterer/PartnerManagePack
 import PartnerSettingsScreen from '../../screens/caterer/PartnerSettingsScreen';
 import PartnerLoginModal from '../../screens/caterer/PartnerLoginModal';
 import PartnerSignupModal from '../../screens/caterer/PartnerSignupModal';
+import { useAuth } from '../../store/auth';
 
 export type PartnerStackParamList = {
   PartnerHome: undefined;
@@ -36,8 +37,16 @@ export type PartnerStackParamList = {
 const Stack = createNativeStackNavigator<PartnerStackParamList>();
 
 export default function PartnerNav() {
+  const { token, user } = useAuth();
+  
+  // If user is already authenticated, start with Dashboard
+  // Otherwise, start with Home (for mobile login flow)
+  const initialRouteName = (token && user?.role === 'CATER') 
+    ? 'PartnerDashboard' 
+    : 'PartnerHome';
+
   return (
-    <Stack.Navigator>
+    <Stack.Navigator initialRouteName={initialRouteName}>
       <Stack.Screen
         name="PartnerHome"
         component={PartnerHomeScreen}
