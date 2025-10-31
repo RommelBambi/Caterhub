@@ -72,42 +72,78 @@ export async function register(email: string, password: string, username: string
     }
   });
   
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase auth signup error:', error);
+    throw new Error(error.message || 'Failed to create account. Please try again.');
+  }
   
-  // The user profile will be created automatically by the trigger
-  // But we need to update the role if it's CATER
-  if (data.user) {
-    // Give trigger a moment to create the user record
+  if (!data.user) {
+    throw new Error('User creation failed - no user data returned');
+  }
+  
+  // The user profile should be created automatically by the trigger
+  // If the trigger fails, try to create it manually
+  let profile = null;
+  let retries = 3;
+  
+  while (retries > 0 && !profile) {
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    const { data: profile, error: profileError } = await supabase
+    const { data: fetchedProfile, error: profileError } = await supabase
       .from('users')
       .select('*')
       .eq('id', data.user.id)
       .single();
       
-    if (profileError) {
-      throw new Error('Failed to fetch user profile');
+    if (!profileError && fetchedProfile) {
+      profile = fetchedProfile;
+      break;
     }
     
-    // Update role if needed
-    if (role === "CATER" && profile?.role !== "CATER") {
-      const { error: updateError } = await supabase
+    // If profile doesn't exist, try to create it manually
+    if (profileError && profileError.code === 'PGRST116') {
+      console.log('User profile not found, creating manually...');
+      const { data: newProfile, error: insertError } = await supabase
         .from('users')
-        .update({ role: 'CATER' })
-        .eq('id', data.user.id);
+        .insert({
+          id: data.user.id,
+          email: data.user.email || email,
+          username: username,
+          role: role
+        })
+        .select()
+        .single();
         
-      if (updateError) {
-        console.warn('Failed to update role:', updateError);
-      } else if (profile) {
-        return { ...profile, role: 'CATER' };
+      if (!insertError && newProfile) {
+        profile = newProfile;
+        break;
+      } else {
+        console.error('Failed to create user profile manually:', insertError);
       }
     }
-      
-    return profile;
+    
+    retries--;
   }
   
-  throw new Error('User creation failed');
+  if (!profile) {
+    throw new Error('Failed to create or fetch user profile. Please contact support.');
+  }
+  
+  // Update role if it doesn't match (for CATER role)
+  if (role === "CATER" && profile.role !== "CATER") {
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ role: 'CATER' })
+      .eq('id', data.user.id);
+      
+    if (updateError) {
+      console.warn('Failed to update role:', updateError);
+    } else {
+      profile = { ...profile, role: 'CATER' };
+    }
+  }
+    
+  return profile;
 }
 
 export async function getCurrentUser() {
