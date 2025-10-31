@@ -5,30 +5,40 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  TextInput
+  TextInput,
+  Alert,
+  TouchableOpacity,
+  ActivityIndicator
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
+import { supabase } from "../../services/supabase";
 
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
 
 type OrderDetailsRouteParams = {
   order: {
-    id: string;
+    id: number;
+    bookingId: string;
     customerName: string;
-    packageName: string;
-    packagePrice: string;
+    customerEmail: string;
+    customerId: string;
+    serviceName: string;
+    packageName?: string;
+    packagePrice?: string;
     selectedDishes: Array<{
       sectionLabel: string;
       chosenDish: string;
     }>;
     venue: string;
-    inclusions: string[]; // read-only display only
-    status: string;
+    inclusions: string[];
+    status: "PENDING" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED";
     eventDate: string;
+    guests: number;
     totalPrice: string;
+    notes?: string;
   };
 };
 
@@ -45,14 +55,17 @@ export default function PartnerOrderDetailsScreen() {
     }>();
   const { order } = route.params;
 
-  // ----- MODAL STATE (cancel / refund w/ reason) -----
+  const [updating, setUpdating] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState(order.status);
+  
+  // ----- MODAL STATE (cancel / decline w/ reason) -----
   const [showReasonModal, setShowReasonModal] = useState(false);
-  const [modalMode, setModalMode] = useState<"cancel" | "refund" | null>(
+  const [modalMode, setModalMode] = useState<"cancel" | "decline" | null>(
     null
   );
   const [reasonText, setReasonText] = useState("");
 
-  function openReasonModal(mode: "cancel" | "refund") {
+  function openReasonModal(mode: "cancel" | "decline") {
     setModalMode(mode);
     setReasonText("");
     setShowReasonModal(true);
@@ -64,22 +77,116 @@ export default function PartnerOrderDetailsScreen() {
     setReasonText("");
   }
 
+  const updateBookingStatus = async (newStatus: string, reason?: string) => {
+    setUpdating(true);
+    try {
+      const updateData: any = { status: newStatus };
+      
+      // Add reason to notes if provided
+      if (reason) {
+        const { data: booking } = await supabase
+          .from('bookings')
+          .select('notes')
+          .eq('id', order.id)
+          .single();
+        
+        let notesData: any = {};
+        try {
+          notesData = booking?.notes ? JSON.parse(booking.notes) : {};
+        } catch (e) {
+          notesData = { extra: booking?.notes || '' };
+        }
+        
+        notesData.statusReason = reason;
+        notesData.statusReasonDate = new Date().toISOString();
+        updateData.notes = JSON.stringify(notesData);
+      }
+
+      const { error } = await supabase
+        .from('bookings')
+        .update(updateData)
+        .eq('id', order.id);
+
+      if (error) throw error;
+
+      setCurrentStatus(newStatus as any);
+      closeReasonModal();
+      
+      Alert.alert(
+        'Success',
+        `Order ${newStatus.toLowerCase()} successfully.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack()
+          }
+        ]
+      );
+    } catch (error: any) {
+      console.error('Error updating booking status:', error);
+      Alert.alert('Error', error?.message || 'Failed to update booking status');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  async function handleAccept() {
+    Alert.alert(
+      'Confirm Booking',
+      'Are you sure you want to accept this booking?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Accept',
+          onPress: () => updateBookingStatus('CONFIRMED')
+        }
+      ]
+    );
+  }
+
+  async function handleDecline() {
+    openReasonModal('decline');
+  }
+
+  async function handleComplete() {
+    Alert.alert(
+      'Mark as Completed',
+      'Mark this booking as completed?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Complete',
+          onPress: () => updateBookingStatus('COMPLETED')
+        }
+      ]
+    );
+  }
+
+  async function handleCancel() {
+    openReasonModal('cancel');
+  }
+
   function confirmReasonSubmit() {
-    // TODO: connect this to backend later (order.id, modalMode, reasonText)
-    closeReasonModal();
+    if (!reasonText.trim()) {
+      Alert.alert('Required', 'Please provide a reason.');
+      return;
+    }
+
+    const newStatus = modalMode === 'cancel' ? 'CANCELLED' : 'DECLINED';
+    updateBookingStatus(newStatus, reasonText.trim());
   }
 
   const modalTitle =
     modalMode === "cancel"
       ? "Cancel Booking"
-      : modalMode === "refund"
-      ? "Refund Booking"
+      : modalMode === "decline"
+      ? "Decline Booking"
       : "";
   const modalPrompt =
     modalMode === "cancel"
       ? "Why are you cancelling this booking?"
-      : modalMode === "refund"
-      ? "Why are you issuing a refund?"
+      : modalMode === "decline"
+      ? "Why are you declining this booking?"
       : "";
 
   return (
@@ -108,7 +215,18 @@ export default function PartnerOrderDetailsScreen() {
               </Text>
               <Text style={styles.pageSub}>
                 Status:{" "}
-                <Text style={styles.statusBadge}>{order.status}</Text>
+                <Text
+                  style={[
+                    styles.statusBadge,
+                    currentStatus === "PENDING" && styles.statusBadgePending,
+                    currentStatus === "CONFIRMED" && styles.statusBadgeConfirmed,
+                    currentStatus === "COMPLETED" && styles.statusBadgeCompleted,
+                    currentStatus === "DECLINED" && styles.statusBadgeDeclined,
+                    currentStatus === "CANCELLED" && styles.statusBadgeCancelled
+                  ]}
+                >
+                  {currentStatus}
+                </Text>
               </Text>
             </View>
           </View>
@@ -119,12 +237,25 @@ export default function PartnerOrderDetailsScreen() {
 
             <View style={styles.rowLine}>
               <Text style={styles.labelText}>Order ID</Text>
-              <Text style={styles.valueText}>{order.id}</Text>
+              <Text style={styles.valueText}>{order.bookingId}</Text>
+            </View>
+
+            <View style={styles.rowLine}>
+              <Text style={styles.labelText}>Customer</Text>
+              <Text style={styles.valueText}>{order.customerName}</Text>
+              <Text style={[styles.valueText, { fontSize: 12, color: '#6b7280' }]}>
+                {order.customerEmail}
+              </Text>
             </View>
 
             <View style={styles.rowLine}>
               <Text style={styles.labelText}>Event Date</Text>
               <Text style={styles.valueText}>{order.eventDate}</Text>
+            </View>
+
+            <View style={styles.rowLine}>
+              <Text style={styles.labelText}>Number of Guests</Text>
+              <Text style={styles.valueText}>{order.guests} guests</Text>
             </View>
 
             <View style={styles.rowLine}>
@@ -145,16 +276,16 @@ export default function PartnerOrderDetailsScreen() {
             <Text style={styles.cardTitle}>Package Booked</Text>
 
             <View style={styles.rowLine}>
-              <Text style={styles.labelText}>Package Name</Text>
-              <Text style={styles.valueText}>{order.packageName}</Text>
+              <Text style={styles.labelText}>Service</Text>
+              <Text style={styles.valueText}>{order.serviceName}</Text>
             </View>
 
-            <View style={styles.rowLine}>
-              <Text style={styles.labelText}>Base Price</Text>
-              <Text style={[styles.valueText, styles.priceText]}>
-                {order.packagePrice}
-              </Text>
-            </View>
+            {order.packageName && (
+              <View style={styles.rowLine}>
+                <Text style={styles.labelText}>Package</Text>
+                <Text style={styles.valueText}>{order.packageName}</Text>
+              </View>
+            )}
 
             <Text style={[styles.subHeader, { marginTop: 12 }]}>
               Selected Dishes
@@ -228,27 +359,65 @@ export default function PartnerOrderDetailsScreen() {
 
           {/* Action buttons row */}
           <View style={styles.actionRow}>
-            <Pressable style={[styles.actionBtn, styles.confirmBtn]}>
-              <Text style={styles.actionBtnText}>Confirm Booking</Text>
-            </Pressable>
+            {currentStatus === "PENDING" && (
+              <>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.confirmBtn]}
+                  onPress={handleAccept}
+                  disabled={updating}
+                  activeOpacity={0.7}
+                >
+                  {updating ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.actionBtnText}>Accept</Text>
+                  )}
+                </TouchableOpacity>
 
-            <Pressable style={[styles.actionBtn, styles.completeBtn]}>
-              <Text style={styles.actionBtnText}>Mark as Done</Text>
-            </Pressable>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.declineBtn]}
+                  onPress={handleDecline}
+                  disabled={updating}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.actionBtnText}>Decline</Text>
+                </TouchableOpacity>
+              </>
+            )}
 
-            <Pressable
-              style={[styles.actionBtn, styles.cancelBtn]}
-              onPress={() => openReasonModal("cancel")}
-            >
-              <Text style={styles.actionBtnText}>Cancel Booking</Text>
-            </Pressable>
+            {currentStatus === "CONFIRMED" && (
+              <>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.completeBtn]}
+                  onPress={handleComplete}
+                  disabled={updating}
+                  activeOpacity={0.7}
+                >
+                  {updating ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.actionBtnText}>Mark as Completed</Text>
+                  )}
+                </TouchableOpacity>
 
-            <Pressable
-              style={[styles.actionBtn, styles.refundBtn]}
-              onPress={() => openReasonModal("refund")}
-            >
-              <Text style={styles.actionBtnText}>Refund</Text>
-            </Pressable>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.cancelBtn]}
+                  onPress={handleCancel}
+                  disabled={updating}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.actionBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {(currentStatus === "COMPLETED" || currentStatus === "DECLINED" || currentStatus === "CANCELLED") && (
+              <View style={styles.statusMessageBox}>
+                <Text style={styles.statusMessageText}>
+                  This order is {currentStatus.toLowerCase()}.
+                </Text>
+              </View>
+            )}
           </View>
         </ScrollView>
       </View>
@@ -277,14 +446,20 @@ export default function PartnerOrderDetailsScreen() {
                 <Text style={styles.reasonCancelText}>Close</Text>
               </Pressable>
 
-              <Pressable
+              <TouchableOpacity
                 style={[styles.reasonBtn, styles.reasonConfirm]}
                 onPress={confirmReasonSubmit}
+                disabled={updating}
+                activeOpacity={0.7}
               >
-                <Text style={styles.reasonConfirmText}>
-                  Submit Reason
-                </Text>
-              </Pressable>
+                {updating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.reasonConfirmText}>
+                    Submit
+                  </Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -344,13 +519,32 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   statusBadge: {
-    backgroundColor: "#DBEAFE",
-    color: "#1D4ED8",
     borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     fontWeight: "600",
-    fontSize: 12
+    fontSize: 12,
+    overflow: "hidden"
+  },
+  statusBadgePending: {
+    backgroundColor: "#DBEAFE",
+    color: "#1D4ED8"
+  },
+  statusBadgeConfirmed: {
+    backgroundColor: "#D1FAE5",
+    color: "#065F46"
+  },
+  statusBadgeCompleted: {
+    backgroundColor: "#E5E7EB",
+    color: "#374151"
+  },
+  statusBadgeDeclined: {
+    backgroundColor: "#FEE2E2",
+    color: "#991B1B"
+  },
+  statusBadgeCancelled: {
+    backgroundColor: "#FEE2E2",
+    color: "#991B1B"
   },
 
   card: {
@@ -485,11 +679,24 @@ const styles = StyleSheet.create({
   completeBtn: {
     backgroundColor: "#10b981"
   },
+  declineBtn: {
+    backgroundColor: "#ef4444"
+  },
   cancelBtn: {
     backgroundColor: "#ef4444"
   },
-  refundBtn: {
-    backgroundColor: "#6b7280"
+  statusMessageBox: {
+    backgroundColor: "#f3f4f6",
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    width: "100%"
+  },
+  statusMessageText: {
+    fontSize: 14,
+    color: "#6b7280",
+    textAlign: "center"
   },
   actionBtnText: {
     color: "#fff",

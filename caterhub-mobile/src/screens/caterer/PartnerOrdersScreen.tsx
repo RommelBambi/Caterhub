@@ -4,29 +4,40 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Pressable
+  Pressable,
+  Alert,
+  ActivityIndicator,
+  TouchableOpacity,
+  RefreshControl
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
+import { supabase } from "../../services/supabase";
 
 type Order = {
-  id: string;
+  id: number;
+  bookingId: string;
   customerName: string;
-  packageName: string;
-  packagePrice: string;
+  customerEmail: string;
+  customerId: string;
+  serviceName: string;
+  packageName?: string;
+  packagePrice?: string;
   selectedDishes: Array<{
     sectionLabel: string;
     chosenDish: string;
   }>;
   venue: string;
   inclusions: string[];
-  status: "Pending" | "Confirmed" | "Completed" | "Cancelled";
+  status: "PENDING" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED";
   eventDate: string;
+  guests: number;
   totalPrice: string;
+  notes?: string;
 };
 
 export default function PartnerOrdersScreen() {
@@ -34,58 +45,230 @@ export default function PartnerOrdersScreen() {
     useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
-  // TODO: Replace with Supabase query
-  useEffect(() => {
+  // Fetch orders from Supabase
+  const fetchOrders = async () => {
     if (!user) return;
 
-    // Mock orders for now - replace with Supabase fetch
-    const sample: Order[] = [
-      {
-        id: "ORD-2025-001",
-        customerName: "Juan Dela Cruz",
-        packageName: "Birthday Set A",
-        packagePrice: "₱12,500",
-        selectedDishes: [
-          { sectionLabel: "Pork", chosenDish: "Lechon Kawali" },
-          { sectionLabel: "Beef", chosenDish: "Roast Beef" },
-          { sectionLabel: "Beverages", chosenDish: "Iced Tea Dispenser" }
-        ],
-        venue: "Barangay Hall, Tayabas City",
-        inclusions: [
-          "Chairs & Tables",
-          "Buffet Setup",
-          "Wait Staff (3)"
-        ],
-        status: "Pending",
-        eventDate: "Nov 2, 2025 • 6:00 PM",
-        totalPrice: "₱15,000"
-      },
-      {
-        id: "ORD-2025-002",
-        customerName: "Ava Santos",
-        packageName: "Wedding Premium",
-        packagePrice: "₱45,000",
-        selectedDishes: [
-          { sectionLabel: "Chicken", chosenDish: "Chicken Cordon Bleu" },
-          { sectionLabel: "Beef", chosenDish: "Beef Caldereta" },
-          { sectionLabel: "Vegetable", chosenDish: "Chopsuey" }
-        ],
-        venue: "Villa Leonila Resort, Lucena City",
-        inclusions: [
-          "Full Buffet Setup",
-          "Table Centerpieces",
-          "Wait Staff (8)",
-          "Cake Cutting Service"
-        ],
-        status: "Confirmed",
-        eventDate: "Nov 5, 2025 • 4:30 PM",
-        totalPrice: "₱52,000"
-      }
-    ];
+    try {
+      // First, get all services belonging to this caterer
+      // Assuming services have a user_id field that links to caterers
+      const { data: services, error: servicesError } = await supabase
+        .from('services')
+        .select('id')
+        .eq('user_id', user.id);
 
-    setOrders(sample);
+      if (servicesError) {
+        console.error('Error fetching services:', servicesError);
+        // Try alternative query if services don't have user_id
+        await fetchOrdersAlternative();
+        return;
+      }
+
+      if (!services || services.length === 0) {
+        setOrders([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      const serviceIds = services.map(s => s.id);
+
+      // Now fetch bookings for those services
+      const { data: bookings, error } = await supabase
+        .from('bookings')
+        .select(`
+          *,
+          services:service_id (
+            id,
+            name,
+            price_per_head
+          ),
+          customer:user_id (
+            id,
+            username,
+            email
+          )
+        `)
+        .in('service_id', serviceIds)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching orders:', error);
+        Alert.alert('Error', 'Failed to load orders');
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      // Transform bookings to Order format
+      const transformedOrders: Order[] = (bookings || [])
+        .filter((booking: any) => booking.services && booking.customer)
+        .map((booking: any) => {
+          // Parse notes to extract package and dish info
+          let notesData: any = {};
+          try {
+            notesData = booking.notes ? JSON.parse(booking.notes) : {};
+          } catch (e) {
+            notesData = { extra: booking.notes || '' };
+          }
+
+          const selectedDishes = notesData.picks
+            ? notesData.picks.map((pick: any) => ({
+                sectionLabel: pick.categoryName || 'Unknown',
+                chosenDish: pick.optionName || 'Unknown'
+              }))
+            : [];
+
+          const inclusions = notesData.inclusions || [];
+
+          // Calculate total price
+          const pricePerHead = booking.services?.price_per_head || 0;
+          const total = pricePerHead * booking.guests;
+
+          return {
+            id: booking.id,
+            bookingId: `ORD-${booking.id}`,
+            customerName: booking.customer.username || 'Unknown',
+            customerEmail: booking.customer.email || '',
+            customerId: booking.customer.id,
+            serviceName: booking.services?.name || 'Unknown Service',
+            packageName: notesData.packageId ? `Package ${notesData.packageId}` : undefined,
+            venue: notesData.address || 'Not specified',
+            selectedDishes,
+            inclusions,
+            status: booking.status,
+            eventDate: formatEventDate(booking.event_date),
+            guests: booking.guests,
+            totalPrice: `₱${total.toLocaleString()}`,
+            notes: notesData.extra || ''
+          };
+        });
+
+      setOrders(transformedOrders);
+    } catch (err) {
+      console.error('Failed to fetch orders:', err);
+      Alert.alert('Error', 'Failed to load orders');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Alternative query if services table structure is different
+  const fetchOrdersAlternative = async () => {
+    if (!user) return;
+
+    try {
+      // Query all bookings and filter by checking if service belongs to caterer
+      // This assumes services might be linked differently
+      const { data: allBookings, error } = await supabase
+        .from('bookings')
+        .select(`
+          *,
+          services:service_id (
+            id,
+            name,
+            price_per_head
+          ),
+          customer:user_id (
+            id,
+            username,
+            email
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Filter bookings where service owner matches caterer
+      // Note: This requires services to have a user_id field
+      // If services don't have user_id, we may need to join through packages
+      const filteredBookings = (allBookings || []).filter(
+        (booking: any) => booking.services
+      );
+
+      // Transform similar to above
+      const transformedOrders: Order[] = filteredBookings.map((booking: any) => {
+        let notesData: any = {};
+        try {
+          notesData = booking.notes ? JSON.parse(booking.notes) : {};
+        } catch (e) {
+          notesData = { extra: booking.notes || '' };
+        }
+
+        const selectedDishes = notesData.picks
+          ? notesData.picks.map((pick: any) => ({
+              sectionLabel: pick.categoryName || 'Unknown',
+              chosenDish: pick.optionName || 'Unknown'
+            }))
+          : [];
+
+        const pricePerHead = booking.services?.price_per_head || 0;
+        const total = pricePerHead * booking.guests;
+
+        return {
+          id: booking.id,
+          bookingId: `ORD-${booking.id}`,
+          customerName: booking.customer?.username || 'Unknown',
+          customerEmail: booking.customer?.email || '',
+          customerId: booking.customer?.id || '',
+          serviceName: booking.services?.name || 'Unknown Service',
+          packageName: notesData.packageId ? `Package ${notesData.packageId}` : undefined,
+          venue: notesData.address || 'Not specified',
+          selectedDishes,
+          inclusions: notesData.inclusions || [],
+          status: booking.status,
+          eventDate: formatEventDate(booking.event_date),
+          guests: booking.guests,
+          totalPrice: `₱${total.toLocaleString()}`,
+          notes: notesData.extra || ''
+        };
+      });
+
+      setOrders(transformedOrders);
+    } catch (err) {
+      console.error('Alternative fetch failed:', err);
+      Alert.alert('Error', 'Failed to load orders');
+    }
+  };
+
+  const formatEventDate = (dateString: string): string => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  useEffect(() => {
+    fetchOrders();
   }, [user]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchOrders();
+    }, [user])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchOrders();
+  };
+
+  const filteredOrders = statusFilter === "ALL"
+    ? orders
+    : orders.filter(order => order.status === statusFilter);
 
   if (!user) {
     return (
@@ -103,72 +286,128 @@ export default function PartnerOrdersScreen() {
         <ScrollView
           style={styles.scrollRegion}
           contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
         >
           <View style={styles.pageHeaderRow}>
             <View>
               <Text style={styles.pageTitle}>Orders</Text>
               <Text style={styles.pageSubTitle}>
-                View bookings, venues, and requested inclusions.
+                View bookings, accept or decline orders from customers.
               </Text>
             </View>
             <View style={styles.metaInfoBox}>
               <Text style={styles.metaInfoText}>
-                {orders.length} order{orders.length === 1 ? "" : "s"}
+                {filteredOrders.length} order{filteredOrders.length === 1 ? "" : "s"}
               </Text>
             </View>
           </View>
 
-          <View style={styles.tableWrapper}>
-            <View style={[styles.row, styles.headerRow]}>
-              <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>Customer</Text>
-              <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>Package</Text>
-              <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>Venue</Text>
-              <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>Status</Text>
-              <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>Event</Text>
-              <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>Actions</Text>
-            </View>
-
-            {orders.map((order, idx) => (
-              <View
-                key={order.id}
+          {/* Status Filter */}
+          <View style={styles.filterRow}>
+            {["ALL", "PENDING", "CONFIRMED", "COMPLETED", "DECLINED", "CANCELLED"].map((status) => (
+              <TouchableOpacity
+                key={status}
                 style={[
-                  styles.row,
-                  idx === orders.length - 1 ? styles.lastRow : styles.bodyRow
+                  styles.filterChip,
+                  statusFilter === status && styles.filterChipActive
                 ]}
+                onPress={() => setStatusFilter(status)}
               >
-                <Text style={[styles.cell, { flex: 2 }]}>{order.customerName}</Text>
-                <View style={[styles.cell, { flex: 2 }]}>
-                  <Text style={styles.packageNameText}>{order.packageName}</Text>
-                  <Text style={styles.packagePriceText}>{order.packagePrice}</Text>
-                </View>
-                <Text style={[styles.cell, { flex: 2 }]}>{order.venue}</Text>
-                <View style={[styles.cell, { flex: 1 }]}>
-                  <Text
-                    style={[
-                      styles.statusChip,
-                      order.status === "Pending" && styles.statusPending,
-                      order.status === "Confirmed" && styles.statusConfirmed,
-                      order.status === "Completed" && styles.statusCompleted,
-                      order.status === "Cancelled" && styles.statusCancelled
-                    ]}
-                  >
-                    {order.status}
-                  </Text>
-                </View>
-                <Text style={[styles.cell, { flex: 1 }]}>{order.eventDate}</Text>
-                <View style={[styles.cell, { flex: 1 }]}>
-                  <Pressable
-                    style={styles.detailsBtn}
-                    onPress={() =>
-                      navigation.navigate("PartnerOrderDetails", { order } as any)
-                    }
-                  >
-                    <Text style={styles.detailsBtnText}>Details</Text>
-                  </Pressable>
-                </View>
-              </View>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    statusFilter === status && styles.filterChipTextActive
+                  ]}
+                >
+                  {status}
+                </Text>
+              </TouchableOpacity>
             ))}
           </View>
+
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#9333ea" />
+              <Text style={styles.loadingText}>Loading orders...</Text>
+            </View>
+          ) : filteredOrders.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                {statusFilter === "ALL"
+                  ? "No orders yet."
+                  : `No ${statusFilter.toLowerCase()} orders.`}
+              </Text>
+              <Text style={styles.emptySubText}>
+                Orders from customers will appear here.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.tableWrapper}>
+              <View style={[styles.row, styles.headerRow]}>
+                <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>Customer</Text>
+                <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>Service</Text>
+                <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>Venue</Text>
+                <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>Status</Text>
+                <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>Event</Text>
+                <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>Actions</Text>
+              </View>
+
+              {filteredOrders.map((order, idx) => (
+                <View
+                  key={order.id}
+                  style={[
+                    styles.row,
+                    idx === filteredOrders.length - 1 ? styles.lastRow : styles.bodyRow
+                  ]}
+                >
+                  <View style={[styles.cell, { flex: 2 }]}>
+                    <Text style={styles.customerNameText}>{order.customerName}</Text>
+                    <Text style={styles.customerEmailText}>{order.customerEmail}</Text>
+                  </View>
+                  <View style={[styles.cell, { flex: 2 }]}>
+                    <Text style={styles.serviceNameText}>{order.serviceName}</Text>
+                    {order.packageName && (
+                      <Text style={styles.packageNameText}>{order.packageName}</Text>
+                    )}
+                    <Text style={styles.packagePriceText}>{order.totalPrice}</Text>
+                  </View>
+                  <Text style={[styles.cell, { flex: 2 }]} numberOfLines={2}>
+                    {order.venue}
+                  </Text>
+                  <View style={[styles.cell, { flex: 1 }]}>
+                    <Text
+                      style={[
+                        styles.statusChip,
+                        order.status === "PENDING" && styles.statusPending,
+                        order.status === "CONFIRMED" && styles.statusConfirmed,
+                        order.status === "COMPLETED" && styles.statusCompleted,
+                        order.status === "DECLINED" && styles.statusDeclined,
+                        order.status === "CANCELLED" && styles.statusCancelled
+                      ]}
+                    >
+                      {order.status}
+                    </Text>
+                  </View>
+                  <Text style={[styles.cell, { flex: 1, fontSize: 11 }]} numberOfLines={2}>
+                    {order.eventDate}
+                  </Text>
+                  <View style={[styles.cell, { flex: 1 }]}>
+                    <TouchableOpacity
+                      style={styles.detailsBtn}
+                      onPress={() =>
+                        navigation.navigate("PartnerOrderDetails", { order } as any)
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.detailsBtnText}>View</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
         </ScrollView>
       </View>
     </View>
@@ -301,6 +540,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
     color: "#374151"
   },
+  statusDeclined: {
+    backgroundColor: "#FEE2E2",
+    color: "#991B1B"
+  },
   statusCancelled: {
     backgroundColor: "#FEE2E2",
     color: "#991B1B"
@@ -312,15 +555,96 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     alignSelf: "flex-start",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 3
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2
   },
   detailsBtnText: {
     color: "#fff",
     fontWeight: "600",
-    fontSize: 13
+    fontSize: 12
+  },
+  filterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 16
+  },
+  filterChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#d1d5db"
+  },
+  filterChipActive: {
+    backgroundColor: "#9333ea",
+    borderColor: "#9333ea"
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151"
+  },
+  filterChipTextActive: {
+    color: "#fff"
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  loadingText: {
+    marginTop: 12,
+    color: "#6b7280",
+    fontSize: 14
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb"
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 8
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: "#6b7280"
+  },
+  customerNameText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 2
+  },
+  customerEmailText: {
+    fontSize: 12,
+    color: "#6b7280"
+  },
+  serviceNameText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 2
+  },
+  packageNameText: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginBottom: 2
+  },
+  packagePriceText: {
+    fontSize: 12,
+    color: "#10b981",
+    fontWeight: "700"
   }
 });
 
