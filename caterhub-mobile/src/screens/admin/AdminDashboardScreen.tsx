@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable } from 'react-native';
 import { useAuth } from '../../store/auth';
+import RecruitmentPage from '../../components/admin/RecruitmentPage';
+import ApplicationDetailModal from '../../components/admin/ApplicationDetailModal';
 
 const COLORS = {
   primary: "#C836F9",
@@ -21,9 +23,33 @@ interface MenuItem {
   icon: string;
 }
 
+interface PartnerApplication {
+  id: string;
+  user_id: string | null;
+  business_name: string;
+  locations: any;
+  website: string | null;
+  owner_name: string;
+  owner_phone: string;
+  owner_email: string;
+  telephone_number: string | null;
+  contact_number: string | null;
+  permits_ready: boolean;
+  food_safety: boolean;
+  agree_terms: boolean;
+  notes: string | null;
+  uploaded_documents: string[];
+  status: 'Pending' | 'Approved' | 'Rejected';
+  created_at: string;
+  updated_at: string;
+}
+
 export default function AdminDashboardScreen() {
   const { user, logout } = useAuth();
   const [currentPage, setCurrentPage] = useState<string>("dashboard");
+  const [selectedApplication, setSelectedApplication] = useState<PartnerApplication | null>(null);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const menuItems: MenuItem[] = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
@@ -35,6 +61,47 @@ export default function AdminDashboardScreen() {
     { id: "settings", label: "Settings", icon: "⚙️" },
     { id: "refunds", label: "Refunds", icon: "🔄" },
   ];
+
+  const handleApproveApplication = async (applicationId: string) => {
+    const { supabase } = await import('../../services/supabase');
+    try {
+      const { error } = await supabase
+        .from('partner_applications')
+        .update({ status: 'Approved', updated_at: new Date().toISOString() })
+        .eq('id', applicationId);
+
+      if (error) throw error;
+      
+      // Trigger refresh of the recruitment page
+      setRefreshTrigger(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Error approving application:', error);
+      alert(error?.message || 'Failed to approve application');
+    }
+  };
+
+  const handleRejectApplication = async (applicationId: string) => {
+    const { supabase } = await import('../../services/supabase');
+    try {
+      const { error } = await supabase
+        .from('partner_applications')
+        .update({ status: 'Rejected', updated_at: new Date().toISOString() })
+        .eq('id', applicationId);
+
+      if (error) throw error;
+      
+      // Trigger refresh of the recruitment page
+      setRefreshTrigger(prev => prev + 1);
+    } catch (error: any) {
+      console.error('Error rejecting application:', error);
+      alert(error?.message || 'Failed to reject application');
+    }
+  };
+
+  const handleViewDetails = (app: PartnerApplication) => {
+    setSelectedApplication(app);
+    setDetailModalVisible(true);
+  };
 
   const renderPageContent = () => {
     switch (currentPage) {
@@ -56,6 +123,12 @@ export default function AdminDashboardScreen() {
                 <Text style={[styles.statValue, { color: COLORS.info }]}>₱45,678</Text>
               </View>
             </View>
+          </View>
+        );
+      case "recruitment":
+        return (
+          <View style={styles.contentContainer}>
+            <RecruitmentPage onViewDetails={handleViewDetails} refreshTrigger={refreshTrigger} />
           </View>
         );
       default:
@@ -117,6 +190,18 @@ export default function AdminDashboardScreen() {
       <ScrollView style={styles.mainContent}>
         {renderPageContent()}
       </ScrollView>
+
+      {/* Application Detail Modal */}
+      <ApplicationDetailModal
+        application={selectedApplication}
+        visible={detailModalVisible}
+        onClose={() => {
+          setDetailModalVisible(false);
+          setSelectedApplication(null);
+        }}
+        onApprove={handleApproveApplication}
+        onReject={handleRejectApplication}
+      />
     </View>
   );
 }
