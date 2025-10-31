@@ -15,6 +15,8 @@ import { loadForm, saveForm, clearForm, sendApplicationToRecruitment } from '../
 import { COUNTRIES, PROVINCES_PH, CITIES_BY_PROVINCE } from '../../constants/locations';
 import InteractiveMapPicker from '../../components/InteractiveMapPicker';
 import { supabase } from '../../services/supabase';
+import { useAuth } from '../../store/auth';
+import { isWeb } from '../../utils/platform';
 
 // Enhanced Square navigation button component
 const SquareNavButton = ({
@@ -1005,7 +1007,7 @@ function Step5Account({
 }
 
 // Waiting for Admin Approval Component
-function WaitingApproval({ onBack }: { onBack: () => void }) {
+function WaitingApproval({ onBack, onGoToDashboard }: { onBack: () => void; onGoToDashboard: () => void }) {
   return (
     <View style={styles.successContainer}>
       <Card pad={48} style={styles.successCard}>
@@ -1028,17 +1030,25 @@ function WaitingApproval({ onBack }: { onBack: () => void }) {
             <Text style={styles.successInfoText}>Review time: 2-3 business days</Text>
           </View>
           <View style={styles.successInfoItem}>
-            <Ionicons name="log-in" size={20} color={COLORS.primary} />
-            <Text style={styles.successInfoText}>You can log in now, but services are restricted until approval</Text>
+            <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />
+            <Text style={styles.successInfoText}>You're now logged in! Services are restricted until approval</Text>
           </View>
         </View>
-        <SquareNavButton
-          label="Back to Home"
-          variant="outline"
-          onPress={onBack}
-          icon="home"
-          iconPosition="left"
-        />
+        <View style={styles.successButtons}>
+          <SquareNavButton
+            label="Go to Dashboard"
+            onPress={onGoToDashboard}
+            icon="grid"
+            iconPosition="left"
+          />
+          <SquareNavButton
+            label="Back to Home"
+            variant="outline"
+            onPress={onBack}
+            icon="home"
+            iconPosition="left"
+          />
+        </View>
       </Card>
     </View>
   );
@@ -1047,6 +1057,7 @@ function WaitingApproval({ onBack }: { onBack: () => void }) {
 // Main Component
 export default function PartnerApplicationScreen() {
   const navigation = useNavigation<any>();
+  const { refreshUser, user, token } = useAuth();
   const [step, setStep] = useState<StepKey>("hero");
   const [form, setForm] = useState<PartnerForm>(EMPTY_PARTNER_FORM);
 
@@ -1109,6 +1120,9 @@ export default function PartnerApplicationScreen() {
         ownerEmail: email,
       };
       setForm(formWithEmail);
+      
+      // Refresh auth state to ensure user is logged in
+      await refreshUser();
       
       // Proceed to next step (Business Profile)
       next();
@@ -1213,6 +1227,9 @@ export default function PartnerApplicationScreen() {
                   // Submit the application
                   await sendApplicationToRecruitment(formWithUploads, user.id);
                   
+                  // Refresh auth state
+                  await refreshUser();
+                  
                   // Clear form and show waiting screen
                   await clearForm();
                   setForm(EMPTY_PARTNER_FORM);
@@ -1225,7 +1242,33 @@ export default function PartnerApplicationScreen() {
             />
           )}
           {step === "step6" && <Step5Account form={form} back={back} submit={handleAccountCreation} />}
-          {step === "waiting" && <WaitingApproval onBack={() => setStep("hero")} />}
+          {step === "waiting" && (
+            <WaitingApproval 
+              onBack={() => {
+                if (isWeb) {
+                  navigation.reset({
+                    index: 0,
+                    routes: [{ name: 'Landing' }],
+                  });
+                } else {
+                  setStep("hero");
+                }
+              }}
+              onGoToDashboard={async () => {
+                // Refresh auth state first
+                await refreshUser();
+                
+                // For web, reload the page to trigger RootNav re-render
+                // RootNav will automatically route to PartnerNav if user is authenticated with CATER role
+                if (isWeb) {
+                  window.location.href = '/';
+                } else {
+                  // For mobile, navigate to partner dashboard
+                  navigation.navigate('PartnerDashboard');
+                }
+              }}
+            />
+          )}
         </Container>
       </ScrollView>
 
@@ -1986,6 +2029,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.text,
     fontWeight: '500',
+  },
+  successButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
   },
   footer: {
     position: 'absolute',
