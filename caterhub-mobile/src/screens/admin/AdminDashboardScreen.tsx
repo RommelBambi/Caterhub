@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable } from 
 import { useAuth } from '../../store/auth';
 import RecruitmentPage from '../../components/admin/RecruitmentPage';
 import ApplicationDetailModal from '../../components/admin/ApplicationDetailModal';
+import UsersPage from '../../components/admin/UsersPage';
 
 const COLORS = {
   primary: "#C836F9",
@@ -129,6 +130,12 @@ export default function AdminDashboardScreen() {
         return (
           <View style={styles.contentContainer}>
             <RecruitmentPage onViewDetails={handleViewDetails} refreshTrigger={refreshTrigger} />
+          </View>
+        );
+      case "users":
+        return (
+          <View style={styles.contentContainer}>
+            <UsersPage refreshTrigger={refreshTrigger} />
           </View>
         );
       default:
