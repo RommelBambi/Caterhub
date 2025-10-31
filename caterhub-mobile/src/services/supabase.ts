@@ -178,6 +178,70 @@ export interface Database {
           updated_at?: string;
         };
       };
+      partner_applications: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          business_name: string;
+          locations: any; // JSONB
+          website: string | null;
+          owner_name: string;
+          owner_phone: string;
+          owner_email: string;
+          telephone_number: string | null;
+          contact_number: string | null;
+          permits_ready: boolean;
+          food_safety: boolean;
+          agree_terms: boolean;
+          notes: string | null;
+          uploaded_documents: string[]; // Array of storage paths
+          status: 'Pending' | 'Approved' | 'Rejected';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          business_name: string;
+          locations?: any;
+          website?: string | null;
+          cuisine_categories?: any;
+          owner_name: string;
+          owner_phone: string;
+          owner_email: string;
+          telephone_number?: string | null;
+          contact_number?: string | null;
+          permits_ready?: boolean;
+          food_safety?: boolean;
+          agree_terms?: boolean;
+          notes?: string | null;
+          uploaded_documents?: string[];
+          status?: 'Pending' | 'Approved' | 'Rejected';
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          business_name?: string;
+          locations?: any;
+          website?: string | null;
+          cuisine_categories?: any;
+          owner_name?: string;
+          owner_phone?: string;
+          owner_email?: string;
+          telephone_number?: string | null;
+          contact_number?: string | null;
+          permits_ready?: boolean;
+          food_safety?: boolean;
+          agree_terms?: boolean;
+          notes?: string | null;
+          uploaded_documents?: string[];
+          status?: 'Pending' | 'Approved' | 'Rejected';
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
   };
 }

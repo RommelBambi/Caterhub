@@ -12,8 +12,9 @@ import { COLORS } from '../../constants/colors';
 import { PartnerForm, StepKey, BusinessLocation } from '../../types/admin';
 import { EMPTY_PARTNER_FORM } from '../../constants/storage';
 import { loadForm, saveForm, clearForm, sendApplicationToRecruitment } from '../../utils/storage';
-import { COUNTRIES, PROVINCES_PH, CITIES_BY_PROVINCE, CUISINE_CATEGORIES } from '../../constants/locations';
+import { COUNTRIES, PROVINCES_PH, CITIES_BY_PROVINCE } from '../../constants/locations';
 import InteractiveMapPicker from '../../components/InteractiveMapPicker';
+import { supabase } from '../../services/supabase';
 
 // Enhanced Square navigation button component
 const SquareNavButton = ({
@@ -137,27 +138,8 @@ function Step1({
   back: () => void;
   next: () => void;
 }) {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [mapPickerVisible, setMapPickerVisible] = useState(false);
   const [editingLocationIndex, setEditingLocationIndex] = useState<number | null>(null);
-
-  const SquareChip = ({ text, active, onPress }: { text: string; active?: boolean; onPress?: () => void }) => (
-    <TouchableOpacity
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.chip,
-        active && styles.chipActive,
-        pressed && styles.chipPressed,
-      ]}
-    >
-      <View style={styles.chipContent}>
-        <View style={[styles.chipCheckbox, active && styles.chipCheckboxActive]}>
-          {active && <Ionicons name="checkmark" size={14} color="#fff" />}
-        </View>
-        <Text style={[styles.chipText, active && styles.chipTextActive]}>{text}</Text>
-      </View>
-    </TouchableOpacity>
-  );
 
   const addLocation = () => {
     const newLocation: BusinessLocation = {
@@ -199,46 +181,16 @@ function Step1({
     setEditingLocationIndex(null);
   };
 
-  const handleCategorySelect = (category: string) => {
-    setSelectedCategory(selectedCategory === category ? null : category);
-  };
 
-  const toggleCuisineItem = (category: string, item: string) => {
-    setForm((s) => {
-      const current = s.cuisineCategories[category] || [];
-      const updated = current.includes(item)
-        ? current.filter((i) => i !== item)
-        : [...current, item];
-      
-      const newCategories = { ...s.cuisineCategories };
-      if (updated.length === 0) {
-        delete newCategories[category];
-      } else {
-        newCategories[category] = updated;
-      }
-
-      return { ...s, cuisineCategories: newCategories };
-    });
-  };
-
-  const getSelectedCountForCategory = (category: string) => {
-    return form.cuisineCategories[category]?.length || 0;
-  };
-
-  const getTotalSelectedCount = () => {
-    return Object.values(form.cuisineCategories).reduce((sum, items) => sum + items.length, 0);
-  };
-
-  const validate = () => {
-    if (!form.businessName) return false;
-    if (form.locations.length === 0) return false;
-    if (Object.keys(form.cuisineCategories).length === 0) return false;
-    
-    // Validate all locations have required fields
-    return form.locations.every(
-      (loc) => loc.country && loc.province && loc.city && loc.address
-    );
-  };
+      const validate = () => {
+        if (!form.businessName) return false;
+        if (form.locations.length === 0) return false;
+        
+        // Validate all locations have required fields
+        return form.locations.every(
+          (loc) => loc.country && loc.province && loc.city && loc.address
+        );
+      };
 
   return (
     <>
@@ -342,107 +294,13 @@ function Step1({
           </View>
         ))}
 
-        <View style={styles.sectionDivider} />
-        <View style={styles.cuisineSectionHeader}>
-          <View>
-            <Label>Cuisine Categories *</Label>
-            <Text style={styles.sectionHint}>Select a category to choose items</Text>
-          </View>
-          {getTotalSelectedCount() > 0 && (
-            <View style={styles.selectedCountBadge}>
-              <Text style={styles.selectedCountText}>{getTotalSelectedCount()} selected</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Compact Two-Column Layout */}
-        <View style={styles.cuisineLayout}>
-          {/* Left: Category List */}
-          <View style={styles.cuisineCategoriesSidebar}>
-            {Object.keys(CUISINE_CATEGORIES).map((category) => {
-              const selectedCount = getSelectedCountForCategory(category);
-              const hasSelection = selectedCount > 0;
-              const isActive = selectedCategory === category;
-              
-              return (
-                <Pressable
-                  key={category}
-                  onPress={() => handleCategorySelect(category)}
-                  style={[
-                    styles.cuisineCategoryButton,
-                    isActive && styles.cuisineCategoryButtonActive,
-                    hasSelection && !isActive && styles.cuisineCategoryButtonHasSelection,
-                  ]}
-                >
-                  <View style={styles.cuisineCategoryButtonContent}>
-                    <Ionicons 
-                      name={hasSelection ? "restaurant" : "restaurant-outline"} 
-                      size={18} 
-                      color={isActive ? COLORS.white : hasSelection ? COLORS.primary : COLORS.textLight} 
-                    />
-                    <Text 
-                      style={[
-                        styles.cuisineCategoryButtonText,
-                        isActive && styles.cuisineCategoryButtonTextActive,
-                        hasSelection && !isActive && styles.cuisineCategoryButtonTextHasSelection,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {category}
-                    </Text>
-                    {selectedCount > 0 && (
-                      <View style={[styles.cuisineCategoryButtonBadge, isActive && styles.cuisineCategoryButtonBadgeActive]}>
-                        <Text style={[styles.cuisineCategoryButtonBadgeText, isActive && styles.cuisineCategoryButtonBadgeTextActive]}>
-                          {selectedCount}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {/* Right: Selected Category Items */}
-          {selectedCategory && (
-            <View style={styles.cuisineItemsPanel}>
-              <View style={styles.cuisineItemsPanelHeader}>
-                <Text style={styles.cuisineItemsPanelTitle}>{selectedCategory}</Text>
-                <Text style={styles.cuisineItemsPanelSubtitle}>
-                  {getSelectedCountForCategory(selectedCategory)} of {CUISINE_CATEGORIES[selectedCategory].length} selected
-                </Text>
-              </View>
-              <View style={styles.chipContainer}>
-                {CUISINE_CATEGORIES[selectedCategory].map((item) => {
-                  const active = form.cuisineCategories[selectedCategory]?.includes(item) || false;
-                  return (
-                    <SquareChip
-                      key={item}
-                      text={item}
-                      active={active}
-                      onPress={() => toggleCuisineItem(selectedCategory, item)}
-                    />
-                  );
-                })}
-              </View>
-            </View>
-          )}
-          
-          {!selectedCategory && (
-            <View style={styles.cuisineItemsEmpty}>
-              <Ionicons name="restaurant-outline" size={48} color={COLORS.textLight} />
-              <Text style={styles.cuisineItemsEmptyText}>Select a category to choose items</Text>
-            </View>
-          )}
-        </View>
-
         <View style={styles.navButtons}>
           <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
           <SquareNavButton
             label="Next"
             onPress={() => {
               if (!validate()) {
-                Alert.alert("Step 1", "Please complete all required fields including at least one location and cuisine category.");
+                Alert.alert("Step 1", "Please complete all required fields including at least one location.");
                 return;
               }
               next();
@@ -588,7 +446,52 @@ function Step3Compliance({
     size: number;
     uri: string;
     mimeType?: string;
+    storagePath?: string; // Supabase storage path
   }>>([]);
+  const [uploading, setUploading] = useState(false);
+
+  // Upload file to Supabase Storage (only after user is authenticated)
+  const uploadFileToStorage = async (fileUri: string, fileName: string, userId: string, mimeType?: string): Promise<string | null> => {
+    try {
+      // Generate unique file name with timestamp
+      const timestamp = Date.now();
+      const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
+      
+      // Store files in user-specific folder: partner-documents/{user_id}/{filename}
+      const storagePath = `${userId}/${uniqueFileName}`;
+
+      // Read file as blob
+      let fileBlob: Blob;
+      if (Platform.OS === 'web') {
+        const response = await fetch(fileUri);
+        fileBlob = await response.blob();
+      } else {
+        // For mobile, convert the URI to a blob
+        const response = await fetch(fileUri);
+        fileBlob = await response.blob();
+      }
+
+      // Upload to Supabase Storage bucket 'partner-documents'
+      const { data, error } = await supabase.storage
+        .from('partner-documents')
+        .upload(storagePath, fileBlob, {
+          contentType: mimeType || 'application/pdf',
+          upsert: false, // Don't overwrite existing files
+        });
+
+      if (error) {
+        console.error('Upload error:', error);
+        throw error;
+      }
+
+      // Return the full storage path
+      return storagePath;
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      throw error;
+    }
+  };
 
   const pickDocuments = async () => {
     try {
@@ -599,40 +502,104 @@ function Step3Compliance({
       });
 
       if (!result.canceled && result.assets) {
-        const newFiles = result.assets.map((file) => ({
-          name: file.name,
-          size: file.size || 0,
-          uri: file.uri,
-          mimeType: file.mimeType,
-        }));
+        setUploading(true);
+        const uploadedPaths: string[] = [];
+        const newFiles: Array<{
+          name: string;
+          size: number;
+          uri: string;
+          mimeType?: string;
+          storagePath?: string;
+        }> = [];
 
-        setUploadedFiles((prev) => [...prev, ...newFiles]);
+        // Upload files to Supabase Storage (user should be authenticated by now)
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          Alert.alert('Authentication Required', 'Please create your account first before uploading files.');
+          setUploading(false);
+          return;
+        }
 
-        // Update form notes with file info
-        const fileNames = newFiles.map((f) => f.name).join(', ');
-        setForm((s) => ({
-          ...s,
-          notes: s.notes ? `${s.notes}\n${fileNames}` : `Uploaded files: ${fileNames}`,
-        }));
+        // Upload each file to Supabase Storage
+        for (const file of result.assets) {
+          try {
+            const storagePath = await uploadFileToStorage(
+              file.uri,
+              file.name,
+              user.id,
+              file.mimeType || undefined
+            );
+
+            if (storagePath) {
+              uploadedPaths.push(storagePath);
+              newFiles.push({
+                name: file.name,
+                size: file.size || 0,
+                uri: file.uri,
+                mimeType: file.mimeType,
+                storagePath,
+              });
+            }
+          } catch (error) {
+            console.error(`Error uploading ${file.name}:`, error);
+            Alert.alert('Upload Error', `Failed to upload ${file.name}. Please try again.`);
+          }
+        }
+
+        if (newFiles.length > 0) {
+          setUploadedFiles((prev) => [...prev, ...newFiles]);
+          
+          // Update form with storage paths
+          setForm((s) => ({
+            ...s,
+            uploadedDocuments: [...(s.uploadedDocuments || []), ...uploadedPaths],
+          }));
+        }
+
+        setUploading(false);
       }
     } catch (error) {
       console.error('Error picking documents:', error);
+      setUploading(false);
       Alert.alert('Error', 'Failed to pick documents. Please try again.');
     }
   };
 
-  const removeFile = (index: number) => {
+  const removeFile = async (index: number) => {
     const fileToRemove = uploadedFiles[index];
-    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
     
-    // Update form notes
-    setForm((s) => {
-      if (s.notes) {
-        const updatedNotes = s.notes.replace(fileToRemove.name, '').replace(/,\s*,/g, ',').trim();
-        return { ...s, notes: updatedNotes || '' };
+    try {
+      // If file was already uploaded to storage, delete it
+      if (fileToRemove.storagePath && !fileToRemove.storagePath.startsWith('temp-')) {
+        const { error } = await supabase.storage
+          .from('partner-documents')
+          .remove([fileToRemove.storagePath]);
+
+        if (error) {
+          console.error('Error deleting file from storage:', error);
+        }
+
+        // Remove from form's uploadedDocuments array
+        setForm((s) => ({
+          ...s,
+          uploadedDocuments: (s.uploadedDocuments || []).filter((path) => path !== fileToRemove.storagePath),
+        }));
+      } else {
+        // Remove from temp files array if it's a temp file
+        setForm((s) => ({
+          ...s,
+          tempFiles: (s.tempFiles || []).filter((_, i) => {
+            const tempIndex = uploadedFiles.slice(0, index).filter(f => f.storagePath?.startsWith('temp-')).length;
+            return i !== tempIndex;
+          }),
+        }));
       }
-      return s;
-    });
+    } catch (error) {
+      console.error('Error removing file:', error);
+    }
+
+    // Remove from local state
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const formatFileSize = (bytes: number) => {
@@ -660,10 +627,9 @@ function Step3Compliance({
   }) => (
     <TouchableOpacity
       onPress={onToggle}
-      style={({ pressed }) => [
+      style={[
         styles.toggle,
         value && styles.toggleActive,
-        pressed && styles.togglePressed,
       ]}
     >
       <View style={styles.toggleHeader}>
@@ -762,9 +728,22 @@ function Step3Compliance({
           Upload permits, certificates, or other supporting documents (PDF or images)
         </Text>
 
-        <Pressable onPress={pickDocuments} style={styles.filePickerButton}>
-          <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
-          <Text style={styles.filePickerButtonText}>Choose Files</Text>
+        <Pressable 
+          onPress={pickDocuments} 
+          style={[styles.filePickerButton, uploading && styles.filePickerButtonDisabled]}
+          disabled={uploading}
+        >
+          {uploading ? (
+            <>
+              <Ionicons name="hourglass" size={20} color={COLORS.primary} />
+              <Text style={styles.filePickerButtonText}>Uploading...</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
+              <Text style={styles.filePickerButtonText}>Choose Files</Text>
+            </>
+          )}
         </Pressable>
 
         {uploadedFiles.length > 0 && (
@@ -810,7 +789,17 @@ function Step3Compliance({
 }
 
 // Step 4: Review
-function Step4Review({ form, back, next }: { form: PartnerForm; back: () => void; next: () => void }) {
+function Step4Review({ 
+  form, 
+  back, 
+  next, 
+  submit 
+}: { 
+  form: PartnerForm; 
+  back: () => void; 
+  next: () => void; 
+  submit: () => Promise<void>; 
+}) {
   const Row = ({ k, v }: { k: string; v: React.ReactNode }) => (
     <View style={styles.reviewRow}>
       <Text style={styles.reviewKey}>{k}</Text>
@@ -843,18 +832,11 @@ function Step4Review({ form, back, next }: { form: PartnerForm; back: () => void
       <Section title="Business" icon="business">
         <Row k="Business name" v={form.businessName} />
         <Row k="Website" v={form.website || "—"} />
-        <Row k="Locations" v={
-          form.locations.length > 0 
-            ? form.locations.map((loc, i) => `${loc.city}, ${loc.province}`).join(", ")
-            : "—"
-        } />
-        <Row k="Cuisine Categories" v={
-          Object.keys(form.cuisineCategories).length > 0
-            ? Object.entries(form.cuisineCategories).map(([cat, items]) => 
-                `${cat} (${items.length} items)`
-              ).join(", ")
-            : "—"
-        } />
+            <Row k="Locations" v={
+              form.locations.length > 0 
+                ? form.locations.map((loc, i) => `${loc.city}, ${loc.province}`).join(", ")
+                : "—"
+            } />
       </Section>
 
       <Section title="Owner & Contact" icon="person">
@@ -874,7 +856,12 @@ function Step4Review({ form, back, next }: { form: PartnerForm; back: () => void
 
       <View style={styles.navButtons}>
         <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
-        <SquareNavButton label="Next → Create Account" onPress={next} icon="arrow-forward" iconPosition="right" />
+        <SquareNavButton
+          label="Submit Application"
+          onPress={submit}
+          icon="checkmark-circle"
+          iconPosition="right"
+        />
       </View>
     </Card>
   );
@@ -946,7 +933,6 @@ function Step5Account({
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
-        autoCapitalize="none"
         placeholder="your@email.com"
       />
 
@@ -1042,8 +1028,8 @@ function WaitingApproval({ onBack }: { onBack: () => void }) {
             <Text style={styles.successInfoText}>Review time: 2-3 business days</Text>
           </View>
           <View style={styles.successInfoItem}>
-            <Ionicons name="lock-closed" size={20} color={COLORS.primary} />
-            <Text style={styles.successInfoText}>You can log in after approval</Text>
+            <Ionicons name="log-in" size={20} color={COLORS.primary} />
+            <Text style={styles.successInfoText}>You can log in now, but services are restricted until approval</Text>
           </View>
         </View>
         <SquareNavButton
@@ -1068,10 +1054,12 @@ export default function PartnerApplicationScreen() {
     if (step === "hero") return 0;
     if (step === "waiting") return 6;
     const num = Number(step.replace("step", ""));
-    // step1=1, step2=2, step4=3 (compliance), step5=4 (review), step6=5 (account)
-    if (num === 4) return 3; // compliance (step4)
-    if (num === 5) return 4; // review (step5)
-    if (num === 6) return 5; // account (step6)
+    // step6=1 (account), step1=2 (business), step2=3 (owner), step4=4 (compliance), step5=5 (review)
+    if (num === 6) return 1; // account (step6) is now first
+    if (num === 1) return 2; // business
+    if (num === 2) return 3; // owner
+    if (num === 4) return 4; // compliance
+    if (num === 5) return 5; // review
     return num;
   }, [step]);
 
@@ -1087,36 +1075,43 @@ export default function PartnerApplicationScreen() {
 
   const go = (s: StepKey) => setStep(s);
   const next = () => {
-    if (step === "hero") return setStep("step1");
-    if (step === "step1") return setStep("step2");
-    if (step === "step2") return setStep("step4"); // Skip step3, go to compliance
-    if (step === "step4") return setStep("step5"); // compliance goes to review
-    if (step === "step5") return setStep("step6"); // review goes to account creation
+    if (step === "hero") return setStep("step6"); // Start with Account Creation
+    if (step === "step6") return setStep("step1"); // Account goes to Business
+    if (step === "step1") return setStep("step2"); // Business goes to Owner
+    if (step === "step2") return setStep("step4"); // Owner goes to Compliance
+    if (step === "step4") return setStep("step5"); // Compliance goes to Review
+    if (step === "step5") return setStep("waiting"); // Review submits and shows waiting screen
   };
 
   const back = () => {
     if (step === "hero") return;
-    if (step === "step1") return setStep("hero");
-    if (step === "step2") return setStep("step1");
-    if (step === "step4") return setStep("step2"); // compliance back to owner
-    if (step === "step5") return setStep("step4"); // review back to compliance
-    if (step === "step6") return setStep("step5"); // account creation back to review
+    if (step === "step6") return setStep("hero"); // Account back to hero
+    if (step === "step1") return setStep("step6"); // Business back to Account
+    if (step === "step2") return setStep("step1"); // Owner back to Business
+    if (step === "step4") return setStep("step2"); // Compliance back to Owner
+    if (step === "step5") return setStep("step4"); // Review back to Compliance
     if (step === "waiting") return setStep("hero");
   };
 
   const handleAccountCreation = async (email: string, password: string) => {
     try {
-      // First, create the account with CATER role
+      // Create the account with CATER role
       const { register } = await import('../../services/api');
-      await register(email, password, form.ownerName, 'CATER');
+      const userProfile = await register(email, password, form.ownerName || 'Partner', 'CATER');
       
-      // Then submit the application
-      await sendApplicationToRecruitment(form);
+      if (!userProfile?.id) {
+        throw new Error('Failed to get user ID after registration');
+      }
+
+      // Update form with email (saveForm will be called automatically by useEffect)
+      const formWithEmail = {
+        ...form,
+        ownerEmail: email,
+      };
+      setForm(formWithEmail);
       
-      // Clear form and show waiting screen
-      await clearForm();
-      setForm(EMPTY_PARTNER_FORM);
-      setStep("waiting");
+      // Proceed to next step (Business Profile)
+      next();
     } catch (error: any) {
       console.error('Account creation error:', error);
       const errorMessage = error?.message || 'Failed to create account. Please try again.';
@@ -1141,7 +1136,7 @@ export default function PartnerApplicationScreen() {
         )}
 
         <Container>
-          {step === "hero" && <Hero onStart={() => setStep("step1")} />}
+          {step === "hero" && <Hero onStart={() => setStep("step6")} />}
           {step !== "hero" && step !== "waiting" && (
             <View style={styles.stepperContainer}>
               <Stepper current={stepNumber} />
@@ -1150,7 +1145,85 @@ export default function PartnerApplicationScreen() {
           {step === "step1" && <Step1 form={form} setForm={setForm} back={back} next={next} />}
           {step === "step2" && <Step2 form={form} setForm={setForm} back={back} next={next} />}
           {step === "step4" && <Step3Compliance form={form} setForm={setForm} back={back} next={next} />}
-          {step === "step5" && <Step4Review form={form} back={back} next={next} />}
+          {step === "step5" && (
+            <Step4Review 
+              form={form} 
+              back={back} 
+              next={next} 
+              submit={async () => {
+                try {
+                  // Get current user
+                  const { data: { user } } = await supabase.auth.getUser();
+                  if (!user?.id) {
+                    Alert.alert("Error", "Please log in to submit your application.");
+                    return;
+                  }
+
+                  // Upload any remaining temp files if they exist
+                  const uploadedPaths: string[] = [];
+                  if (form.tempFiles && form.tempFiles.length > 0) {
+                    for (const tempFile of form.tempFiles) {
+                      try {
+                        // Generate unique file name with timestamp
+                        const timestamp = Date.now();
+                        const sanitizedFileName = tempFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+                        const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
+                        const storagePath = `${user.id}/${uniqueFileName}`;
+
+                        // Read file as blob
+                        let fileBlob: Blob;
+                        if (Platform.OS === 'web') {
+                          const response = await fetch(tempFile.uri);
+                          fileBlob = await response.blob();
+                        } else {
+                          const response = await fetch(tempFile.uri);
+                          fileBlob = await response.blob();
+                        }
+
+                        // Upload to Supabase Storage
+                        const { error: uploadError } = await supabase.storage
+                          .from('partner-documents')
+                          .upload(storagePath, fileBlob, {
+                            contentType: tempFile.mimeType || 'application/pdf',
+                            upsert: false,
+                          });
+
+                        if (!uploadError && storagePath) {
+                          uploadedPaths.push(storagePath);
+                        }
+                      } catch (error) {
+                        console.error(`Error uploading ${tempFile.name}:`, error);
+                      }
+                    }
+                  }
+
+                  // Merge uploaded paths with any existing uploadedDocuments
+                  const finalUploadedDocuments = [
+                    ...(form.uploadedDocuments || []),
+                    ...uploadedPaths,
+                  ];
+                  
+                  // Update form with uploaded document paths
+                  const formWithUploads = {
+                    ...form,
+                    uploadedDocuments: finalUploadedDocuments,
+                    tempFiles: undefined,
+                  };
+                  
+                  // Submit the application
+                  await sendApplicationToRecruitment(formWithUploads, user.id);
+                  
+                  // Clear form and show waiting screen
+                  await clearForm();
+                  setForm(EMPTY_PARTNER_FORM);
+                  setStep("waiting");
+                } catch (error: any) {
+                  console.error('Submission error:', error);
+                  Alert.alert("Error", error?.message || 'Failed to submit application. Please try again.');
+                }
+              }} 
+            />
+          )}
           {step === "step6" && <Step5Account form={form} back={back} submit={handleAccountCreation} />}
           {step === "waiting" && <WaitingApproval onBack={() => setStep("hero")} />}
         </Container>
@@ -1975,6 +2048,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: COLORS.primary,
+  },
+  filePickerButtonDisabled: {
+    opacity: 0.6,
   },
   fileList: {
     marginTop: 8,

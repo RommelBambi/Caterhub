@@ -29,30 +29,21 @@ export type PartnerForm = {
   businessName: string;
   locations: BusinessLocation[];
   website: string;
-  cuisineCategories: { [category: string]: string[] }; // e.g., { "Italian": ["Pasta", "Pizza"] }
   ownerName: string;
   ownerPhone: string;
   ownerEmail: string;
   telephoneNumber?: string;
   contactNumber?: string;
-  bankName: string;
-  bankAccountName: string;
-  bankAccountNumber: string;
-  minGuests: string;
-  maxGuests: string;
-  packages: string[];
-  hours: string;
-  sampleMenu: string;
   permitsReady: boolean;
   foodSafety: boolean;
   agreeTerms: boolean;
   notes: string;
-  // Deprecated fields (kept for migration)
-  city?: string;
-  address?: string;
-  cuisines?: string[];
-  pricePerHead?: string;
-  years?: string;
+  uploadedDocuments?: string[]; // Array of Supabase storage paths
+  tempFiles?: Array<{ // Temporary file storage before account creation
+    uri: string;
+    name: string;
+    mimeType?: string;
+  }>;
 };
 
 // Admin types
