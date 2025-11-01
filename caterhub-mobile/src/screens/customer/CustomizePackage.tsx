@@ -10,20 +10,38 @@ type ChoiceMap = Record<string, string>;
 export default function CustomizePackage({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const service = route.params.service as Service;
-  const pkg = route.params.pkg as ServicePackage;
+  const pkg = route.params.pkg as ServicePackage & { _raw?: any };
   const [choices, setChoices] = React.useState<ChoiceMap>({});
   const [notes, setNotes] = React.useState('');
+
+  // Get sections from raw package data (database format) or categories (legacy format)
+  const sections = pkg._raw?.sections || [];
+  const categories = pkg.categories || [];
+
+  // If we have sections (new format), convert to category-like structure for selection
+  const selectionCategories: PackageCategory[] = sections.length > 0
+    ? sections.map((section: any, idx: number) => ({
+        id: `section_${idx}`,
+        name: section.category || 'Category',
+        options: (section.dishes || []).map((dish: string, dishIdx: number) => ({
+          id: `dish_${idx}_${dishIdx}`,
+          name: dish,
+        })),
+        required: true,
+        pick: 1,
+      }))
+    : categories;
 
   const select = (categoryId: string, optionId: string) => {
     setChoices(prev => ({ ...prev, [categoryId]: optionId }));
   };
 
-  const allRequiredChosen = (pkg.categories ?? []).every((cat: PackageCategory) =>
+  const allRequiredChosen = selectionCategories.every((cat: PackageCategory) =>
     cat.required === false ? true : !!choices[cat.id]
   );
 
   const goNext = () => {
-    const picked = (pkg.categories ?? []).map((cat: PackageCategory) => {
+    const picked = selectionCategories.map((cat: PackageCategory) => {
       const opt = cat.options.find((o: DishOption) => o.id === choices[cat.id]);
       return {
         categoryId: cat.id,
@@ -46,38 +64,48 @@ export default function CustomizePackage({ route, navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.title}>{pkg.name} • ₱{pkg.pricePerHead} / head</Text>
+        <Text style={styles.title}>
+          {pkg.name} • {typeof pkg._raw?.price === 'string' ? pkg._raw.price : `₱${pkg.pricePerHead} / head`}
+        </Text>
         <Text style={styles.subtitle}>{service.name}</Text>
 
-        {(pkg.categories ?? []).map((cat: PackageCategory) => (
-          <Card key={cat.id} style={styles.catCard}>
+        {selectionCategories.length > 0 ? (
+          selectionCategories.map((cat: PackageCategory) => (
+            <Card key={cat.id} style={styles.catCard}>
+              <Card.Content>
+                <Text style={styles.catTitle}>
+                  {cat.name} {cat.required !== false ? '(required)' : '(optional)'}
+                </Text>
+
+                <RadioButton.Group
+                  onValueChange={(val: string) => select(cat.id, val)}
+                  value={choices[cat.id]}
+                >
+                  {cat.options.map((opt: DishOption) => (
+                    <RadioButton.Item
+                      key={opt.id}
+                      value={opt.id}
+                      label={opt.name}
+                      position="leading"
+                      style={styles.radioItem}
+                      labelStyle={styles.radioLabel}
+                      color="#C836F9"
+                      uncheckedColor="#9ca3af"
+                    />
+                  ))}
+                </RadioButton.Group>
+
+                <Divider style={{ marginTop: 6 }} />
+              </Card.Content>
+            </Card>
+          ))
+        ) : (
+          <Card style={styles.catCard}>
             <Card.Content>
-              <Text style={styles.catTitle}>
-                {cat.name} {cat.required !== false ? '(required)' : '(optional)'}
-              </Text>
-
-              <RadioButton.Group
-                onValueChange={(val: string) => select(cat.id, val)}
-                value={choices[cat.id]}
-              >
-                {cat.options.map((opt: DishOption) => (
-                  <RadioButton.Item
-                    key={opt.id}
-                    value={opt.id}
-                    label={opt.name}
-                    position="leading"
-                    style={styles.radioItem}
-                    labelStyle={styles.radioLabel}
-                    color="#C836F9"
-                    uncheckedColor="#9ca3af"
-                  />
-                ))}
-              </RadioButton.Group>
-
-              <Divider style={{ marginTop: 6 }} />
+              <Text style={styles.muted}>This package doesn't require customization. Continue to booking.</Text>
             </Card.Content>
           </Card>
-        ))}
+        )}
 
         {/* Notes input */}
         <TextInput
@@ -96,9 +124,9 @@ export default function CustomizePackage({ route, navigation }: any) {
       <View style={styles.footer}>
         <Button
           mode="contained"
-          style={{ flex: 1, backgroundColor: allRequiredChosen ? '#C836F9' : '#ccc' }}
+          style={{ flex: 1, backgroundColor: (allRequiredChosen || selectionCategories.length === 0) ? '#C836F9' : '#ccc' }}
           onPress={goNext}
-          disabled={!allRequiredChosen}
+          disabled={selectionCategories.length > 0 && !allRequiredChosen}
         >
           Continue to booking
         </Button>
@@ -117,6 +145,7 @@ const styles = StyleSheet.create({
   catTitle: { fontSize: 16, fontWeight: '700', marginBottom: 8 },
   radioItem: { paddingHorizontal: 0, marginLeft: -6 },
   radioLabel: { fontSize: 14 },
+  muted: { color: '#6b7280', fontSize: 14 },
   footer: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,

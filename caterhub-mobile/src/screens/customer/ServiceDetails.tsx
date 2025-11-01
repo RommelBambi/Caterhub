@@ -38,10 +38,18 @@ export default function ServiceDetails({ route, navigation }: any) {
       try {
         setLoading(true);
         setError(null);
+        console.log(`[ServiceDetails] Fetching service ${id}...`);
         const data = await fetchService(id); // has fallback for packages
+        console.log(`[ServiceDetails] Service loaded:`, {
+          id: data?.id,
+          name: data?.name,
+          hasPackages: !!(data?.packages && data.packages.length > 0),
+          packageCount: data?.packages?.length || 0,
+          userId: (data as any)?.user_id,
+        });
         setService(data ?? null);
       } catch (e: any) {
-        console.log('[ServiceDetails] fetchService error:', e?.message || e);
+        console.error('[ServiceDetails] fetchService error:', e?.message || e);
         setError('Failed to load service.');
         setService(null);
       } finally {
@@ -139,32 +147,83 @@ export default function ServiceDetails({ route, navigation }: any) {
 
             <View style={{ paddingHorizontal: 16 }}>
               {(service.packages ?? []).length > 0 ? (
-                service.packages!.map((pkg) => (
-                  <Card key={pkg.id} style={styles.pkgCard}>
-                    <Card.Content>
-                      <Text style={styles.pkgTitle}>
-                        {pkg.name} • ₱{pkg.pricePerHead} / head
-                      </Text>
+                service.packages!.map((pkg) => {
+                  // Display sections (from database packages) or categories (from old format)
+                  const sections = (pkg as any)._raw?.sections || [];
+                  const inclusions = (pkg as any)._raw?.inclusions || [];
+                  const categories = pkg.categories || [];
+                  
+                  return (
+                    <Card key={pkg.id} style={styles.pkgCard}>
+                      <Card.Content>
+                        <Text style={styles.pkgTitle}>
+                          {pkg.name}
+                        </Text>
+                        <Text style={styles.pkgPrice}>
+                          {typeof (pkg as any)._raw?.price === 'string' 
+                            ? (pkg as any)._raw.price 
+                            : `₱${pkg.pricePerHead} / head`}
+                        </Text>
 
-                      {(pkg.categories ?? []).map((cat) => (
-                        <View key={cat.id} style={styles.inclusionRow}>
-                          <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-                          <Text style={styles.inclusionText}>{cat.name}</Text>
-                        </View>
-                      ))}
+                        {/* Display sections (food categories with dishes) */}
+                        {sections.length > 0 && (
+                          <>
+                            {sections.map((section: any, sectionIdx: number) => (
+                              <View key={sectionIdx} style={styles.sectionBlock}>
+                                <Text style={styles.packageSectionTitle}>
+                                  {section.category || 'Category'}
+                                </Text>
+                                {(section.dishes || []).map((dish: string, dishIdx: number) => (
+                                  <View key={dishIdx} style={styles.dishRow}>
+                                    <Ionicons name="restaurant" size={14} color="#10b981" />
+                                    <Text style={styles.dishText}>{dish}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            ))}
+                          </>
+                        )}
 
-                      <Button
-                        mode="contained"
-                        style={{ marginTop: 10, backgroundColor: '#C836F9' }}
-                        onPress={() => selectPackage(pkg)}
-                      >
-                        Select package
-                      </Button>
-                    </Card.Content>
-                  </Card>
-                ))
+                        {/* Display categories (old format - for backward compatibility) */}
+                        {categories.length > 0 && sections.length === 0 && (
+                          <>
+                            {categories.map((cat) => (
+                              <View key={cat.id} style={styles.inclusionRow}>
+                                <Ionicons name="checkmark-circle" size={16} color="#10b981" />
+                                <Text style={styles.inclusionText}>{cat.name}</Text>
+                              </View>
+                            ))}
+                          </>
+                        )}
+
+                        {/* Display inclusions (add-ons) */}
+                        {inclusions.length > 0 && (
+                          <>
+                            <Text style={styles.inclusionsTitle}>Inclusions:</Text>
+                            {inclusions.map((inc: any, incIdx: number) => (
+                              <View key={incIdx} style={styles.inclusionRow}>
+                                <Ionicons name="add-circle" size={14} color="#9333ea" />
+                                <Text style={styles.inclusionText}>
+                                  {inc.name} {inc.price ? `(${inc.price})` : ''}
+                                </Text>
+                              </View>
+                            ))}
+                          </>
+                        )}
+
+                        <Button
+                          mode="contained"
+                          style={{ marginTop: 16, backgroundColor: '#C836F9' }}
+                          onPress={() => selectPackage(pkg)}
+                        >
+                          Select package
+                        </Button>
+                      </Card.Content>
+                    </Card>
+                  );
+                })
               ) : (
-                <Text style={[styles.muted, { paddingHorizontal: 2 }]}>No packages yet.</Text>
+                <Text style={[styles.muted, { paddingHorizontal: 2 }]}>No packages available yet.</Text>
               )}
             </View>
           </>
@@ -190,8 +249,14 @@ const styles = StyleSheet.create({
   muted: { color: '#6b7280' },
   sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
 
-  pkgCard: { marginBottom: 12, borderRadius: 12, overflow: 'hidden' },
-  inclusionRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  inclusionText: { color: '#374151' },
-  pkgTitle: { fontWeight: '700', fontSize: 16, marginBottom: 6 },
+  pkgCard: { marginBottom: 16, borderRadius: 12, overflow: 'hidden', elevation: 2 },
+  inclusionRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  inclusionText: { color: '#374151', fontSize: 14 },
+  pkgTitle: { fontWeight: '700', fontSize: 18, marginBottom: 4 },
+  pkgPrice: { fontSize: 16, fontWeight: '600', color: '#10b981', marginBottom: 12 },
+  sectionBlock: { marginBottom: 12, paddingVertical: 8, borderLeftWidth: 3, borderLeftColor: '#C836F9', paddingLeft: 12 },
+  packageSectionTitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 6 },
+  dishRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginLeft: 4 },
+  dishText: { color: '#4b5563', fontSize: 14 },
+  inclusionsTitle: { fontSize: 14, fontWeight: '600', color: '#6b7280', marginTop: 12, marginBottom: 6 },
 });

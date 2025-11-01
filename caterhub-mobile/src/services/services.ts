@@ -47,7 +47,14 @@ export async function fetchServices(): Promise<Service[]> {
     .order('created_at', { ascending: false });
     
   if (error) throw error;
-  return data || [];
+  
+  // Optionally fetch packages for each service (this might be heavy, so we'll do it on-demand)
+  // For now, return services without packages to keep the list fast
+  // Packages will be fetched when viewing ServiceDetails
+  return (data || []).map((svc: any) => ({
+    ...svc,
+    packages: undefined, // Will be fetched in fetchService()
+  }));
 }
 
 
@@ -64,6 +71,64 @@ export async function fetchTopServices(by: 'likes' | 'bookings', limit = 8): Pro
 }
 
 
+/**
+ * Fetch packages for a specific service
+ * Packages are linked to services through caterer_id (packages) = user_id (services)
+ */
+export async function fetchPackagesForService(serviceUserId: string): Promise<ServicePackage[]> {
+  console.log(`[fetchPackagesForService] Fetching packages for caterer_id: ${serviceUserId}`);
+  
+  const { data, error } = await supabase
+    .from('packages')
+    .select('*')
+    .eq('caterer_id', serviceUserId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[fetchPackagesForService] Error fetching packages:', error);
+    console.error('[fetchPackagesForService] Error details:', JSON.stringify(error, null, 2));
+    return [];
+  }
+  
+  console.log(`[fetchPackagesForService] Found ${data?.length || 0} active packages for caterer ${serviceUserId}`);
+
+  // Transform database packages to ServicePackage format
+  return (data || []).map((pkg: any) => {
+    // Convert sections to categories format
+    const categories: PackageCategory[] = (pkg.sections || []).map((section: any, idx: number) => ({
+      id: `section_${idx}`,
+      name: section.category || 'Category',
+      options: (section.dishes || []).map((dish: string, dishIdx: number) => ({
+        id: `dish_${idx}_${dishIdx}`,
+        name: dish,
+      })),
+      required: true,
+      pick: 1,
+    }));
+
+    // Extract price per head from price string (e.g., "₱250/head" or "250")
+    let pricePerHead = 0;
+    try {
+      const priceMatch = pkg.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+      if (priceMatch) {
+        pricePerHead = parseFloat(priceMatch[1].replace(/,/g, ''));
+      }
+    } catch (e) {
+      // If parsing fails, default to 0
+    }
+
+    return {
+      id: pkg.id,
+      name: pkg.name,
+      pricePerHead: pricePerHead || 250, // fallback
+      categories: categories,
+      // Store raw package data for reference
+      _raw: pkg,
+    } as ServicePackage & { _raw?: any };
+  });
+}
+
 export async function fetchService(id: number): Promise<Service> {
   const { data, error } = await supabase
     .from('services')
@@ -73,86 +138,50 @@ export async function fetchService(id: number): Promise<Service> {
     
   if (error) throw error;
   
-  // For now, we'll add mock packages since we don't have a packages table yet
-  const withMock: Service = {
+  // Fetch packages for this service
+  // Packages are linked to services through: packages.caterer_id = services.user_id
+  let packages: ServicePackage[] = [];
+  try {
+    const serviceUserId = (data as any).user_id;
+    
+    if (serviceUserId) {
+      console.log(`[fetchService] Fetching packages for service ${id} with user_id: ${serviceUserId}`);
+      packages = await fetchPackagesForService(serviceUserId);
+      console.log(`[fetchService] Found ${packages.length} packages for service ${id}`);
+    } else {
+      // Try alternative approach: find packages by matching with services that have packages
+      // This is a fallback for services created before user_id was added
+      console.warn(`[fetchService] Service ${id} (${data.name}) does not have user_id. Attempting alternative package lookup...`);
+      
+      // Alternative: Find all active packages and match by service name or try to find any packages
+      // This is a workaround - ideally services should have user_id set
+      try {
+        const { data: allPackages, error: pkgError } = await supabase
+          .from('packages')
+          .select('*, caterer_id')
+          .eq('is_active', true)
+          .limit(100); // Limit to prevent huge queries
+        
+        if (!pkgError && allPackages && allPackages.length > 0) {
+          console.log(`[fetchService] Found ${allPackages.length} total active packages. Service may not be linked to caterer.`);
+          // We can't reliably match without user_id, so we return empty packages
+          // The service owner should update their service to include user_id
+        }
+      } catch (altError) {
+        console.error('[fetchService] Error in alternative package lookup:', altError);
+      }
+      
+      console.warn(`[fetchService] Cannot fetch packages for service ${id} - service.user_id is missing. Please link the service to a caterer by setting user_id.`);
+    }
+  } catch (e) {
+    console.error('[fetchService] Error fetching packages for service:', e);
+    // Continue without packages if fetch fails
+  }
+  
+  return {
     ...data,
-    packages: [
-      {
-        id: 'p1',
-        name: 'Package 1',
-        pricePerHead: data.price_per_head || 250,
-        categories: [
-          { id: 'rice', name: 'Plain Rice', options: [{ id: 'plain', name: 'Plain Rice' }], required: true, pick: 1 },
-          {
-            id: 'chicken',
-            name: 'Choice of Chicken Dish',
-            required: true,
-            pick: 1,
-            options: [
-              { id: 'ch1', name: 'Fried Chicken' },
-              { id: 'ch2', name: 'Chicken Afritada' },
-              { id: 'ch3', name: 'Chicken Teriyaki' },
-            ],
-          },
-          {
-            id: 'pork',
-            name: 'Choice of Pork Dish',
-            required: true,
-            pick: 1,
-            options: [
-              { id: 'pk1', name: 'Pork Menudo' },
-              { id: 'pk2', name: 'Pork BBQ' },
-              { id: 'pk3', name: 'Sweet & Sour Pork' },
-            ],
-          },
-          {
-            id: 'veggies',
-            name: 'Choice of Veggies Dish',
-            required: true,
-            pick: 1,
-            options: [
-              { id: 'vg1', name: 'Chopsuey' },
-              { id: 'vg2', name: 'Pinakbet' },
-              { id: 'vg3', name: 'Buttered Vegetables' },
-            ],
-          },
-          {
-            id: 'fish',
-            name: 'Choice of Fish Dish',
-            required: false,
-            pick: 1,
-            options: [
-              { id: 'fs1', name: 'Fish Fillet w/ Tartar' },
-              { id: 'fs2', name: 'Sweet & Sour Fish' },
-            ],
-          },
-          {
-            id: 'dessert',
-            name: 'Choice of Dessert Dish',
-            required: true,
-            pick: 1,
-            options: [
-              { id: 'ds1', name: 'Leche Flan' },
-              { id: 'ds2', name: 'Buko Pandan' },
-              { id: 'ds3', name: 'Maja Blanca' },
-            ],
-          },
-          {
-            id: 'juice',
-            name: 'Choice of Juice',
-            required: true,
-            pick: 1,
-            options: [
-              { id: 'jc1', name: 'Iced Tea' },
-              { id: 'jc2', name: 'Orange' },
-              { id: 'jc3', name: 'Pineapple' },
-            ],
-          },
-        ],
-      },
-    ],
+    packages: packages.length > 0 ? packages : undefined,
   };
-  return withMock;
 }
 
 
@@ -160,7 +189,8 @@ export async function createBooking(payload: {
   serviceId: number;
   eventDate: string;   
   guests: number;
-  notes?: string;      
+  notes?: string;
+  packageId?: string; // UUID of the package
 }) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('User not authenticated');
@@ -173,12 +203,18 @@ export async function createBooking(payload: {
       event_date: payload.eventDate,
       guests: payload.guests,
       notes: payload.notes,
+      package_id: payload.packageId || null,
       status: 'PENDING',
     })
     .select()
     .single();
     
-  if (error) throw error;
+  if (error) {
+    console.error('[createBooking] Error creating booking:', error);
+    throw error;
+  }
+  
+  console.log('[createBooking] Booking created successfully:', data.id);
   return data;
 }
 

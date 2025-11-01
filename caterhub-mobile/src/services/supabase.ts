@@ -52,6 +52,7 @@ export interface Database {
           bookings_count?: number;
           latitude?: number | null;
           longitude?: number | null;
+          user_id?: string | null; // UUID string - links service to caterer (user)
           created_at: string;
           updated_at: string;
         };
@@ -68,6 +69,7 @@ export interface Database {
           bookings_count?: number;
           latitude?: number | null;
           longitude?: number | null;
+          user_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -84,6 +86,7 @@ export interface Database {
           bookings_count?: number;
           latitude?: number | null;
           longitude?: number | null;
+          user_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -93,6 +96,7 @@ export interface Database {
           id: number;
           user_id: string; // UUID string
           service_id: number;
+          package_id?: string | null; // UUID string - links to packages table
           event_date: string;
           guests: number;
           notes?: string | null;
@@ -104,6 +108,7 @@ export interface Database {
           id?: number;
           user_id: string; // UUID string
           service_id: number;
+          package_id?: string | null;
           event_date: string;
           guests: number;
           notes?: string | null;
@@ -115,6 +120,7 @@ export interface Database {
           id?: number;
           user_id?: string; // UUID string
           service_id?: number;
+          package_id?: string | null;
           event_date?: string;
           guests?: number;
           notes?: string | null;

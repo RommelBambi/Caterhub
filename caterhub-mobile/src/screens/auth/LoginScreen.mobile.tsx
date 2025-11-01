@@ -4,12 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../store/auth';
 
 /**
  * Mobile-optimized login screen
  */
-export default function LoginScreen({ navigation }: any) {
+export default function LoginScreen() {
+  const navigation = useNavigation<any>();
   const { login } = useAuth();
   const { control, handleSubmit, watch } = useForm({ defaultValues: { email: '', password: '' } });
   const [showPw, setShowPw] = useState(false);
