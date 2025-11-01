@@ -8,7 +8,8 @@ import {
   TextInput,
   Alert,
   TouchableOpacity,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -80,15 +81,26 @@ export default function PartnerOrderDetailsScreen() {
   const updateBookingStatus = async (newStatus: string, reason?: string) => {
     setUpdating(true);
     try {
+      console.log('[PartnerOrderDetailsScreen] Updating booking:', {
+        bookingId: order.id,
+        newStatus,
+        hasReason: !!reason
+      });
+
       const updateData: any = { status: newStatus };
       
       // Add reason to notes if provided
       if (reason) {
-        const { data: booking } = await supabase
+        const { data: booking, error: fetchError } = await supabase
           .from('bookings')
           .select('notes')
           .eq('id', order.id)
           .single();
+        
+        if (fetchError) {
+          console.error('[PartnerOrderDetailsScreen] Error fetching booking notes:', fetchError);
+          throw fetchError;
+        }
         
         let notesData: any = {};
         try {
@@ -99,49 +111,92 @@ export default function PartnerOrderDetailsScreen() {
         
         notesData.statusReason = reason;
         notesData.statusReasonDate = new Date().toISOString();
+        notesData.statusUpdatedBy = 'caterer';
         updateData.notes = JSON.stringify(notesData);
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('bookings')
         .update(updateData)
-        .eq('id', order.id);
+        .eq('id', order.id)
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[PartnerOrderDetailsScreen] Error updating booking:', error);
+        throw error;
+      }
 
+      console.log('[PartnerOrderDetailsScreen] Booking updated successfully:', data);
       setCurrentStatus(newStatus as any);
       closeReasonModal();
       
-      Alert.alert(
-        'Success',
-        `Order ${newStatus.toLowerCase()} successfully.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack()
-          }
-        ]
-      );
+      if (Platform.OS === 'web') {
+        // Use window.alert for web
+        window.alert(`Order ${newStatus.toLowerCase()} successfully.`);
+        // Small delay to let the alert show, then navigate back
+        setTimeout(() => {
+          navigation.goBack();
+        }, 100);
+      } else {
+        Alert.alert(
+          'Success',
+          `Order ${newStatus.toLowerCase()} successfully.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack()
+            }
+          ]
+        );
+      }
     } catch (error: any) {
-      console.error('Error updating booking status:', error);
-      Alert.alert('Error', error?.message || 'Failed to update booking status');
+      console.error('[PartnerOrderDetailsScreen] Error updating booking status:', error);
+      
+      let errorMessage = 'Failed to update booking status';
+      if (error?.message) {
+        errorMessage = error.message;
+        // Check for RLS policy errors
+        if (error.message.includes('policy') || error.message.includes('permission')) {
+          errorMessage = 'You do not have permission to update this booking. Please contact support.';
+        }
+      }
+      
+      Alert.alert('Error', errorMessage);
     } finally {
       setUpdating(false);
     }
   };
 
   async function handleAccept() {
-    Alert.alert(
-      'Confirm Booking',
-      'Are you sure you want to accept this booking?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Accept',
-          onPress: () => updateBookingStatus('CONFIRMED')
-        }
-      ]
-    );
+    console.log('[PartnerOrderDetailsScreen] handleAccept called');
+    
+    if (Platform.OS === 'web') {
+      // Use window.confirm for web since Alert.alert doesn't work reliably
+      const confirmed = window.confirm('Are you sure you want to accept this booking?');
+      if (confirmed) {
+        console.log('[PartnerOrderDetailsScreen] User confirmed, updating status...');
+        updateBookingStatus('CONFIRMED');
+      } else {
+        console.log('[PartnerOrderDetailsScreen] User cancelled');
+      }
+    } else {
+      // Use native Alert for mobile
+      Alert.alert(
+        'Confirm Booking',
+        'Are you sure you want to accept this booking?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Accept',
+            onPress: () => {
+              console.log('[PartnerOrderDetailsScreen] User confirmed, updating status...');
+              updateBookingStatus('CONFIRMED');
+            }
+          }
+        ]
+      );
+    }
   }
 
   async function handleDecline() {
@@ -149,17 +204,26 @@ export default function PartnerOrderDetailsScreen() {
   }
 
   async function handleComplete() {
-    Alert.alert(
-      'Mark as Completed',
-      'Mark this booking as completed?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Complete',
-          onPress: () => updateBookingStatus('COMPLETED')
-        }
-      ]
-    );
+    console.log('[PartnerOrderDetailsScreen] handleComplete called');
+    
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Mark this booking as completed?');
+      if (confirmed) {
+        updateBookingStatus('COMPLETED');
+      }
+    } else {
+      Alert.alert(
+        'Mark as Completed',
+        'Mark this booking as completed?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Complete',
+            onPress: () => updateBookingStatus('COMPLETED')
+          }
+        ]
+      );
+    }
   }
 
   async function handleCancel() {
@@ -284,6 +348,11 @@ export default function PartnerOrderDetailsScreen() {
               <View style={styles.rowLine}>
                 <Text style={styles.labelText}>Package</Text>
                 <Text style={styles.valueText}>{order.packageName}</Text>
+                {order.packagePrice && (
+                  <Text style={[styles.valueText, { fontSize: 13, color: '#6b7280', marginTop: 2 }]}>
+                    Package Price: {order.packagePrice}
+                  </Text>
+                )}
               </View>
             )}
 

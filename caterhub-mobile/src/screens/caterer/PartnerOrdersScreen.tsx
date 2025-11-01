@@ -51,41 +51,65 @@ export default function PartnerOrdersScreen() {
 
   // Fetch orders from Supabase
   const fetchOrders = async () => {
-    if (!user) return;
+    if (!user) {
+      console.warn('[PartnerOrdersScreen] No user, cannot fetch orders');
+      return;
+    }
+
+    console.log('[PartnerOrdersScreen] Fetching orders for caterer:', user.id);
 
     try {
       // First, get all services belonging to this caterer
-      // Assuming services have a user_id field that links to caterers
       const { data: services, error: servicesError } = await supabase
         .from('services')
-        .select('id')
+        .select('id, name, user_id')
         .eq('user_id', user.id);
 
+      console.log('[PartnerOrdersScreen] Found services:', services?.length || 0, services);
+
       if (servicesError) {
-        console.error('Error fetching services:', servicesError);
-        // Try alternative query if services don't have user_id
-        await fetchOrdersAlternative();
+        console.error('[PartnerOrdersScreen] Error fetching services:', servicesError);
+        // Try fetching by packages instead
+        await fetchOrdersByPackages();
         return;
       }
 
       if (!services || services.length === 0) {
-        setOrders([]);
-        setLoading(false);
-        setRefreshing(false);
+        console.warn('[PartnerOrdersScreen] No services found for caterer, trying packages...');
+        // Try fetching by packages instead (since packages are linked to caterers)
+        await fetchOrdersByPackages();
         return;
       }
 
       const serviceIds = services.map(s => s.id);
+      console.log('[PartnerOrdersScreen] Service IDs:', serviceIds);
 
-      // Now fetch bookings for those services
-      const { data: bookings, error } = await supabase
+      // Also get packages for this caterer (to include bookings by package_id too)
+      const { data: packages, error: packagesError } = await supabase
+        .from('packages')
+        .select('id')
+        .eq('caterer_id', user.id)
+        .eq('is_active', true);
+
+      const packageIds = packages?.map(p => p.id) || [];
+      console.log('[PartnerOrdersScreen] Package IDs for this caterer:', packageIds);
+
+      // Fetch bookings for services OR packages (cover both cases)
+      let bookingsQuery = supabase
         .from('bookings')
         .select(`
           *,
           services:service_id (
             id,
             name,
-            price_per_head
+            price_per_head,
+            user_id
+          ),
+          packages:package_id (
+            id,
+            name,
+            price,
+            caterer_id
           ),
           customer:user_id (
             id,
@@ -93,8 +117,37 @@ export default function PartnerOrdersScreen() {
             email
           )
         `)
-        .in('service_id', serviceIds)
         .order('created_at', { ascending: false });
+
+      // Filter by service_id OR package_id
+      // Try to use package_id first since we know bookings have package_id
+      if (packageIds.length > 0) {
+        bookingsQuery = bookingsQuery.in('package_id', packageIds);
+        console.log('[PartnerOrdersScreen] Querying bookings by package_id:', packageIds);
+      } else if (serviceIds.length > 0) {
+        bookingsQuery = bookingsQuery.in('service_id', serviceIds);
+        console.log('[PartnerOrdersScreen] Querying bookings by service_id:', serviceIds);
+      } else {
+        // No services or packages, set empty
+        console.warn('[PartnerOrdersScreen] No services or packages found for caterer');
+        setOrders([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      const { data: bookings, error } = await bookingsQuery;
+
+      console.log('[PartnerOrdersScreen] Found bookings:', bookings?.length || 0);
+      if (bookings && bookings.length > 0) {
+        console.log('[PartnerOrdersScreen] Sample booking:', {
+          id: bookings[0].id,
+          service_id: bookings[0].service_id,
+          package_id: bookings[0].package_id,
+          user_id: bookings[0].user_id,
+          customer: bookings[0].customer?.username,
+        });
+      }
 
       if (error) {
         console.error('Error fetching orders:', error);
@@ -104,9 +157,203 @@ export default function PartnerOrdersScreen() {
         return;
       }
 
+      // If customer data is missing from joins, fetch it separately
+      const bookingsWithCustomers = await Promise.all(
+        (bookings || []).map(async (booking: any) => {
+          // If customer join worked, use it
+          if (booking.customer) {
+            return booking;
+          }
+
+          // Otherwise, fetch customer data separately
+          console.log('[PartnerOrdersScreen] Fetching customer data separately for booking:', booking.id, 'user_id:', booking.user_id);
+          
+          const { data: customerData, error: customerError } = await supabase
+            .from('users')
+            .select('id, username, email')
+            .eq('id', booking.user_id)
+            .single();
+
+          if (customerError) {
+            console.warn('[PartnerOrdersScreen] Failed to fetch customer data:', customerError);
+            // Still include booking but with minimal customer info
+            return {
+              ...booking,
+              customer: {
+                id: booking.user_id,
+                username: 'Unknown Customer',
+                email: 'N/A',
+              },
+            };
+          }
+
+          return {
+            ...booking,
+            customer: customerData,
+          };
+        })
+      );
+
       // Transform bookings to Order format
+      const validBookings = bookingsWithCustomers.filter((booking: any) => {
+        if (!booking.customer) {
+          console.warn('[PartnerOrdersScreen] Booking missing customer after fetch:', booking.id);
+          return false;
+        }
+        // Service is optional if we're fetching by package
+        if (!booking.services && !booking.packages) {
+          console.warn('[PartnerOrdersScreen] Booking missing both service and package:', booking.id);
+          return false;
+        }
+        return true;
+      });
+
+      console.log('[PartnerOrdersScreen] Valid bookings after filtering:', validBookings.length);
+
+      const transformedOrders: Order[] = validBookings.map((booking: any) => {
+          // Parse notes to extract package and dish info
+          let notesData: any = {};
+          try {
+            notesData = booking.notes ? JSON.parse(booking.notes) : {};
+          } catch (e) {
+            notesData = { extra: booking.notes || '' };
+          }
+
+          const selectedDishes = notesData.picks
+            ? notesData.picks.map((pick: any) => ({
+                sectionLabel: pick.categoryName || 'Unknown',
+                chosenDish: pick.optionName || 'Unknown'
+              }))
+            : [];
+
+          const inclusions = notesData.inclusions || [];
+
+          // Get package information from database or fallback to notes
+          const packageInfo = booking.packages || null;
+          const packageName = packageInfo?.name || (notesData.packageId ? `Package ${notesData.packageId}` : undefined);
+          
+          // Calculate total price - use package price if available, otherwise use service price_per_head
+          let total = 0;
+          if (packageInfo?.price) {
+            // Parse package price string (e.g., "12,500" or "₱12,500")
+            const priceMatch = packageInfo.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+            if (priceMatch) {
+              const packagePrice = parseFloat(priceMatch[1].replace(/,/g, ''));
+              // Package price might be total or per head - check if we need to multiply by guests
+              // For now, assume it's a total package price (not per head)
+              total = packagePrice;
+            }
+          } else {
+            // Fallback to service price_per_head * guests
+            const pricePerHead = booking.services?.price_per_head || 0;
+            total = pricePerHead * booking.guests;
+          }
+
+          return {
+            id: booking.id,
+            bookingId: `ORD-${booking.id}`,
+            customerName: booking.customer.username || 'Unknown',
+            customerEmail: booking.customer.email || '',
+            customerId: booking.customer.id,
+            serviceName: booking.services?.name || booking.packages?.name || 'Unknown Service',
+            packageName: packageName,
+            packagePrice: packageInfo?.price,
+            venue: notesData.address || 'Not specified',
+            selectedDishes,
+            inclusions,
+            status: booking.status,
+            eventDate: formatEventDate(booking.event_date),
+            guests: booking.guests,
+            totalPrice: `₱${total.toLocaleString()}`,
+            notes: notesData.extra || ''
+          };
+        });
+
+      console.log('[PartnerOrdersScreen] Transformed orders:', transformedOrders.length);
+      setOrders(transformedOrders);
+    } catch (err) {
+      console.error('[PartnerOrdersScreen] Failed to fetch orders:', err);
+      Alert.alert('Error', 'Failed to load orders');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Alternative: Fetch bookings by packages (since packages.caterer_id = user.id)
+  const fetchOrdersByPackages = async () => {
+    if (!user) return;
+
+    try {
+      console.log('[PartnerOrdersScreen] Fetching orders by packages for caterer:', user.id);
+
+      // Get all packages for this caterer
+      const { data: packages, error: packagesError } = await supabase
+        .from('packages')
+        .select('id')
+        .eq('caterer_id', user.id)
+        .eq('is_active', true);
+
+      console.log('[PartnerOrdersScreen] Found packages:', packages?.length || 0);
+
+      if (packagesError) {
+        console.error('[PartnerOrdersScreen] Error fetching packages:', packagesError);
+        setOrders([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      if (!packages || packages.length === 0) {
+        console.warn('[PartnerOrdersScreen] No packages found for caterer');
+        setOrders([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      const packageIds = packages.map(p => p.id);
+      console.log('[PartnerOrdersScreen] Package IDs:', packageIds);
+
+      // Fetch bookings that have these package_ids
+      const { data: bookings, error } = await supabase
+        .from('bookings')
+        .select(`
+          *,
+          services:service_id (
+            id,
+            name,
+            price_per_head,
+            user_id
+          ),
+          packages:package_id (
+            id,
+            name,
+            price,
+            caterer_id
+          ),
+          customer:user_id (
+            id,
+            username,
+            email
+          )
+        `)
+        .in('package_id', packageIds)
+        .order('created_at', { ascending: false });
+
+      console.log('[PartnerOrdersScreen] Found bookings by packages:', bookings?.length || 0);
+
+      if (error) {
+        console.error('[PartnerOrdersScreen] Error fetching bookings by packages:', error);
+        Alert.alert('Error', 'Failed to load orders');
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      // Transform bookings to Order format (same as above)
       const transformedOrders: Order[] = (bookings || [])
-        .filter((booking: any) => booking.services && booking.customer)
+        .filter((booking: any) => booking.customer)
         .map((booking: any) => {
           // Parse notes to extract package and dish info
           let notesData: any = {};
@@ -125,9 +372,26 @@ export default function PartnerOrdersScreen() {
 
           const inclusions = notesData.inclusions || [];
 
-          // Calculate total price
-          const pricePerHead = booking.services?.price_per_head || 0;
-          const total = pricePerHead * booking.guests;
+          // Get package information from database or fallback to notes
+          const packageInfo = booking.packages || null;
+          const packageName = packageInfo?.name || (notesData.packageId ? `Package ${notesData.packageId}` : undefined);
+          
+          // Calculate total price - use package price if available, otherwise use service price_per_head
+          let total = 0;
+          if (packageInfo?.price) {
+            // Parse package price string (e.g., "12,500" or "₱12,500")
+            const priceMatch = packageInfo.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+            if (priceMatch) {
+              const packagePrice = parseFloat(priceMatch[1].replace(/,/g, ''));
+              // Package price might be total or per head - check if we need to multiply by guests
+              // For now, assume it's a total package price (not per head)
+              total = packagePrice;
+            }
+          } else {
+            // Fallback to service price_per_head * guests
+            const pricePerHead = booking.services?.price_per_head || 0;
+            total = pricePerHead * booking.guests;
+          }
 
           return {
             id: booking.id,
@@ -135,8 +399,9 @@ export default function PartnerOrdersScreen() {
             customerName: booking.customer.username || 'Unknown',
             customerEmail: booking.customer.email || '',
             customerId: booking.customer.id,
-            serviceName: booking.services?.name || 'Unknown Service',
-            packageName: notesData.packageId ? `Package ${notesData.packageId}` : undefined,
+            serviceName: booking.services?.name || booking.packages?.name || 'Unknown Service',
+            packageName: packageName,
+            packagePrice: packageInfo?.price,
             venue: notesData.address || 'Not specified',
             selectedDishes,
             inclusions,
@@ -148,9 +413,10 @@ export default function PartnerOrdersScreen() {
           };
         });
 
+      console.log('[PartnerOrdersScreen] Transformed orders from packages:', transformedOrders.length);
       setOrders(transformedOrders);
     } catch (err) {
-      console.error('Failed to fetch orders:', err);
+      console.error('[PartnerOrdersScreen] Failed to fetch orders by packages:', err);
       Alert.alert('Error', 'Failed to load orders');
     } finally {
       setLoading(false);
@@ -173,6 +439,11 @@ export default function PartnerOrdersScreen() {
             id,
             name,
             price_per_head
+          ),
+          packages:package_id (
+            id,
+            name,
+            price
           ),
           customer:user_id (
             id,
@@ -207,8 +478,26 @@ export default function PartnerOrdersScreen() {
             }))
           : [];
 
-        const pricePerHead = booking.services?.price_per_head || 0;
-        const total = pricePerHead * booking.guests;
+        // Get package information from database or fallback to notes
+        const packageInfo = booking.packages || null;
+        const packageName = packageInfo?.name || (notesData.packageId ? `Package ${notesData.packageId}` : undefined);
+        
+        // Calculate total price - use package price if available, otherwise use service price_per_head
+        let total = 0;
+        if (packageInfo?.price) {
+          // Parse package price string (e.g., "12,500" or "₱12,500")
+          const priceMatch = packageInfo.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+          if (priceMatch) {
+            const packagePrice = parseFloat(priceMatch[1].replace(/,/g, ''));
+            // Package price might be total or per head - check if we need to multiply by guests
+            // For now, assume it's a total package price (not per head)
+            total = packagePrice;
+          }
+        } else {
+          // Fallback to service price_per_head * guests
+          const pricePerHead = booking.services?.price_per_head || 0;
+          total = pricePerHead * booking.guests;
+        }
 
         return {
           id: booking.id,
@@ -217,7 +506,8 @@ export default function PartnerOrdersScreen() {
           customerEmail: booking.customer?.email || '',
           customerId: booking.customer?.id || '',
           serviceName: booking.services?.name || 'Unknown Service',
-          packageName: notesData.packageId ? `Package ${notesData.packageId}` : undefined,
+          packageName: packageName,
+          packagePrice: packageInfo?.price,
           venue: notesData.address || 'Not specified',
           selectedDishes,
           inclusions: notesData.inclusions || [],
@@ -369,9 +659,14 @@ export default function PartnerOrdersScreen() {
                   <View style={[styles.cell, { flex: 2 }]}>
                     <Text style={styles.serviceNameText}>{order.serviceName}</Text>
                     {order.packageName && (
-                      <Text style={styles.packageNameText}>{order.packageName}</Text>
+                      <Text style={styles.packageNameText}>
+                        📦 {order.packageName}
+                        {order.packagePrice && (
+                          <Text style={styles.packagePriceText}> • {order.packagePrice}</Text>
+                        )}
+                      </Text>
                     )}
-                    <Text style={styles.packagePriceText}>{order.totalPrice}</Text>
+                    <Text style={styles.totalPriceText}>{order.totalPrice}</Text>
                   </View>
                   <Text style={[styles.cell, { flex: 2 }]} numberOfLines={2}>
                     {order.venue}
@@ -643,8 +938,14 @@ const styles = StyleSheet.create({
   },
   packagePriceText: {
     fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "500"
+  },
+  totalPriceText: {
+    fontSize: 12,
     color: "#10b981",
-    fontWeight: "700"
+    fontWeight: "700",
+    marginTop: 2
   }
 });
 
