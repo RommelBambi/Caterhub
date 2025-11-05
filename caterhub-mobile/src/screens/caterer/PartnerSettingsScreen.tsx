@@ -1,434 +1,335 @@
-import React, { useEffect, useState } from "react";
+// src/screens/caterer/PartnerSettingsScreen.tsx
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  Pressable,
-  Alert
+  View, Text, StyleSheet, TextInput, TouchableOpacity, Image,
+  Alert, Platform, ScrollView, FlatList
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
-
-import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
+import supabase from "../../services/supabase";
 import { useAuth } from "../../store/auth";
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-// Extra business profile data aside from what's in user
-// We persist this separately so you can extend it later.
-type CatererProfile = {
-  contactNumber: string;
-  address: string;
-  about: string;
+type GalleryItem = { path: string; url: string; created_at?: string };
+type ProfileRow = {
+  id: string;
+  full_name: string | null;
+  business_name: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  dti_url: string | null;
+  is_verified: boolean | null;
+  gallery_json: GalleryItem[] | null;
 };
 
-// We'll store extra profile data per username.
-// TODO: Replace with Supabase
-async function loadProfile(username: string): Promise<CatererProfile> {
-  try {
-    const raw = await AsyncStorage.getItem(
-      "caterhub_profile_" + username
-    );
-    if (!raw) {
-      return {
-        contactNumber: "",
-        address: "",
-        about: ""
-      };
-    }
-    return JSON.parse(raw) as CatererProfile;
-  } catch (e) {
-    console.warn("loadProfile error", e);
-    return {
-      contactNumber: "",
-      address: "",
-      about: ""
-    };
-  }
-}
-
-// TODO: Replace with Supabase
-async function saveProfile(username: string, data: CatererProfile) {
-  try {
-    await AsyncStorage.setItem(
-      "caterhub_profile_" + username,
-      JSON.stringify(data)
-    );
-  } catch (e) {
-    console.warn("saveProfile error", e);
-  }
-}
-
 export default function PartnerSettingsScreen() {
-  const navigation =
-    useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  // editable fields
-  const [businessName, setBusinessName] = useState("");
-  const [contactNumber, setContactNumber] = useState("");
-  const [address, setAddress] = useState("");
-  const [about, setAbout] = useState("");
+  const gallery = useMemo(() => profile?.gallery_json ?? [], [profile?.gallery_json]);
 
-  const [loaded, setLoaded] = useState(false);
-
-  // Load current user + profile on mount
+  // Load profile
   useEffect(() => {
-    if (!user) {
-      navigation.replace("PartnerHome" as any);
-      return;
-    }
-
-    (async () => {
-      setBusinessName(user.username); // Use username as default business name
-
-      const prof = await loadProfile(user.username);
-      setContactNumber(prof.contactNumber ?? "");
-      setAddress(prof.address ?? "");
-      setAbout(prof.about ?? "");
-
-      setLoaded(true);
-    })();
-  }, [navigation, user]);
-
-  async function handleSaveProfile() {
-    if (!user) return;
-
-    if (!businessName.trim()) {
-      Alert.alert(
-        "Missing business name",
-        "Please enter your catering business name."
-      );
-      return;
-    }
-
-    // TODO: Save to Supabase instead of AsyncStorage
-    // For now, just save extended profile info
-    const newProfile: CatererProfile = {
-      contactNumber: contactNumber.trim(),
-      address: address.trim(),
-      about: about.trim()
+    const load = async () => {
+      if (!user?.id) return;
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id,full_name,business_name,phone,avatar_url,dti_url,is_verified,gallery_json")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!error) setProfile(data as any);
     };
-    await saveProfile(user.username, newProfile);
+    load();
+  }, [user?.id]);
 
-    Alert.alert("Saved", "Your profile has been updated.");
-  }
+  // Save basic fields
+  const save = async () => {
+    if (!user?.id) return;
+    if (!profile?.business_name?.trim()) {
+      Alert.alert("Missing business name", "Please enter your business name.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const payload = {
+        id: user.id,
+        full_name: profile?.full_name || null,
+        business_name: profile?.business_name || null,
+        phone: profile?.phone || null,
+        avatar_url: profile?.avatar_url || null,
+      };
+      await supabase.from("profiles").upsert(payload, { onConflict: "id" });
+      await supabase.auth.updateUser({
+        data: {
+          full_name: payload.full_name,
+          business_name: payload.business_name,
+          phone: payload.phone,
+          avatar_url: payload.avatar_url,
+        },
+      });
+      Alert.alert("Saved", "Your profile has been updated.");
+    } catch (e: any) {
+      Alert.alert("Save failed", e?.message ?? "Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  async function handleLogout() {
-    logout();
-    navigation.reset({
-      index: 0,
-      routes: [{ name: "PartnerHome" }]
+  // Avatar upload
+  const pickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") return Alert.alert("Permission needed", "Allow photo access to upload an avatar.");
+    const res = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true, aspect: [1, 1], quality: 0.9, mediaTypes: ImagePicker.MediaTypeOptions.Images,
     });
-  }
+    if (res.canceled || !user?.id) return;
+    const a = res.assets?.[0]; if (!a) return;
 
-  if (!loaded || !user) {
-    return (
-      <View style={styles.loadingWrap}>
-        <Text style={{ color: "#6b6b6b" }}>Loading…</Text>
-      </View>
-    );
-  }
+    try {
+      setLoading(true);
+      const blob = await (await fetch(a.uri)).blob();
+      const ext = (a.fileName?.split(".").pop() || "jpg").toLowerCase();
+      const path = `${user.id}/avatar_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(path, blob, { upsert: true, cacheControl: "3600", contentType: a.mimeType || "image/jpeg" });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      setProfile(p => p ? { ...p, avatar_url: data.publicUrl } : p);
+      await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", user.id);
+      Alert.alert("Avatar updated", "Your profile photo has been uploaded.");
+    } catch (e: any) {
+      Alert.alert("Upload failed", e?.message ?? "Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // DTI upload/replace
+  const pickDTI = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      multiple: false, type: ["application/pdf", "image/*"], copyToCacheDirectory: true,
+    });
+    if (result.canceled || !user?.id) return;
+    const a = result.assets?.[0]; if (!a) return;
+
+    try {
+      setLoading(true);
+      const blob = await (await fetch(a.uri)).blob();
+      const ext = (a.name?.split(".").pop() || "pdf").toLowerCase();
+      const path = `${user.id}/dti_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("dti_files")
+        .upload(path, blob, { upsert: true, cacheControl: "3600", contentType: a.mimeType || "application/octet-stream" });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("dti_files").getPublicUrl(path);
+
+      setProfile(p => p ? { ...p, dti_url: data.publicUrl, is_verified: false } : p);
+      await supabase.from("profiles").update({ dti_url: data.publicUrl, is_verified: false }).eq("id", user.id);
+      Alert.alert("DTI uploaded", "We’ll review your DTI for verification.");
+    } catch (e: any) {
+      Alert.alert("Upload failed", e?.message ?? "Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Gallery add/remove
+  const addPhotos = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") return Alert.alert("Permission needed", "Allow photo access to upload pictures.");
+    const res = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: true, quality: 0.9, mediaTypes: ImagePicker.MediaTypeOptions.Images, selectionLimit: 10,
+    });
+    if (res.canceled || !user?.id) return;
+    const assets = res.assets ?? []; if (!assets.length) return;
+
+    setLoading(true);
+    try {
+      const uploaded: GalleryItem[] = [];
+      for (const a of assets) {
+        const info = await FileSystem.getInfoAsync(a.uri);
+        if (info.size && info.size > 12 * 1024 * 1024) { // 12MB
+          Alert.alert("File too large", "Please choose images up to 12 MB."); continue;
+        }
+        const blob = await (await fetch(a.uri)).blob();
+        const ext = (a.fileName?.split(".").pop() || "jpg").toLowerCase();
+        const path = `${user.id}/gallery_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from("caterer_photos")
+          .upload(path, blob, { upsert: true, cacheControl: "3600", contentType: a.mimeType || "image/jpeg" });
+        if (upErr) continue;
+        const { data } = supabase.storage.from("caterer_photos").getPublicUrl(path);
+        uploaded.push({ path, url: data.publicUrl, created_at: new Date().toISOString() });
+      }
+      if (uploaded.length) {
+        const next = [...gallery, ...uploaded];
+        await supabase.from("profiles").update({ gallery_json: next }).eq("id", user.id);
+        setProfile(p => p ? { ...p, gallery_json: next } : p);
+      }
+    } catch (e: any) {
+      Alert.alert("Upload failed", e?.message ?? "Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removePhoto = async (item: GalleryItem) => {
+    if (!user?.id) return;
+    Alert.alert("Remove photo?", "This will permanently delete the image.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete", style: "destructive", onPress: async () => {
+          setLoading(true);
+          try {
+            await supabase.storage.from("caterer_photos").remove([item.path]);
+            const next = gallery.filter(g => g.path !== item.path);
+            await supabase.from("profiles").update({ gallery_json: next }).eq("id", user.id);
+            setProfile(p => p ? { ...p, gallery_json: next } : p);
+          } catch (e: any) {
+            Alert.alert("Delete failed", e?.message ?? "Please try again.");
+          } finally {
+            setLoading(false);
+          }
+        }
+      }
+    ]);
+  };
 
   return (
     <View style={styles.screen}>
       <Sidebar />
-
       <View style={styles.mainArea}>
-        <TopBar title="Catering Profile" />
+        <TopBar title="Edit Profile" />
+        <ScrollView contentContainerStyle={styles.content}>
+          {/* Avatar */}
+          <View style={styles.card}>
+            <Text style={styles.label}>Avatar</Text>
+            <View style={styles.row}>
+              <Image
+                source={{ uri: profile?.avatar_url || "https://placehold.co/100x100?text=Avatar" }}
+                style={styles.avatar}
+              />
+              <TouchableOpacity style={styles.btn} onPress={pickAvatar} disabled={loading}>
+                <Text style={styles.btnText}>{loading ? "Please wait…" : "Change Photo"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-        <ScrollView
-          style={styles.scrollRegion}
-          contentContainerStyle={styles.scrollContent}
-        >
-          {/* Header */}
-          <View style={styles.pageHeaderRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.pageTitle}>Your Business Profile</Text>
-              <Text style={styles.pageSubTitle}>
-                This information will be shown to customers when they view
-                your catering service.
+          {/* Fields */}
+          <View style={styles.card}>
+            <Text style={styles.label}>Full Name</Text>
+            <TextInput
+              value={profile?.full_name ?? ""}
+              onChangeText={(t) => setProfile(p => p ? { ...p, full_name: t } : p)}
+              style={styles.input} placeholder="e.g. Juan Dela Cruz"
+            />
+            <Text style={styles.label}>Business Name</Text>
+            <TextInput
+              value={profile?.business_name ?? ""}
+              onChangeText={(t) => setProfile(p => p ? { ...p, business_name: t } : p)}
+              style={styles.input} placeholder="e.g. Haliraya Catering"
+            />
+            <Text style={styles.label}>Phone</Text>
+            <TextInput
+              value={profile?.phone ?? ""}
+              onChangeText={(t) => setProfile(p => p ? { ...p, phone: t } : p)}
+              style={styles.input} placeholder="09xx xxx xxxx" keyboardType="phone-pad"
+            />
+          </View>
+
+          {/* DTI */}
+          <View style={styles.card}>
+            <Text style={styles.label}>DTI Document</Text>
+            {profile?.dti_url
+              ? <Text style={styles.note}>Current file: {profile.dti_url.split("/").pop()}</Text>
+              : <Text style={styles.muted}>No DTI on file.</Text>}
+            <TouchableOpacity style={styles.btnOutline} onPress={pickDTI} disabled={loading}>
+              <Text style={styles.btnOutlineText}>{loading ? "Uploading…" : profile?.dti_url ? "Replace DTI" : "Upload DTI"}</Text>
+            </TouchableOpacity>
+            {profile?.dti_url ? <Text style={styles.muted}>Status: Pending verification after change</Text> : null}
+          </View>
+
+          {/* Gallery */}
+          <View style={styles.card}>
+            <View style={styles.rowBetween}>
+              <Text style={styles.title}>Gallery</Text>
+              <TouchableOpacity style={styles.addBtn} onPress={addPhotos} disabled={loading}>
+                <Text style={styles.addBtnText}>{loading ? "Uploading…" : "Add Photos"}</Text>
+              </TouchableOpacity>
+            </View>
+            {gallery.length === 0 ? (
+              <Text style={{ color: "#6b7280", marginTop: 6 }}>
+                Showcase your work—upload photos of your setups, dishes, and events.
               </Text>
-            </View>
-
-            <Pressable style={styles.logoutBtn} onPress={handleLogout}>
-              <Text style={styles.logoutBtnText}>Log out</Text>
-            </Pressable>
+            ) : null}
+            <FlatList
+              style={{ marginTop: 10 }}
+              data={gallery}
+              keyExtractor={(it) => it.path}
+              numColumns={3}
+              columnWrapperStyle={{ gap: 8 }}
+              ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+              renderItem={({ item }) => (
+                <View style={styles.thumbWrap}>
+                  <Image source={{ uri: item.url }} style={styles.thumb} />
+                  <TouchableOpacity style={styles.delBadge} onPress={() => removePhoto(item)}>
+                    <Text style={styles.delText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
           </View>
 
-          {/* Business Card */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Business Information</Text>
-
-            <Text style={styles.label}>Catering / Business Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Sevilla's Catering"
-              placeholderTextColor="#9ca3af"
-              value={businessName}
-              onChangeText={setBusinessName}
-            />
-
-            <Text style={styles.label}>Contact Number</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. 0917 123 4567"
-              placeholderTextColor="#9ca3af"
-              value={contactNumber}
-              onChangeText={setContactNumber}
-              keyboardType="phone-pad"
-            />
-
-            <Text style={styles.label}>Address / Service Area</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Tayabas / Lucena / nearby areas"
-              placeholderTextColor="#9ca3af"
-              value={address}
-              onChangeText={setAddress}
-            />
-
-            <Text style={styles.label}>About / Description</Text>
-            <TextInput
-              style={[styles.input, styles.aboutInput]}
-              placeholder="Describe your specialties, capacity, style of service..."
-              placeholderTextColor="#9ca3af"
-              multiline
-              value={about}
-              onChangeText={setAbout}
-            />
-
-            <Pressable
-              style={styles.saveBtn}
-              onPress={handleSaveProfile}
-            >
-              <Text style={styles.saveBtnText}>Save Changes</Text>
-            </Pressable>
-          </View>
-
-          {/* Display / Preview Card */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Preview for Customers</Text>
-
-            <View style={styles.previewHeaderRow}>
-              <View style={styles.previewAvatar}>
-                <Text style={styles.previewAvatarText}>
-                  {businessName
-                    ? businessName.charAt(0).toUpperCase()
-                    : "?"}
-                </Text>
-              </View>
-
-              <View style={{ flexShrink: 1 }}>
-                <Text style={styles.previewNameText}>
-                  {businessName || "Your Catering"}
-                </Text>
-                <Text style={styles.previewMetaText}>
-                  {contactNumber
-                    ? contactNumber
-                    : "No contact number yet"}
-                </Text>
-                <Text style={styles.previewMetaText}>
-                  {address ? address : "No service area set"}
-                </Text>
-              </View>
-            </View>
-
-            <Text style={styles.previewAboutHeader}>About</Text>
-            <Text style={styles.previewAboutText}>
-              {about
-                ? about
-                : "Tell customers what makes your catering special, what events you handle, and what they can expect."}
-            </Text>
-          </View>
+          <TouchableOpacity style={styles.saveBtn} onPress={save} disabled={loading}>
+            <Text style={styles.saveBtnText}>{loading ? "Saving…" : "Save Changes"}</Text>
+          </TouchableOpacity>
+          <Text style={styles.disclaimer}>
+            By uploading images and documents, you confirm you have rights to share them and agree to our Terms & Privacy Policy.
+          </Text>
         </ScrollView>
       </View>
     </View>
   );
 }
 
-/* STYLES */
-
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    flexDirection: "row",
-    backgroundColor: "#f9fafb"
-  },
-  mainArea: {
-    flex: 1,
-    backgroundColor: "#f9fafb"
-  },
-
-  scrollRegion: {
-    flex: 1
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 80
-  },
-
-  loadingWrap: {
-    flex: 1,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-
-  pageHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    alignItems: "flex-start",
-    marginBottom: 16
-  },
-  pageTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827"
-  },
-  pageSubTitle: {
-    color: "#6b7280",
-    fontSize: 13,
-    marginTop: 4,
-    maxWidth: 300,
-    lineHeight: 18
-  },
-
-  logoutBtn: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ef4444",
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    alignSelf: "flex-start",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2
-  },
-  logoutBtnText: {
-    color: "#ef4444",
-    fontWeight: "600",
-    fontSize: 13
-  },
-
-  card: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
-    elevation: 2
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 12
-  },
-
-  label: {
-    fontWeight: "600",
-    fontSize: 13,
-    color: "#111827",
-    marginBottom: 4,
-    marginTop: 12
-  },
-
+  screen: { flex: 1, flexDirection: "row", backgroundColor: "#f9fafb" },
+  mainArea: { flex: 1, backgroundColor: "#f9fafb" },
+  content: { padding: 16, gap: 12 },
+  card: { backgroundColor: "#fff", borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 10, padding: 14, gap: 10 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12 },
+  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  label: { fontWeight: "800", color: "#111827" },
+  title: { fontSize: 16, fontWeight: "800", color: "#111827" },
   input: {
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    backgroundColor: "#ffffff",
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    fontSize: 14,
-    color: "#111827"
+    borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: Platform.OS === "ios" ? 12 : 10,
+    backgroundColor: "#fafafa"
   },
-  aboutInput: {
-    minHeight: 100,
-    textAlignVertical: "top"
+  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: "#e5e7eb" },
+  btn: { backgroundColor: "#111827", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  btnText: { color: "#fff", fontWeight: "800" },
+  btnOutline: { borderWidth: 1, borderColor: "#111827", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, alignSelf: "flex-start" },
+  btnOutlineText: { color: "#111827", fontWeight: "800" },
+  addBtn: { backgroundColor: "#111827", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  addBtnText: { color: "#fff", fontWeight: "800" },
+  thumbWrap: {
+    position: "relative", width: "32%", aspectRatio: 1, borderRadius: 10, overflow: "hidden", backgroundColor: "#f3f4f6",
   },
-
-  saveBtn: {
-    backgroundColor: "#9333ea",
-    borderRadius: 8,
-    alignSelf: "flex-start",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 3,
-    marginTop: 24,
-    marginBottom: 8
+  thumb: { width: "100%", height: "100%" },
+  delBadge: {
+    position: "absolute", top: 6, right: 6, backgroundColor: "rgba(17,24,39,0.75)",
+    width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center",
   },
-  saveBtnText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 14
-  },
-
-  previewHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 16
-  },
-  previewAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 9999,
-    backgroundColor: "#9333ea",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 3
-  },
-  previewAvatarText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 16
-  },
-
-  previewNameText: {
-    color: "#111827",
-    fontWeight: "700",
-    fontSize: 15
-  },
-  previewMetaText: {
-    color: "#6b7280",
-    fontSize: 13,
-    marginTop: 2
-  },
-
-  previewAboutHeader: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#111827",
-    marginBottom: 6
-  },
-  previewAboutText: {
-    fontSize: 13,
-    color: "#4b5563",
-    lineHeight: 18
-  }
+  delText: { color: "#fff", fontSize: 16, lineHeight: 16, fontWeight: "800" },
+  saveBtn: { backgroundColor: "#4f46e5", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
+  saveBtnText: { color: "#fff", fontWeight: "900" },
+  note: { color: "#374151" },
+  muted: { color: "#6b7280" },
+  disclaimer: { color: "#6b7280", fontSize: 12, marginTop: 8 },
 });
-
