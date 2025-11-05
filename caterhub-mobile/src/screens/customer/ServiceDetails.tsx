@@ -213,7 +213,7 @@ export default function ServiceDetails({ route, navigation }: any) {
 
                         <Button
                           mode="contained"
-                          style={{ marginTop: 16, backgroundColor: '#C836F9' }}
+                        style={{ marginTop: 16, backgroundColor: '#FF8000' }}
                           onPress={() => selectPackage(pkg)}
                         >
                           Select package
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   inclusionText: { color: '#374151', fontSize: 14 },
   pkgTitle: { fontWeight: '700', fontSize: 18, marginBottom: 4 },
   pkgPrice: { fontSize: 16, fontWeight: '600', color: '#10b981', marginBottom: 12 },
-  sectionBlock: { marginBottom: 12, paddingVertical: 8, borderLeftWidth: 3, borderLeftColor: '#C836F9', paddingLeft: 12 },
+  sectionBlock: { marginBottom: 12, paddingVertical: 8, borderLeftWidth: 3, borderLeftColor: '#FF8000', paddingLeft: 12 },
   packageSectionTitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 6 },
   dishRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginLeft: 4 },
   dishText: { color: '#4b5563', fontSize: 14 },

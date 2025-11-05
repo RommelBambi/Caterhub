@@ -76,7 +76,7 @@ export default function LoginScreen() {
                     style={styles.input}
                     textColor="#1f2937"
                     outlineColor="#e5e7eb"
-                    activeOutlineColor="#C836F9"
+                    activeOutlineColor="#FF8000"
                     contentStyle={styles.inputContent}
                   />
                 )}
@@ -102,7 +102,7 @@ export default function LoginScreen() {
                     style={styles.input}
                     textColor="#1f2937"
                     outlineColor="#e5e7eb"
-                    activeOutlineColor="#C836F9"
+                    activeOutlineColor="#FF8000"
                     contentStyle={styles.inputContent}
                   />
                 )}
@@ -113,7 +113,7 @@ export default function LoginScreen() {
                 onPress={handleSubmit(onSubmit)}
                 style={[
                   styles.loginBtn,
-                  { backgroundColor: formFilled && isValidEmail ? '#C836F9' : '#ccc' },
+                  { backgroundColor: formFilled && isValidEmail ? '#FF8000' : '#ccc' },
                 ]}
                 disabled={!formFilled || !isValidEmail || loading}
                 loading={loading}
@@ -131,7 +131,7 @@ export default function LoginScreen() {
               <Button
                 mode="text"
                 onPress={() => navigation.navigate('Register')}
-                textColor="#C836F9"
+                textColor="#FF8000"
                 style={styles.signupBtn}
                 labelStyle={styles.signupLabel}
               >

@@ -277,7 +277,7 @@ export default function InteractiveMapPicker({ visible, onClose, onLocationSelec
           transform: translate(-50%, -50%);
           width: 20px;
           height: 20px;
-          border: 2px solid #C836F9;
+          border: 2px solid #FF8000;
           border-radius: 50%;
           background: rgba(200, 54, 249, 0.1);
           z-index: 1000;
@@ -291,7 +291,7 @@ export default function InteractiveMapPicker({ visible, onClose, onLocationSelec
           transform: translate(-50%, -50%);
           width: 4px;
           height: 4px;
-          background: #C836F9;
+          background: #FF8000;
           border-radius: 50%;
         }
       </style>
@@ -331,7 +331,7 @@ export default function InteractiveMapPicker({ visible, onClose, onLocationSelec
             marker = L.marker([lat, lng], {
               icon: L.divIcon({
                 className: 'custom-marker',
-                html: '<div style="background: #C836F9; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"></div>',
+                html: '<div style="background: #FF8000; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"></div>',
                 iconSize: [20, 20],
                 iconAnchor: [10, 10]
               })
@@ -379,7 +379,7 @@ export default function InteractiveMapPicker({ visible, onClose, onLocationSelec
               marker = L.marker(location, {
                 icon: L.divIcon({
                   className: 'custom-marker',
-                  html: '<div style="background: #C836F9; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"></div>',
+                  html: '<div style="background: #FF8000; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3);"></div>',
                   iconSize: [20, 20],
                   iconAnchor: [10, 10]
                 })
@@ -417,7 +417,7 @@ export default function InteractiveMapPicker({ visible, onClose, onLocationSelec
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Select Location</Text>
           <TouchableOpacity onPress={getCurrentLocation} style={styles.currentLocationButton}>
-            <Ionicons name="locate" size={24} color="#C836F9" />
+            <Ionicons name="locate" size={24} color="#FF8000" />
           </TouchableOpacity>
         </View>
 
@@ -439,7 +439,7 @@ export default function InteractiveMapPicker({ visible, onClose, onLocationSelec
         <View style={styles.mapContainer}>
           {loading && (
             <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#C836F9" />
+              <ActivityIndicator size="large" color="#FF8000" />
             </View>
           )}
           
@@ -453,7 +453,7 @@ export default function InteractiveMapPicker({ visible, onClose, onLocationSelec
             startInLoadingState={true}
             renderLoading={() => (
               <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color="#C836F9" />
+                <ActivityIndicator size="large" color="#FF8000" />
               </View>
             )}
           />
@@ -462,7 +462,7 @@ export default function InteractiveMapPicker({ visible, onClose, onLocationSelec
         {/* Selected Location Info */}
         <View style={styles.locationInfo}>
           <View style={styles.locationDetails}>
-            <Ionicons name="location" size={20} color="#C836F9" />
+            <Ionicons name="location" size={20} color="#FF8000" />
             <View style={styles.locationTextContainer}>
               <Text style={styles.locationLabel}>Selected Location</Text>
               <Text style={styles.locationText} numberOfLines={2}>
@@ -474,7 +474,7 @@ export default function InteractiveMapPicker({ visible, onClose, onLocationSelec
             mode="contained"
             onPress={handleConfirm}
             style={styles.confirmButton}
-            buttonColor="#C836F9"
+            buttonColor="#FF8000"
             contentStyle={styles.confirmButtonContent}
             disabled={!selectedLocation}
           >

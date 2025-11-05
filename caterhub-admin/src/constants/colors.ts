@@ -1,7 +1,7 @@
 // Color constants for the admin panel
 export const COLORS = {
-  primary: "#C836F9",
-  primaryDark: "#7B1FA2",
+  primary: "#FF8000",
+  primaryDark: "#CC6600",
   text: "#1e293b",
   textLight: "#64748b",
   bg: "#f8fafc",
@@ -25,5 +25,5 @@ export const DARK_COLORS = {
   border: "#1f2941",
   row: "#0b162a",
   hover: "#14203d",
-  primaryDark: "#a855f7",
+  primaryDark: "#FF9933",
 } as const;

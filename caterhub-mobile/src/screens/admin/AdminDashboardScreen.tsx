@@ -6,7 +6,7 @@ import ApplicationDetailModal from '../../components/admin/ApplicationDetailModa
 import UsersPage from '../../components/admin/UsersPage';
 
 const COLORS = {
-  primary: "#C836F9",
+  primary: "#FF8000",
   text: "#1e293b",
   textLight: "#64748b",
   bg: "#f8fafc",

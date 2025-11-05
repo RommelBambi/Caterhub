@@ -118,7 +118,7 @@ export default function RegisterScreen() {
                       style={styles.webInput}
                       textColor="#1f2937"
                       outlineColor="#e5e7eb"
-                      activeOutlineColor="#C836F9"
+                      activeOutlineColor="#FF8000"
                       contentStyle={styles.webInputContent}
                     />
                   )}
@@ -139,7 +139,7 @@ export default function RegisterScreen() {
                       style={styles.webInput}
                       textColor="#1f2937"
                       outlineColor="#e5e7eb"
-                      activeOutlineColor="#C836F9"
+                      activeOutlineColor="#FF8000"
                       contentStyle={styles.webInputContent}
                     />
                   )}
@@ -165,7 +165,7 @@ export default function RegisterScreen() {
                       style={styles.webInput}
                       textColor="#1f2937"
                       outlineColor="#e5e7eb"
-                      activeOutlineColor="#C836F9"
+                      activeOutlineColor="#FF8000"
                       contentStyle={styles.webInputContent}
                     />
                   )}
@@ -191,7 +191,7 @@ export default function RegisterScreen() {
                       style={styles.webInput}
                       textColor="#1f2937"
                       outlineColor="#e5e7eb"
-                      activeOutlineColor="#C836F9"
+                      activeOutlineColor="#FF8000"
                       contentStyle={styles.webInputContent}
                     />
                   )}
@@ -202,7 +202,7 @@ export default function RegisterScreen() {
                   onPress={handleSubmit(onSubmit)}
                   style={[
                     styles.webSignupBtn,
-                    { backgroundColor: formFilled ? '#C836F9' : '#ccc' },
+                    { backgroundColor: formFilled ? '#FF8000' : '#ccc' },
                   ]}
                   disabled={!formFilled || loading}
                   loading={loading}
@@ -220,7 +220,7 @@ export default function RegisterScreen() {
                 <Button
                   mode="text"
                   onPress={() => navigation.navigate('Login')}
-                  textColor="#C836F9"
+                  textColor="#FF8000"
                   style={styles.webLoginBtn}
                   labelStyle={styles.webLoginLabel}
                 >
@@ -338,7 +338,7 @@ export default function RegisterScreen() {
           onPress={handleSubmit(onSubmit)}
           style={[
             styles.primaryBtn,
-            { backgroundColor: formFilled ? '#C836F9' : '#ccc' },
+            { backgroundColor: formFilled ? '#FF8000' : '#ccc' },
           ]}
           disabled={!formFilled || loading}
           loading={loading}
@@ -355,7 +355,7 @@ export default function RegisterScreen() {
         <Button
           mode="text"
           onPress={() => navigation.navigate('Login')}
-          textColor="#C836F9"
+          textColor="#FF8000"
           style={{ marginTop: 4 }}
         >
           already have an account? log in
@@ -366,7 +366,7 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#C836F9', position: 'relative' },
+  container: { flex: 1, backgroundColor: '#FF8000', position: 'relative' },
   topSection: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   closeButton: { position: 'absolute', top: 50, left: 20 },
   heroImage: { width: 450, height: 450 },
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
   input: { marginTop: 10 },
-  primaryBtn: { marginTop: 16, paddingVertical: 6, backgroundColor: '#C836F9' },
+  primaryBtn: { marginTop: 16, paddingVertical: 6, backgroundColor: '#FF8000' },
   dividerWrap: { marginTop: 22, marginBottom: 8 },
   line: { height: 1, backgroundColor: '#e5e7eb' },
 

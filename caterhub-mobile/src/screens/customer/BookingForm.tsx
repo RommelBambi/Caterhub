@@ -211,7 +211,7 @@ export default function BookingForm({ route, navigation }: any) {
       <View style={[styles.container, { paddingTop: insets.top + 12, justifyContent: 'center', alignItems: 'center' }]}>
         <Card style={{ padding: 24, maxWidth: 400 }}>
           <Card.Content>
-            <Ionicons name="lock-closed" size={48} color="#C836F9" style={{ alignSelf: 'center', marginBottom: 16 }} />
+            <Ionicons name="lock-closed" size={48} color="#FF8000" style={{ alignSelf: 'center', marginBottom: 16 }} />
             <Text style={{ fontSize: 18, fontWeight: '700', textAlign: 'center', marginBottom: 8 }}>
               Login Required
             </Text>
@@ -220,7 +220,7 @@ export default function BookingForm({ route, navigation }: any) {
             </Text>
             <Button
               mode="contained"
-              style={{ backgroundColor: '#C836F9' }}
+              style={{ backgroundColor: '#FF8000' }}
               onPress={() => {
                 navigation.getParent()?.navigate('Auth', { screen: 'Login' });
               }}
@@ -420,9 +420,9 @@ export default function BookingForm({ route, navigation }: any) {
           rules={{ required: true }}
           render={({ field: { onChange, value } }) => (
             <RadioButton.Group onValueChange={onChange} value={value}>
-              <RadioButton.Item label="Cash" value="cash" position="leading" color="#C836F9" />
-              <RadioButton.Item label="GCash" value="gcash" position="leading" color="#C836F9" />
-              <RadioButton.Item label="Bank Transfer" value="bank" position="leading" color="#C836F9" />
+              <RadioButton.Item label="Cash" value="cash" position="leading" color="#FF8000" />
+              <RadioButton.Item label="GCash" value="gcash" position="leading" color="#FF8000" />
+              <RadioButton.Item label="Bank Transfer" value="bank" position="leading" color="#FF8000" />
             </RadioButton.Group>
           )}
         />
@@ -450,7 +450,7 @@ export default function BookingForm({ route, navigation }: any) {
         <Text style={styles.total}>Total: ₱{isNaN(total) ? 0 : total.toLocaleString()}</Text>
         <Button
           mode="contained"
-          style={{ flex: 1, marginLeft: 12, backgroundColor: (valid && !isSubmitting) ? '#C836F9' : '#ccc' }}
+          style={{ flex: 1, marginLeft: 12, backgroundColor: (valid && !isSubmitting) ? '#FF8000' : '#ccc' }}
           disabled={!valid || isSubmitting}
           onPress={handleSubmit(onSubmit)}
           loading={isSubmitting}

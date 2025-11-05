@@ -57,7 +57,7 @@ export default function MainTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: '#C836F9',
+        tabBarActiveTintColor: '#FF8000',
         tabBarInactiveTintColor: '#9ca3af',
         tabBarStyle: { 
           height: 58 + insets.bottom, 

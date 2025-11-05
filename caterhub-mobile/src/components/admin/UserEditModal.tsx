@@ -12,7 +12,7 @@ interface User {
 }
 
 const COLORS_ADMIN = {
-  primary: "#C836F9",
+  primary: "#FF8000",
   text: "#1e293b",
   textLight: "#64748b",
   bg: "#f8fafc",

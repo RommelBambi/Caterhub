@@ -89,7 +89,7 @@ export default function CustomizePackage({ route, navigation }: any) {
                       position="leading"
                       style={styles.radioItem}
                       labelStyle={styles.radioLabel}
-                      color="#C836F9"
+                      color="#FF8000"
                       uncheckedColor="#9ca3af"
                     />
                   ))}
@@ -124,7 +124,7 @@ export default function CustomizePackage({ route, navigation }: any) {
       <View style={styles.footer}>
         <Button
           mode="contained"
-          style={{ flex: 1, backgroundColor: (allRequiredChosen || selectionCategories.length === 0) ? '#C836F9' : '#ccc' }}
+          style={{ flex: 1, backgroundColor: (allRequiredChosen || selectionCategories.length === 0) ? '#FF8000' : '#ccc' }}
           onPress={goNext}
           disabled={selectionCategories.length > 0 && !allRequiredChosen}
         >

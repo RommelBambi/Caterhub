@@ -101,7 +101,7 @@ export default function LoginScreen() {
           onPress={handleSubmit(onSubmit)}
           style={[
             styles.loginBtn,
-            { backgroundColor: formFilled && isValidEmail ? '#C836F9' : '#ccc' },
+            { backgroundColor: formFilled && isValidEmail ? '#FF8000' : '#ccc' },
           ]}
           disabled={!formFilled || !isValidEmail || loading}
           loading={loading}
@@ -116,7 +116,7 @@ export default function LoginScreen() {
         <Button
           mode="text"
           onPress={() => navigation.navigate('Register')}
-          textColor="#C836F9"
+          textColor="#FF8000"
           style={{ marginTop: 4 }}
         >
           create account
@@ -127,7 +127,7 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#C836F9' },
+  container: { flex: 1, backgroundColor: '#FF8000' },
   topSection: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   closeButton: { position: 'absolute', top: 50, left: 20 },
   heroImage: { width: 550, height: 550 },

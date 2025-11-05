@@ -64,7 +64,7 @@ export default function BookingsList({ navigation }: any) {
   if (loading) {
     return (
       <View style={[styles.center, { paddingTop: insets.top + 40 }]}>
-        <ActivityIndicator animating color="#C836F9" />
+        <ActivityIndicator animating color="#FF8000" />
         <Text style={{ marginTop: 8, color: '#6b7280' }}>Loading bookings…</Text>
       </View>
     );
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   serviceName: { fontWeight: '700', fontSize: 16 },
   muted: { color: '#6b7280' },
-  link: { marginTop: 10, color: '#C836F9', fontWeight: '600' },
+  link: { marginTop: 10, color: '#FF8000', fontWeight: '600' },
   emptyWrap: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 24 },
   emptyTitle: { marginTop: 10, fontSize: 16, fontWeight: '700' },
   emptyText: { marginTop: 4, color: '#6b7280', textAlign: 'center' },

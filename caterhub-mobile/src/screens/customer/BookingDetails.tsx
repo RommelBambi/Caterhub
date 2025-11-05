@@ -69,7 +69,7 @@ const BookingDetails = ({ route, navigation }: any) => {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#C836F9" />
+        <ActivityIndicator size="large" color="#FF8000" />
         <Text style={styles.muted}>Loading booking details...</Text>
       </View>
     );
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
     height: HEADER_HEIGHT,
-    backgroundColor: '#C836F9',
+    backgroundColor: '#FF8000',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
   receiptSubLabel: { fontSize: 13, color: '#6b7280', marginTop: 2 },
   receiptAmount: { fontSize: 15, color: '#111827', fontWeight: '600' },
   receiptTotalLabel: { fontSize: 16 },
-  receiptTotalValue: { fontSize: 16, color: '#C836F9' },
+  receiptTotalValue: { fontSize: 16, color: '#FF8000' },
 });
 
 export default BookingDetails;

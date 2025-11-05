@@ -209,7 +209,7 @@ export default function HomeScreen({ navigation }: any) {
             style={styles.locationIconButton}
             hitSlop={12}
           >
-            <Ionicons name="location" size={26} color="#C836F9" />
+            <Ionicons name="location" size={26} color="#FF8000" />
           </TouchableOpacity>
         </View>
       </View>
@@ -490,7 +490,7 @@ export default function HomeScreen({ navigation }: any) {
                      activeOpacity={0.8}
                    >
                      <Text style={styles.viewAllButtonText}>View All Services</Text>
-                     <Ionicons name="arrow-forward" size={20} color="#C836F9" />
+                     <Ionicons name="arrow-forward" size={20} color="#FF8000" />
                    </TouchableOpacity>
                  </View>
                </>
@@ -849,14 +849,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#C836F9',
+    borderColor: '#FF8000',
     backgroundColor: '#faf5ff',
     gap: 8,
   },
   viewAllButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#C836F9',
+    color: '#FF8000',
   },
   
   // Modal styles
