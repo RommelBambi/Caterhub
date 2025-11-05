@@ -32,6 +32,7 @@ export const EMPTY_PARTNER_FORM = {
     address: string;
     latitude?: number;
     longitude?: number;
+    serviceRadiusKm?: number;
   }>,
   website: "",
   ownerName: "",

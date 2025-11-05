@@ -18,6 +18,7 @@ export type BusinessLocation = {
   address: string;
   latitude?: number;
   longitude?: number;
+  serviceRadiusKm?: number;
 };
 
 export type CuisineCategory = {

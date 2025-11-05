@@ -16,12 +16,6 @@ export default function PartnerDashboardScreen() {
     useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
   const { user } = useAuth();
 
-  const kpis = [
-    { label: "New Orders (7d)", value: "5", sub: "↑ 2 vs last week" },
-    { label: "Revenue (₱)", value: "22,900", sub: "Last 30 days" },
-    { label: "Unread Inquiries", value: "1", sub: "Respond ASAP" }
-  ];
-
   const bookings: Booking[] = [
     {
       id: "ORD-2025-014",
@@ -47,6 +41,13 @@ export default function PartnerDashboardScreen() {
       status: "pending",
       total: "₱0"
     }
+  ];
+
+  const pendingCount = bookings.filter((b) => b.status === "pending").length;
+  const kpis = [
+    { label: "New Orders (7d)", value: "5", sub: "↑ 2 vs last week" },
+    { label: "Revenue (₱)", value: "22,900", sub: "Last 30 days" },
+    { label: "Pending Orders", value: String(pendingCount), sub: "Awaiting action" }
   ];
 
   if (!user) {

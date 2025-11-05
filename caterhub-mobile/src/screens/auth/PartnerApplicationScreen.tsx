@@ -220,10 +220,6 @@ function Step1({
         <View style={styles.sectionDivider} />
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Business Locations *</Text>
-          <Pressable onPress={addLocation} style={styles.addButton}>
-            <Ionicons name="add-circle" size={20} color={COLORS.primary} />
-            <Text style={styles.addButtonText}>Add Location</Text>
-          </Pressable>
         </View>
 
         {form.locations.map((location, index) => (
@@ -278,6 +274,17 @@ function Step1({
               multiline
             />
 
+            <Field
+              label="Service radius (km)"
+              value={location.serviceRadiusKm !== undefined ? String(location.serviceRadiusKm) : ''}
+              onChangeText={(value) => {
+                const n = parseFloat(value);
+                updateLocation(index, 'serviceRadiusKm', Number.isFinite(n) ? n : undefined);
+              }}
+              keyboardType="numeric"
+              placeholder="e.g., 10"
+            />
+
             {Platform.OS !== 'web' && (
               <Pressable
                 onPress={() => {
@@ -295,6 +302,11 @@ function Step1({
             )}
           </View>
         ))}
+
+        <Pressable onPress={addLocation} style={styles.addButton}>
+          <Ionicons name="add-circle" size={20} color={COLORS.primary} />
+          <Text style={styles.addButtonText}>Add an another location if you have an another branch</Text>
+        </Pressable>
 
         <View style={styles.navButtons}>
           <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
