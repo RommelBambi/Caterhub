@@ -191,14 +191,13 @@ export default function AdminDashboardScreen() {
   return (
     <View style={styles.container}>
       {/* Sidebar */}
-      <View style={[styles.sidebar, sidebarCollapsed && styles.sidebarCollapsed]}>
-        <View style={[styles.sidebarHeader, sidebarCollapsed && styles.sidebarHeaderCollapsed]}>
-          <Text style={[styles.sidebarTitle, sidebarCollapsed && styles.sidebarTitleCollapsed]}>
-            {sidebarCollapsed ? 'CH' : 'CaterHub Admin'}
+      {!sidebarCollapsed && (
+        <View style={styles.sidebar}>
+        <View style={styles.sidebarHeader}>
+          <Text style={styles.sidebarTitle}>
+            CaterHub Admin
           </Text>
-          {!sidebarCollapsed && (
-            <Text style={styles.sidebarSubtitle}>Welcome, {user?.username}</Text>
-          )}
+          <Text style={styles.sidebarSubtitle}>Welcome, {user?.username}</Text>
         </View>
 
         <ScrollView style={styles.menu}>
@@ -209,22 +208,19 @@ export default function AdminDashboardScreen() {
               style={[
                 styles.menuItem,
                 currentPage === item.id && styles.menuItemActive,
-                sidebarCollapsed && styles.menuItemCollapsed,
               ]}
             >
-              <Text style={[styles.menuIcon, sidebarCollapsed && styles.menuIconCollapsed]}>
+              <Text style={styles.menuIcon}>
                 {item.icon}
               </Text>
-              {!sidebarCollapsed && (
-                <Text
-                  style={[
-                    styles.menuLabel,
-                    currentPage === item.id && styles.menuLabelActive,
-                  ]}
-                >
-                  {item.label}
-                </Text>
-              )}
+              <Text
+                style={[
+                  styles.menuLabel,
+                  currentPage === item.id && styles.menuLabelActive,
+                ]}
+              >
+                {item.label}
+              </Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -237,11 +233,12 @@ export default function AdminDashboardScreen() {
             <Text style={styles.logoutButtonText}>Logout</Text>
           </Pressable>
         </View>
-      </View>
+        </View>
+      )}
 
       <Pressable
         onPress={() => setSidebarCollapsed((prev) => !prev)}
-        style={styles.sidebarToggle}
+        style={[styles.sidebarToggle, sidebarCollapsed && styles.sidebarToggleCollapsed]}
       >
         <Ionicons
           name={sidebarCollapsed ? 'chevron-forward' : 'chevron-back'}
@@ -285,27 +282,15 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'column',
   },
-  sidebarCollapsed: {
-    width: 88,
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
   sidebarHeader: {
     paddingHorizontal: 24,
     marginBottom: 32,
-  },
-  sidebarHeaderCollapsed: {
-    paddingHorizontal: 12,
-    alignItems: 'center',
   },
   sidebarTitle: {
     fontSize: 24,
     fontWeight: '900',
     color: COLORS.primary,
     margin: 0,
-  },
-  sidebarTitleCollapsed: {
-    textAlign: 'center',
   },
   sidebarSubtitle: {
     marginTop: 4,
@@ -323,19 +308,11 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: 'transparent',
   },
-  menuItemCollapsed: {
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
   menuItemActive: {
     backgroundColor: COLORS.primary + '10',
   },
   menuIcon: {
     fontSize: 20,
-  },
-  menuIconCollapsed: {
-    textAlign: 'center',
-    width: '100%',
   },
   menuLabel: {
     fontSize: 16,
@@ -372,6 +349,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'stretch',
+  },
+  sidebarToggleCollapsed: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 10,
   },
   mainContent: {
     flex: 1,
