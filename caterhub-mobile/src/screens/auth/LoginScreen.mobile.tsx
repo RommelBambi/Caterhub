@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Image, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Image, StyleSheet, TouchableOpacity, Alert, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
@@ -16,6 +16,7 @@ export default function LoginScreen() {
   const { control, handleSubmit, watch } = useForm({ defaultValues: { email: '', password: '' } });
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isCaterer, setIsCaterer] = useState(false);
   const insets = useSafeAreaInsets();
 
   const watchEmail = watch('email');
@@ -54,8 +55,23 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.bottomCard}>
-        <Text style={styles.title}>Log in or Sign up</Text>
-        <Text style={styles.subtitle}>For customers and partners (mobile app)</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Log in or Sign up</Text>
+          <View style={styles.segmentedControl}>
+            <View
+              style={[
+                styles.segmentThumb,
+                isCaterer ? styles.segmentThumbRight : styles.segmentThumbLeft,
+              ]}
+            />
+            <TouchableOpacity style={styles.segmentItem} onPress={() => setIsCaterer(false)}>
+              <Text style={[styles.segmentText, !isCaterer ? styles.segmentTextActive : styles.segmentTextInactive]}>Client</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.segmentItem} onPress={() => setIsCaterer(true)}>
+              <Text style={[styles.segmentText, isCaterer ? styles.segmentTextActive : styles.segmentTextInactive]}>Caterer</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         <Controller
           control={control}
@@ -115,7 +131,14 @@ export default function LoginScreen() {
 
         <Button
           mode="text"
-          onPress={() => navigation.navigate('Register')}
+          onPress={() => {
+            if (isCaterer) {
+              const applicationUrl = 'https://example.com/start-application';
+              Linking.openURL(applicationUrl);
+            } else {
+              navigation.navigate('Register');
+            }
+          }}
           textColor="#FF8000"
           style={{ marginTop: 4 }}
         >
@@ -139,11 +162,35 @@ const styles = StyleSheet.create({
     paddingVertical: 45,
     marginTop: -50,
   },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
+  segmentedControl: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF8000',
+    padding: 2,
+    borderRadius: 9999,
+    width: 150,
+    height: 36,
+  },
+  segmentThumb: {
+    position: 'absolute',
+    top: 2,
+    bottom: 2,
+    width: '50%',
+    borderRadius: 9999,
+    backgroundColor: '#ffffff',
+  },
+  segmentThumbLeft: { left: 2 },
+  segmentThumbRight: { right: 2 },
+  segmentItem: { flex: 1, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
+  segmentText: { fontSize: 13 },
+  segmentTextActive: { color: '#FF8000', fontWeight: '700' },
+  segmentTextInactive: { color: '#ffffff', fontWeight: '600' },
   subtitle: { fontSize: 13, color: '#6b7280', marginBottom: 16 },
   input: { marginTop: 10 },
   loginBtn: { marginTop: 16, paddingVertical: 6 },
   dividerWrap: { marginTop: 22, marginBottom: 8 },
   line: { height: 1, backgroundColor: '#e5e7eb' },
 });
-
