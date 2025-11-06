@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl, TextInput } from 'react-native';
 import { supabase } from '../../services/supabase';
 
 interface PartnerApplication {
@@ -47,6 +47,7 @@ export default function RecruitmentPage({ onViewDetails, refreshTrigger }: Recru
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'All' | 'Pending' | 'Approved' | 'Rejected'>('All');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchApplications = async () => {
     try {
@@ -87,74 +88,13 @@ export default function RecruitmentPage({ onViewDetails, refreshTrigger }: Recru
     fetchApplications();
   };
 
-  const filteredApplications = filter === 'All' 
-    ? applications 
-    : applications.filter(app => app.status === filter);
-
-  const handleApprove = async (applicationId: string) => {
-    Alert.alert(
-      'Approve Application',
-      'Are you sure you want to approve this partnership application? The partner will be able to use their account immediately.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Approve',
-          style: 'default',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('partner_applications')
-                .update({ status: 'Approved', updated_at: new Date().toISOString() })
-                .eq('id', applicationId);
-
-              if (error) {
-                throw error;
-              }
-
-              Alert.alert('Success', 'Application approved successfully. The partner can now use their account.');
-              fetchApplications();
-            } catch (error: any) {
-              console.error('Error approving application:', error);
-              Alert.alert('Error', error?.message || 'Failed to approve application');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleReject = async (applicationId: string) => {
-    Alert.alert(
-      'Reject Application',
-      'Are you sure you want to reject this partnership application?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('partner_applications')
-                .update({ status: 'Rejected', updated_at: new Date().toISOString() })
-                .eq('id', applicationId);
-
-              if (error) {
-                throw error;
-              }
-
-              Alert.alert('Success', 'Application rejected');
-              fetchApplications();
-            } catch (error: any) {
-              console.error('Error rejecting application:', error);
-              Alert.alert('Error', error?.message || 'Failed to reject application');
-            }
-          },
-        },
-      ]
-    );
-  };
-
+  const filteredApplications = applications.filter((app) => {
+    const matchesStatus = filter === 'All' || app.status === filter;
+    const matchesSearch = !searchQuery.trim()
+      ? true
+      : app.business_name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Approved': return COLORS_ADMIN.success;
@@ -226,109 +166,87 @@ export default function RecruitmentPage({ onViewDetails, refreshTrigger }: Recru
         </View>
       </View>
 
-      {/* Filters */}
-      <View style={styles.filters}>
-        {(['All', 'Pending', 'Approved', 'Rejected'] as const).map((filterOption) => (
-          <Pressable
-            key={filterOption}
-            style={[
-              styles.filterButton,
-              filter === filterOption && styles.filterButtonActive,
-            ]}
-            onPress={() => setFilter(filterOption)}
-          >
-            <Text
+      <View style={styles.toolbar}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search catering name"
+          placeholderTextColor={COLORS_ADMIN.textLight}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        <View style={styles.filterGroup}>
+          {(['All', 'Pending', 'Approved', 'Rejected'] as const).map((filterOption) => (
+            <Pressable
+              key={filterOption}
               style={[
-                styles.filterButtonText,
-                filter === filterOption && styles.filterButtonTextActive,
+                styles.filterButton,
+                filter === filterOption && styles.filterButtonActive,
               ]}
+              onPress={() => setFilter(filterOption)}
             >
-              {filterOption}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  filter === filterOption && styles.filterButtonTextActive,
+                ]}
+              >
+                {filterOption}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
 
-      {/* Applications List */}
       <ScrollView
-        style={styles.list}
+        style={styles.tableWrapper}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {filteredApplications.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>
-              {filter === 'All' ? 'No applications found' : `No ${filter.toLowerCase()} applications`}
-            </Text>
+        <View style={styles.table}>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.headerCell, styles.colBusiness]}>Business</Text>
+            <Text style={[styles.headerCell, styles.colOwner]}>Owner</Text>
+            <Text style={[styles.headerCell, styles.colLocation]}>Location</Text>
+            <Text style={[styles.headerCell, styles.colStatus]}>Status</Text>
+            <Text style={[styles.headerCell, styles.colActions]}>Actions</Text>
           </View>
-        ) : (
-          filteredApplications.map((app) => (
-            <View key={app.id} style={styles.applicationCard}>
-              <View style={styles.applicationHeader}>
-                <View style={styles.applicationInfo}>
-                  <Text style={styles.businessName}>{app.business_name}</Text>
-                  <Text style={styles.ownerName}>Owner: {app.owner_name}</Text>
-                </View>
-                <View style={[styles.statusBadge, { backgroundColor: getStatusBg(app.status) }]}>
-                  <Text style={[styles.statusText, { color: getStatusColor(app.status) }]}>
-                    {app.status}
-                  </Text>
-                </View>
-              </View>
 
-              <View style={styles.applicationDetails}>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Email:</Text>
-                  <Text style={styles.detailValue}>{app.owner_email}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Phone:</Text>
-                  <Text style={styles.detailValue}>{app.owner_phone}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Locations:</Text>
-                  <Text style={styles.detailValue}>{formatLocations(app.locations)}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Submitted:</Text>
-                  <Text style={styles.detailValue}>{formatDate(app.created_at)}</Text>
-                </View>
-                {app.uploaded_documents && app.uploaded_documents.length > 0 && (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Documents:</Text>
-                    <Text style={styles.detailValue}>{app.uploaded_documents.length} file(s)</Text>
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.applicationActions}>
-                <Pressable
-                  style={[styles.actionButton, styles.viewButton]}
-                  onPress={() => onViewDetails(app)}
-                >
-                  <Text style={styles.viewButtonText}>View Details</Text>
-                </Pressable>
-                {app.status === 'Pending' && (
-                  <>
-                    <Pressable
-                      style={[styles.actionButton, styles.approveButton]}
-                      onPress={() => handleApprove(app.id)}
-                    >
-                      <Text style={styles.approveButtonText}>Approve</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.actionButton, styles.rejectButton]}
-                      onPress={() => handleReject(app.id)}
-                    >
-                      <Text style={styles.rejectButtonText}>Reject</Text>
-                    </Pressable>
-                  </>
-                )}
-              </View>
+          {filteredApplications.length === 0 ? (
+            <View style={styles.emptyStateRow}>
+              <Text style={styles.emptyStateText}>
+                {searchQuery.trim()
+                  ? 'No matches found'
+                  : filter === 'All'
+                    ? 'No applications found'
+                    : `No ${filter.toLowerCase()} applications`}
+              </Text>
             </View>
-          ))
-        )}
+          ) : (
+            filteredApplications.map((app) => (
+              <View key={app.id} style={styles.tableRow}>
+                <Text style={[styles.cellText, styles.colBusiness]} numberOfLines={1}>{app.business_name}</Text>
+                <Text style={[styles.cellText, styles.colOwner]} numberOfLines={1}>{app.owner_name}</Text>
+                <Text style={[styles.cellText, styles.colLocation]} numberOfLines={2}>{formatLocations(app.locations)}</Text>
+                <View style={[styles.cell, styles.colStatus]}>
+                  <View style={[styles.statusBadge, { backgroundColor: getStatusBg(app.status) }]}>
+                    <Text style={[styles.statusText, { color: getStatusColor(app.status) }]}>
+                      {app.status}
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.cell, styles.colActions]}>
+                  <Pressable
+                    style={styles.tableActionButton}
+                    onPress={() => onViewDetails(app)}
+                  >
+                    <Text style={styles.tableActionText}>Details</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
       </ScrollView>
     </View>
   );
@@ -373,6 +291,99 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '900',
   },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 20,
+    flexWrap: 'wrap',
+  },
+  searchInput: {
+    flexGrow: 1,
+    minWidth: 200,
+    backgroundColor: COLORS_ADMIN.white,
+    borderWidth: 1,
+    borderColor: COLORS_ADMIN.border,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: COLORS_ADMIN.text,
+  },
+  filterGroup: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+  tableWrapper: {
+    flex: 1,
+  },
+  table: {
+    borderWidth: 1,
+    borderColor: COLORS_ADMIN.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: COLORS_ADMIN.white,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: COLORS_ADMIN.hover,
+  },
+  headerCell: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    fontWeight: '700',
+    fontSize: 13,
+    color: COLORS_ADMIN.text,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: COLORS_ADMIN.border,
+  },
+  cell: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+  },
+  cellText: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    color: COLORS_ADMIN.text,
+    fontSize: 13,
+    flexShrink: 1,
+  },
+  colBusiness: {
+    flex: 2,
+  },
+  colOwner: {
+    flex: 1.4,
+  },
+  colLocation: {
+    flex: 2,
+  },
+  colStatus: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  colActions: {
+    width: 120,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  tableActionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: COLORS_ADMIN.primary,
+  },
+  tableActionText: {
+    color: COLORS_ADMIN.white,
+    fontWeight: '600',
+    fontSize: 13,
+  },
   filters: {
     flexDirection: 'row',
     gap: 8,
@@ -402,8 +413,8 @@ const styles = StyleSheet.create({
   list: {
     flex: 1,
   },
-  emptyState: {
-    padding: 48,
+  emptyStateRow: {
+    padding: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },

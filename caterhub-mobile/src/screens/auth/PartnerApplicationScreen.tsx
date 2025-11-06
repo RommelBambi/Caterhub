@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Pressable, Alert, Platform, KeyboardAvoidingView, Image, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,42 +25,74 @@ const SquareNavButton = ({
   variant = "solid",
   icon,
   iconPosition = "right",
+  disabled = false,
 }: {
   label: string;
   onPress?: () => void;
   variant?: "solid" | "outline";
   icon?: keyof typeof Ionicons.glyphMap;
   iconPosition?: "left" | "right";
+  disabled?: boolean;
 }) => (
   <Pressable
-    onPress={onPress}
+    onPress={disabled ? undefined : onPress}
+    disabled={disabled}
     style={({ pressed }) => [
       styles.navButton,
       variant === "outline" ? styles.navButtonOutline : styles.navButtonSolid,
-      pressed && styles.navButtonPressed,
+      disabled &&
+        (variant === "outline"
+          ? styles.navButtonDisabledOutline
+          : styles.navButtonDisabledSolid),
+      !disabled && pressed && styles.navButtonPressed,
     ]}
   >
     {icon && iconPosition === "left" && (
       <Ionicons
         name={icon}
         size={18}
-        color={variant === "solid" ? "#fff" : COLORS.primary}
+        color={
+          variant === "solid"
+            ? "#fff"
+            : disabled
+            ? COLORS.textLight
+            : COLORS.primary
+        }
         style={{ marginRight: 8 }}
       />
     )}
-    <Text style={[styles.navButtonText, variant === "outline" ? styles.navButtonTextOutline : styles.navButtonTextSolid]}>
+    <Text
+      style={[
+        styles.navButtonText,
+        variant === "outline"
+          ? styles.navButtonTextOutline
+          : styles.navButtonTextSolid,
+        disabled &&
+          (variant === "outline"
+            ? styles.navButtonTextOutlineDisabled
+            : styles.navButtonTextSolidDisabled),
+      ]}
+    >
       {label}
     </Text>
     {icon && iconPosition === "right" && (
       <Ionicons
         name={icon}
         size={18}
-        color={variant === "solid" ? "#fff" : COLORS.primary}
+        color={
+          variant === "solid"
+            ? "#fff"
+            : disabled
+            ? COLORS.textLight
+            : COLORS.primary
+        }
         style={{ marginLeft: 8 }}
       />
     )}
   </Pressable>
 );
+
+const DTI_PREFIX = 'DTI::';
 
 // Enhanced Hero Component
 function Hero({ onStart }: { onStart: () => void }) {
@@ -183,16 +215,21 @@ function Step1({
     setEditingLocationIndex(null);
   };
 
+  const canProceed = useMemo(() => {
+    if (!form.businessName?.trim()) return false;
+    if (form.locations.length === 0) return false;
+    return form.locations.every(
+      (loc) => loc.country && loc.province && loc.city && loc.address
+    );
+  }, [form.businessName, form.locations]);
 
-      const validate = () => {
-        if (!form.businessName) return false;
-        if (form.locations.length === 0) return false;
-        
-        // Validate all locations have required fields
-        return form.locations.every(
-          (loc) => loc.country && loc.province && loc.city && loc.address
-        );
-      };
+  const handleNext = () => {
+    if (!canProceed) {
+      Alert.alert("Step 1", "Please complete all required fields.");
+      return;
+    }
+    next();
+  };
 
   return (
     <>
@@ -390,7 +427,21 @@ function Step2({
   back: () => void;
   next: () => void;
 }) {
-  const validate = () => !!form.ownerName && !!form.ownerPhone && !!form.ownerEmail;
+  const canProceed = useMemo(
+    () =>
+      !!form.ownerName?.trim() &&
+      !!form.ownerPhone?.trim() &&
+      !!form.ownerEmail?.trim(),
+    [form.ownerName, form.ownerPhone, form.ownerEmail]
+  );
+
+  const handleNext = () => {
+    if (!canProceed) {
+      Alert.alert("Step 2", "Please complete all required fields.");
+      return;
+    }
+    next();
+  };
 
   return (
     <Card pad={32} style={styles.stepCard}>
@@ -424,22 +475,17 @@ function Step2({
         </View>
       </View>
 
-      <View style={styles.navButtons}>
-        <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
-        <SquareNavButton
-          label="Next"
-          onPress={() => {
-            if (!validate()) {
-              Alert.alert("Step 2", "Please complete all required fields.");
-              return;
-            }
-            next();
-          }}
-          icon="arrow-forward"
-          iconPosition="right"
-        />
-      </View>
-    </Card>
+        <View style={styles.navButtons}>
+          <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
+          <SquareNavButton
+            label="Next"
+            onPress={handleNext}
+            icon="arrow-forward"
+            iconPosition="right"
+            disabled={!canProceed}
+          />
+        </View>
+      </Card>
   );
 }
 
@@ -455,43 +501,101 @@ function Step3Compliance({
   back: () => void;
   next: () => void;
 }) {
-  const [uploadedFiles, setUploadedFiles] = useState<Array<{
+  type UploadedFile = {
     name: string;
     size: number;
     uri: string;
     mimeType?: string;
-    storagePath?: string; // Supabase storage path
-  }>>([]);
-  const [uploading, setUploading] = useState(false);
+    storagePath?: string;
+    isRemote?: boolean;
+  };
 
-  // Upload file to Supabase Storage (only after user is authenticated)
-  const uploadFileToStorage = async (fileUri: string, fileName: string, userId: string, mimeType?: string): Promise<string | null> => {
+  const [dtiFile, setDtiFile] = useState<UploadedFile | null>(null);
+  const [supportingFiles, setSupportingFiles] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [dtiUploading, setDtiUploading] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (initialized) return;
+    const docs = form.uploadedDocuments || [];
+    const dtiEntry = docs.find((doc) => doc?.startsWith(DTI_PREFIX));
+    if (dtiEntry) {
+      const storagePath = dtiEntry.slice(DTI_PREFIX.length);
+      setDtiFile({
+        name: storagePath.split('/').pop() || 'DTI Document',
+        size: 0,
+        uri: '',
+        storagePath,
+        isRemote: true,
+      });
+    }
+    const otherEntries = docs.filter((doc) => !doc?.startsWith(DTI_PREFIX));
+    if (otherEntries.length) {
+      setSupportingFiles(
+        otherEntries.map((storagePath) => ({
+          name: storagePath.split('/').pop() || 'Document',
+          size: 0,
+          uri: '',
+          storagePath,
+          isRemote: true,
+        }))
+      );
+    }
+    setInitialized(true);
+  }, [form.uploadedDocuments, initialized]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    const identifiers: string[] = [];
+    if (dtiFile?.storagePath) {
+      identifiers.push(`${DTI_PREFIX}${dtiFile.storagePath}`);
+    }
+    supportingFiles.forEach((file) => {
+      if (file.storagePath) {
+        identifiers.push(file.storagePath);
+      }
+    });
+    setForm((prev) => ({
+      ...prev,
+      uploadedDocuments: identifiers,
+    }));
+  }, [initialized, dtiFile, supportingFiles, setForm]);
+
+  const deleteStorageFile = async (path?: string) => {
+    if (!path) return;
     try {
-      // Generate unique file name with timestamp
+      const { error } = await supabase.storage
+        .from('partner-documents')
+        .remove([path]);
+      if (error) {
+        console.error('Error deleting file from storage:', error);
+      }
+    } catch (error) {
+      console.error('Error deleting file from storage:', error);
+    }
+  };
+
+  const uploadFileToStorage = async (
+    fileUri: string,
+    fileName: string,
+    userId: string,
+    mimeType?: string
+  ): Promise<string | null> => {
+    try {
       const timestamp = Date.now();
       const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
       const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
-      
-      // Store files in user-specific folder: partner-documents/{user_id}/{filename}
       const storagePath = `${userId}/${uniqueFileName}`;
 
-      // Read file as blob
-      let fileBlob: Blob;
-      if (Platform.OS === 'web') {
-        const response = await fetch(fileUri);
-        fileBlob = await response.blob();
-      } else {
-        // For mobile, convert the URI to a blob
-        const response = await fetch(fileUri);
-        fileBlob = await response.blob();
-      }
+      const response = await fetch(fileUri);
+      const fileBlob = await response.blob();
 
-      // Upload to Supabase Storage bucket 'partner-documents'
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('partner-documents')
         .upload(storagePath, fileBlob, {
           contentType: mimeType || 'application/pdf',
-          upsert: false, // Don't overwrite existing files
+          upsert: false,
         });
 
       if (error) {
@@ -499,12 +603,73 @@ function Step3Compliance({
         throw error;
       }
 
-      // Return the full storage path
       return storagePath;
     } catch (error) {
       console.error('Error uploading file:', error);
       throw error;
     }
+  };
+
+  const uploadDtiDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.length) {
+        return;
+      }
+
+      setDtiUploading(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        Alert.alert(
+          'Authentication Required',
+          'Please create your account first before uploading files.',
+        );
+        setDtiUploading(false);
+        return;
+      }
+
+      const file = result.assets[0];
+      const storagePath = await uploadFileToStorage(
+        file.uri,
+        file.name,
+        user.id,
+        file.mimeType || undefined,
+      );
+
+      if (storagePath) {
+        await deleteStorageFile(dtiFile?.storagePath);
+        setDtiFile({
+          name: file.name,
+          size: file.size || 0,
+          uri: file.uri,
+          mimeType: file.mimeType || undefined,
+          storagePath,
+        });
+      }
+    } catch (error) {
+      console.error('Error picking DTI document:', error);
+      Alert.alert(
+        'Error',
+        'Failed to upload DTI certificate. Please try again.',
+      );
+    } finally {
+      setDtiUploading(false);
+    }
+  };
+
+  const removeDtiFile = async () => {
+    if (dtiFile?.storagePath) {
+      await deleteStorageFile(dtiFile.storagePath);
+    }
+    setDtiFile(null);
   };
 
   const pickDocuments = async () => {
@@ -517,40 +682,36 @@ function Step3Compliance({
 
       if (!result.canceled && result.assets) {
         setUploading(true);
-        const uploadedPaths: string[] = [];
-        const newFiles: Array<{
-          name: string;
-          size: number;
-          uri: string;
-          mimeType?: string;
-          storagePath?: string;
-        }> = [];
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-        // Upload files to Supabase Storage (user should be authenticated by now)
-        const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          Alert.alert('Authentication Required', 'Please create your account first before uploading files.');
+          Alert.alert(
+            'Authentication Required',
+            'Please create your account first before uploading files.',
+          );
           setUploading(false);
           return;
         }
 
-        // Upload each file to Supabase Storage
+        const newFiles: UploadedFile[] = [];
+
         for (const file of result.assets) {
           try {
             const storagePath = await uploadFileToStorage(
               file.uri,
               file.name,
               user.id,
-              file.mimeType || undefined
+              file.mimeType || undefined,
             );
 
             if (storagePath) {
-              uploadedPaths.push(storagePath);
               newFiles.push({
                 name: file.name,
                 size: file.size || 0,
                 uri: file.uri,
-                mimeType: file.mimeType,
+                mimeType: file.mimeType || undefined,
                 storagePath,
               });
             }
@@ -561,13 +722,7 @@ function Step3Compliance({
         }
 
         if (newFiles.length > 0) {
-          setUploadedFiles((prev) => [...prev, ...newFiles]);
-          
-          // Update form with storage paths
-          setForm((s) => ({
-            ...s,
-            uploadedDocuments: [...(s.uploadedDocuments || []), ...uploadedPaths],
-          }));
+          setSupportingFiles((prev) => [...prev, ...newFiles]);
         }
 
         setUploading(false);
@@ -579,45 +734,16 @@ function Step3Compliance({
     }
   };
 
-  const removeFile = async (index: number) => {
-    const fileToRemove = uploadedFiles[index];
-    
-    try {
-      // If file was already uploaded to storage, delete it
-      if (fileToRemove.storagePath && !fileToRemove.storagePath.startsWith('temp-')) {
-        const { error } = await supabase.storage
-          .from('partner-documents')
-          .remove([fileToRemove.storagePath]);
-
-        if (error) {
-          console.error('Error deleting file from storage:', error);
-        }
-
-        // Remove from form's uploadedDocuments array
-        setForm((s) => ({
-          ...s,
-          uploadedDocuments: (s.uploadedDocuments || []).filter((path) => path !== fileToRemove.storagePath),
-        }));
-      } else {
-        // Remove from temp files array if it's a temp file
-        setForm((s) => ({
-          ...s,
-          tempFiles: (s.tempFiles || []).filter((_, i) => {
-            const tempIndex = uploadedFiles.slice(0, index).filter(f => f.storagePath?.startsWith('temp-')).length;
-            return i !== tempIndex;
-          }),
-        }));
-      }
-    } catch (error) {
-      console.error('Error removing file:', error);
+  const removeSupportingFile = async (index: number) => {
+    const fileToRemove = supportingFiles[index];
+    if (fileToRemove?.storagePath) {
+      await deleteStorageFile(fileToRemove.storagePath);
     }
-
-    // Remove from local state
-    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+    setSupportingFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
+    if (!bytes) return 'Stored in account';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -655,19 +781,29 @@ function Step3Compliance({
             style={{ marginRight: 12 }}
           />
         )}
-        <Text style={[styles.toggleLabel, value && styles.toggleLabelActive]}>
-          {value ? "✓" : "○"} {label}
+        <Text
+          style={[
+            styles.toggleLabel,
+            value && styles.toggleLabelActive,
+          ]}
+        >
+          {label}
         </Text>
+        <Ionicons
+          name={value ? 'checkmark-circle' : 'ellipse-outline'}
+          size={20}
+          color={value ? COLORS.primary : COLORS.border}
+        />
       </View>
-      {(detail || (bullets && bullets.length)) && (
+      {detail && (
         <View style={styles.toggleContent}>
-          {detail && <Text style={styles.toggleDetail}>{detail}</Text>}
-          {Array.isArray(bullets) && bullets.length > 0 && (
+          <Text style={styles.toggleDetail}>{detail}</Text>
+          {bullets && bullets.length > 0 && (
             <View style={styles.toggleBullets}>
-              {bullets.map((b, i) => (
-                <View key={i} style={styles.toggleBulletItem}>
-                  <Ionicons name="checkmark-circle-outline" size={14} color={COLORS.textLight} style={{ marginRight: 6 }} />
-                  <Text style={styles.toggleBullet}>{b}</Text>
+              {bullets.map((bullet, idx) => (
+                <View key={idx} style={styles.toggleBulletItem}>
+                  <Text style={styles.toggleBulletIcon}>•</Text>
+                  <Text style={styles.toggleBulletText}>{bullet}</Text>
                 </View>
               ))}
             </View>
@@ -685,7 +821,20 @@ function Step3Compliance({
     }
   };
 
-  const canProceed = form.agreeTerms && form.foodSafety;
+  const hasDti = !!(dtiFile && dtiFile.storagePath);
+  const canProceed =
+    form.permitsReady && form.foodSafety && form.agreeTerms && hasDti;
+
+  const handleNext = () => {
+    if (!canProceed) {
+      Alert.alert(
+        'Step 3',
+        'Please confirm all compliance items and upload your DTI certificate.',
+      );
+      return;
+    }
+    next();
+  };
 
   return (
     <Card pad={32} style={styles.stepCard}>
@@ -732,11 +881,61 @@ function Step3Compliance({
         icon="checkbox"
       />
 
-      {/* File Upload Section */}
+      <View style={styles.fileUploadSection}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+          <Ionicons name="document-text" size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
+          <Text style={styles.fileUploadTitle}>DTI / SEC Registration (Required)</Text>
+        </View>
+        <Text style={styles.fileUploadSubtitle}>
+          Upload your DTI or SEC certificate (PDF or images). This is required to submit your application.
+        </Text>
+
+        {dtiFile && (
+          <View style={[styles.fileItem, styles.dtiFileItem]}>
+            <View style={styles.fileItemContent}>
+              <Ionicons name="document" size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
+              <View style={styles.fileItemInfo}>
+                <Text style={styles.fileItemName} numberOfLines={1}>{dtiFile.name}</Text>
+                <Text style={styles.fileItemSize}>{formatFileSize(dtiFile.size)}</Text>
+              </View>
+              <View style={styles.dtiBadge}>
+                <Text style={styles.dtiBadgeText}>Required</Text>
+              </View>
+            </View>
+            <Pressable onPress={removeDtiFile} style={styles.fileRemoveButton}>
+              <Ionicons name="close-circle" size={24} color={COLORS.danger} />
+            </Pressable>
+          </View>
+        )}
+
+        <Pressable
+          onPress={uploadDtiDocument}
+          style={[
+            styles.filePickerButton,
+            dtiUploading && styles.filePickerButtonDisabled,
+          ]}
+          disabled={dtiUploading}
+        >
+          {dtiUploading ? (
+            <>
+              <Ionicons name="hourglass" size={20} color={COLORS.primary} />
+              <Text style={styles.filePickerButtonText}>Uploading...</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
+              <Text style={styles.filePickerButtonText}>
+                {dtiFile ? 'Replace DTI Certificate' : 'Upload DTI Certificate'}
+              </Text>
+            </>
+          )}
+        </Pressable>
+      </View>
+
       <View style={styles.fileUploadSection}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
           <Ionicons name="attach" size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
-          <Text style={styles.fileUploadTitle}>Upload Documents (Optional)</Text>
+          <Text style={styles.fileUploadTitle}>Supporting Documents (Optional)</Text>
         </View>
         <Text style={styles.fileUploadSubtitle}>
           Upload permits, certificates, or other supporting documents (PDF or images)
@@ -744,7 +943,10 @@ function Step3Compliance({
 
         <Pressable 
           onPress={pickDocuments} 
-          style={[styles.filePickerButton, uploading && styles.filePickerButtonDisabled]}
+          style={[
+            styles.filePickerButton,
+            uploading && styles.filePickerButtonDisabled,
+          ]}
           disabled={uploading}
         >
           {uploading ? (
@@ -760,10 +962,10 @@ function Step3Compliance({
           )}
         </Pressable>
 
-        {uploadedFiles.length > 0 && (
+        {supportingFiles.length > 0 && (
           <View style={styles.fileList}>
-            {uploadedFiles.map((file, index) => (
-              <View key={index} style={styles.fileItem}>
+            {supportingFiles.map((file, index) => (
+              <View key={`${file.storagePath || file.uri}-${index}`} style={styles.fileItem}>
                 <View style={styles.fileItemContent}>
                   <Ionicons name="document" size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
                   <View style={styles.fileItemInfo}>
@@ -771,10 +973,7 @@ function Step3Compliance({
                     <Text style={styles.fileItemSize}>{formatFileSize(file.size)}</Text>
                   </View>
                 </View>
-                <Pressable
-                  onPress={() => removeFile(index)}
-                  style={styles.fileRemoveButton}
-                >
+                <Pressable onPress={() => removeSupportingFile(index)} style={styles.fileRemoveButton}>
                   <Ionicons name="close-circle" size={24} color={COLORS.danger} />
                 </Pressable>
               </View>
@@ -787,21 +986,15 @@ function Step3Compliance({
         <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
         <SquareNavButton
           label="Next"
-          onPress={() => {
-            if (!canProceed) {
-              Alert.alert("Step 3", "Please accept compliance items.");
-              return;
-            }
-            next();
-          }}
+          onPress={handleNext}
           icon="arrow-forward"
           iconPosition="right"
+          disabled={!canProceed}
         />
       </View>
     </Card>
   );
 }
-
 // Step 4: Review
 function Step4Review({ 
   form, 
@@ -817,7 +1010,7 @@ function Step4Review({
   const Row = ({ k, v }: { k: string; v: React.ReactNode }) => (
     <View style={styles.reviewRow}>
       <Text style={styles.reviewKey}>{k}</Text>
-      <View style={styles.reviewValue}>{typeof v === "string" ? <Text style={styles.reviewValueText}>{v || "—"}</Text> : v}</View>
+      <View style={styles.reviewValue}>{typeof v === "string" ? <Text style={styles.reviewValueText}>{v || "�"}</Text> : v}</View>
     </View>
   );
 
@@ -830,6 +1023,27 @@ function Step4Review({
       {children}
     </View>
   );
+
+  const hasBusinessInfo =
+    !!form.businessName?.trim() &&
+    form.locations.length > 0 &&
+    form.locations.every(
+      (loc) => loc.country && loc.province && loc.city && loc.address
+    );
+
+  const hasOwnerInfo =
+    !!form.ownerName?.trim() &&
+    !!form.ownerPhone?.trim() &&
+    !!form.ownerEmail?.trim();
+
+  const hasDtiDocument = (form.uploadedDocuments || []).some(
+    (doc) => doc?.startsWith(DTI_PREFIX)
+  );
+
+  const hasCompliance =
+    form.permitsReady && form.foodSafety && form.agreeTerms && hasDtiDocument;
+
+  const canSubmit = hasBusinessInfo && hasOwnerInfo && hasCompliance;
 
   return (
     <Card pad={32} style={styles.stepCard}>
@@ -845,11 +1059,11 @@ function Step4Review({
 
       <Section title="Business" icon="business">
         <Row k="Business name" v={form.businessName} />
-        <Row k="Website" v={form.website || "—"} />
+        <Row k="Website" v={form.website || "�"} />
             <Row k="Locations" v={
               form.locations.length > 0 
                 ? form.locations.map((loc, i) => `${loc.city}, ${loc.province}`).join(", ")
-                : "—"
+                : "�"
             } />
       </Section>
 
@@ -872,9 +1086,19 @@ function Step4Review({
         <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
         <SquareNavButton
           label="Submit Application"
-          onPress={submit}
+          onPress={() => {
+            if (!canSubmit) {
+              Alert.alert(
+                "Review",
+                "Please complete all required business, owner, and compliance details, including your DTI certificate."
+              );
+              return;
+            }
+            submit();
+          }}
           icon="checkmark-circle"
           iconPosition="right"
+          disabled={!canSubmit}
         />
       </View>
     </Card>
@@ -929,6 +1153,14 @@ function Step5Account({
       setLoading(false);
     }
   };
+
+  const canCreateAccount =
+    !!email.trim() &&
+    email.includes('@') &&
+    email.includes('.') &&
+    password.length >= 6 &&
+    password === confirmPassword &&
+    !loading;
 
   return (
     <Card pad={32} style={styles.stepCard}>
@@ -1012,6 +1244,7 @@ function Step5Account({
           onPress={handleSubmit}
           icon="checkmark-circle"
           iconPosition="right"
+          disabled={!canCreateAccount}
         />
       </View>
     </Card>
@@ -1938,6 +2171,14 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLORS.border,
   },
+  navButtonDisabledSolid: {
+    backgroundColor: COLORS.primary + '55',
+    shadowOpacity: 0,
+  },
+  navButtonDisabledOutline: {
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
   navButtonPressed: {
     opacity: 0.8,
     transform: [{ scale: 0.98 }],
@@ -1952,6 +2193,13 @@ const styles = StyleSheet.create({
   },
   navButtonTextOutline: {
     color: COLORS.text,
+  },
+  navButtonTextSolidDisabled: {
+    color: '#fff',
+    opacity: 0.75,
+  },
+  navButtonTextOutlineDisabled: {
+    color: COLORS.textLight,
   },
   termsButton: {
     flexDirection: 'row',
@@ -2015,7 +2263,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 6,
   },
-  toggleBullet: {
+  toggleBulletIcon: {
+    color: COLORS.textLight,
+    fontSize: 13,
+    lineHeight: 20,
+    marginRight: 6,
+  },
+  toggleBulletText: {
     color: COLORS.textLight,
     fontSize: 13,
     lineHeight: 20,
@@ -2200,6 +2454,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     marginBottom: 8,
   },
+  dtiFileItem: {
+    borderColor: COLORS.primary + '33',
+    backgroundColor: COLORS.bg,
+  },
   fileItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2218,6 +2476,19 @@ const styles = StyleSheet.create({
   fileItemSize: {
     fontSize: 12,
     color: COLORS.textLight,
+  },
+  dtiBadge: {
+    marginLeft: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: COLORS.primary + '20',
+  },
+  dtiBadgeText: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
   fileRemoveButton: {
     padding: 4,
@@ -2289,3 +2560,4 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
+

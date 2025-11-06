@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl, TextInput, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl, TextInput } from 'react-native';
 import { supabase } from '../../services/supabase';
 import UserEditModal from './UserEditModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
@@ -232,115 +232,95 @@ export default function UsersPage({ refreshTrigger }: UsersPageProps) {
         </View>
       </View>
 
-      {/* Search */}
-      <View style={styles.searchContainer}>
+      <View style={styles.toolbar}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by username or email..."
+          placeholder="Search users"
           placeholderTextColor={COLORS_ADMIN.textLight}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
-      </View>
-
-      {/* Filters */}
-      <View style={styles.filters}>
-        {(['All', 'CUSTOMER', 'CATER', 'ADMIN'] as const).map((filterOption) => (
-          <Pressable
-            key={filterOption}
-            style={[
-              styles.filterButton,
-              filter === filterOption && styles.filterButtonActive,
-            ]}
-            onPress={() => setFilter(filterOption)}
-          >
-            <Text
+        <View style={styles.filterGroup}>
+          {(['All', 'CUSTOMER', 'CATER', 'ADMIN'] as const).map((filterOption) => (
+            <Pressable
+              key={filterOption}
               style={[
-                styles.filterButtonText,
-                filter === filterOption && styles.filterButtonTextActive,
+                styles.filterButton,
+                filter === filterOption && styles.filterButtonActive,
               ]}
+              onPress={() => setFilter(filterOption)}
             >
-              {filterOption === 'All' ? 'All' : formatRole(filterOption)}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  filter === filterOption && styles.filterButtonTextActive,
+                ]}
+              >
+                {filterOption === 'All' ? 'All Users' : formatRole(filterOption)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
 
-      {/* Users List */}
       <ScrollView
-        style={styles.list}
-        contentContainerStyle={styles.listContent}
+        style={styles.tableWrapper}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {filteredUsers.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>
-              {searchQuery 
-                ? `No users found matching "${searchQuery}"`
-                : filter === 'All' 
-                  ? 'No users found' 
-                  : `No ${formatRole(filter).toLowerCase()}s found`}
-            </Text>
+        <View style={styles.table}>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.headerCell, styles.colName]}>Name</Text>
+            <Text style={[styles.headerCell, styles.colEmail]}>Email</Text>
+            <Text style={[styles.headerCell, styles.colRole]}>Role</Text>
+            <Text style={[styles.headerCell, styles.colJoined]}>Joined</Text>
+            <Text style={[styles.headerCell, styles.colActions]}>Actions</Text>
           </View>
-        ) : (
-          filteredUsers.map((user) => (
-            <View key={user.id} style={styles.userCard}>
-              <View style={styles.userHeader}>
-                <View style={styles.userInfo}>
-                  <Text style={styles.username}>{user.username}</Text>
-                  <Text style={styles.email}>{user.email}</Text>
-                </View>
-                <View style={[styles.roleBadge, { backgroundColor: getRoleBg(user.role) }]}>
-                  <Text style={[styles.roleText, { color: getRoleColor(user.role) }]}>
-                    {formatRole(user.role)}
-                  </Text>
-                </View>
-              </View>
 
-              <View style={styles.userDetails}>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>User ID:</Text>
-                  <Text style={styles.detailValue} numberOfLines={1} ellipsizeMode="middle">
-                    {user.id}
-                  </Text>
-                </View>
-                {user.location && (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Location:</Text>
-                    <Text style={styles.detailValue}>{user.location}</Text>
-                  </View>
-                )}
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Joined:</Text>
-                  <Text style={styles.detailValue}>{formatDate(user.created_at)}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Last Updated:</Text>
-                  <Text style={styles.detailValue}>{formatDate(user.updated_at)}</Text>
-                </View>
-              </View>
-
-              <View style={styles.userActions}>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.editButton]}
-                  onPress={() => handleEdit(user)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.editButtonText}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.deleteButton]}
-                  onPress={() => handleDeleteClick(user.id, user.username)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.deleteButtonText}>Delete</Text>
-                </TouchableOpacity>
-              </View>
+          {filteredUsers.length === 0 ? (
+            <View style={styles.emptyStateRow}>
+              <Text style={styles.emptyStateText}>
+                {searchQuery
+                  ? `No users found matching "${searchQuery}"`
+                  : filter === 'All'
+                    ? 'No users found'
+                    : `No ${formatRole(filter).toLowerCase()}s found`}
+              </Text>
             </View>
-          ))
-        )}
+          ) : (
+            filteredUsers.map((user) => (
+              <View key={user.id} style={styles.tableRow}>
+                <Text style={[styles.cellText, styles.colName]} numberOfLines={1}>{user.username}</Text>
+                <Text style={[styles.cellText, styles.colEmail]} numberOfLines={1}>{user.email}</Text>
+                <View style={[styles.cell, styles.colRole]}>
+                  <View style={[styles.roleBadge, { backgroundColor: getRoleBg(user.role) }]}>
+                    <Text style={[styles.roleBadgeText, { color: getRoleColor(user.role) }]}>
+                      {formatRole(user.role)}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.cellText, styles.colJoined]}>{formatDate(user.created_at)}</Text>
+                <View style={[styles.cell, styles.colActions]}>
+                  <View style={styles.actionsGroup}>
+                    <Pressable
+                      style={[styles.tableActionButton, styles.editAction]}
+                      onPress={() => handleEdit(user)}
+                    >
+                      <Text style={styles.tableActionText}>Edit</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.tableActionButton, styles.deleteAction]}
+                      onPress={() => handleDeleteClick(user.id, user.username)}
+                    >
+                      <Text style={styles.tableActionText}>Delete</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
       </ScrollView>
 
       {/* Edit Modal */}
@@ -408,23 +388,32 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '900',
   },
-  searchContainer: {
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
     marginBottom: 20,
+    flexWrap: 'wrap',
   },
   searchInput: {
+    flexGrow: 1,
+    minWidth: 220,
     backgroundColor: COLORS_ADMIN.white,
     borderWidth: 1,
     borderColor: COLORS_ADMIN.border,
     borderRadius: 8,
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 14,
     color: COLORS_ADMIN.text,
   },
-  filters: {
+  filterGroup: {
     flexDirection: 'row',
     gap: 8,
     marginBottom: 20,
     flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   },
   filterButton: {
     paddingVertical: 8,
@@ -446,115 +435,100 @@ const styles = StyleSheet.create({
   filterButtonTextActive: {
     color: COLORS_ADMIN.white,
   },
-  list: {
+  tableWrapper: {
     flex: 1,
   },
-  listContent: {
-    paddingBottom: 20,
+  table: {
+    borderWidth: 1,
+    borderColor: COLORS_ADMIN.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: COLORS_ADMIN.white,
   },
-  emptyState: {
-    padding: 48,
-    alignItems: 'center',
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: COLORS_ADMIN.hover,
+  },
+  headerCell: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    fontWeight: '700',
+    fontSize: 13,
+    color: COLORS_ADMIN.text,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: COLORS_ADMIN.border,
+  },
+  cell: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     justifyContent: 'center',
+  },
+  cellText: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    color: COLORS_ADMIN.text,
+    fontSize: 13,
+    flexShrink: 1,
+  },
+  colName: {
+    flex: 1.6,
+  },
+  colEmail: {
+    flex: 2,
+  },
+  colRole: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  colJoined: {
+    flex: 1.2,
+  },
+  colActions: {
+    width: 160,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
   },
   emptyStateText: {
     color: COLORS_ADMIN.textLight,
     fontSize: 16,
   },
-  userCard: {
-    backgroundColor: COLORS_ADMIN.white,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS_ADMIN.border,
-    padding: 20,
-    marginBottom: 16,
-  },
-  userHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  userInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  username: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS_ADMIN.text,
-    marginBottom: 4,
-  },
-  email: {
-    fontSize: 14,
-    color: COLORS_ADMIN.textLight,
+  emptyStateRow: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   roleBadge: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 6,
+    borderRadius: 999,
   },
-  roleText: {
+  roleBadgeText: {
     fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
   },
-  userDetails: {
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: COLORS_ADMIN.border,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  detailLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS_ADMIN.text,
-    width: 120,
-  },
-  detailValue: {
-    fontSize: 14,
-    color: COLORS_ADMIN.textLight,
-    flex: 1,
-  },
-  userActions: {
+  actionsGroup: {
     flexDirection: 'row',
     gap: 8,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: COLORS_ADMIN.border,
-    marginTop: 8,
   },
-  actionButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 40,
-    cursor: 'pointer',
+  tableActionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
   },
-  buttonPressed: {
-    opacity: 0.7,
+  tableActionText: {
+    color: COLORS_ADMIN.white,
+    fontWeight: '600',
+    fontSize: 13,
   },
-  editButton: {
+  editAction: {
     backgroundColor: COLORS_ADMIN.primary,
   },
-  editButtonText: {
-    color: COLORS_ADMIN.white,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  deleteButton: {
+  deleteAction: {
     backgroundColor: COLORS_ADMIN.danger,
-  },
-  deleteButtonText: {
-    color: COLORS_ADMIN.white,
-    fontWeight: '600',
-    fontSize: 14,
   },
 });
 

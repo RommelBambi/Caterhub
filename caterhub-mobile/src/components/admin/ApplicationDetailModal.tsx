@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Modal, Pressable, Alert, Linking, Platform } from 'react-native';
 import { supabase } from '../../services/supabase';
 
@@ -37,6 +37,8 @@ const COLORS_ADMIN = {
   warning: "#f59e0b",
 };
 
+const DTI_PREFIX = 'DTI::';
+
 interface Props {
   application: PartnerApplication | null;
   visible: boolean;
@@ -44,6 +46,9 @@ interface Props {
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
 }
+
+const extractStoragePath = (docPath: string) =>
+  docPath?.startsWith(DTI_PREFIX) ? docPath.slice(DTI_PREFIX.length) : docPath;
 
 export default function ApplicationDetailModal({ application, visible, onClose, onApprove, onReject }: Props) {
   if (!application) return null;
@@ -71,8 +76,9 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
     }
   };
 
-  const handleViewDocument = async (storagePath: string) => {
+  const handleViewDocument = async (docPath: string) => {
     try {
+      const storagePath = extractStoragePath(docPath);
       const url = await getDocumentUrl(storagePath);
       if (url) {
         // Open document in new window/tab on web, or use Linking on mobile
@@ -95,6 +101,11 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
     }
   };
 
+  const dtiDocument = application.uploaded_documents?.find((doc) => doc?.startsWith(DTI_PREFIX));
+  const supportingDocuments = (application.uploaded_documents || []).filter(
+    (doc) => !doc?.startsWith(DTI_PREFIX)
+  );
+
   return (
     <Modal
       visible={visible}
@@ -107,7 +118,7 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Application Details</Text>
             <Pressable onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✕</Text>
+              <Text style={styles.closeButtonText}>×</Text>
             </Pressable>
           </View>
 
@@ -161,24 +172,36 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
             </View>
 
             {/* Documents */}
-            {application.uploaded_documents && application.uploaded_documents.length > 0 && (
+            {dtiDocument && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Uploaded Documents</Text>
-                {application.uploaded_documents.map((docPath, idx) => {
-                  const fileName = docPath.split('/').pop() || `Document ${idx + 1}`;
+                <Text style={styles.sectionTitle}>DTI / SEC Registration</Text>
+                <Pressable
+                  style={styles.documentButton}
+                  onPress={() => handleViewDocument(dtiDocument)}
+                >
+                  <Text style={styles.documentButtonText}>View DTI Certificate</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {supportingDocuments.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Supporting Documents</Text>
+                {supportingDocuments.map((docPath, idx) => {
+                  const storagePath = extractStoragePath(docPath);
+                  const fileName = storagePath.split('/').pop() || `Document ${idx + 1}`;
                   return (
                     <Pressable
                       key={idx}
                       style={styles.documentButton}
                       onPress={() => handleViewDocument(docPath)}
                     >
-                      <Text style={styles.documentButtonText}>📄 {fileName}</Text>
+                      <Text style={styles.documentButtonText}>View {fileName}</Text>
                     </Pressable>
                   );
                 })}
               </View>
             )}
-
             {/* Notes */}
             {application.notes && (
               <View style={styles.section}>
@@ -381,4 +404,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+
 

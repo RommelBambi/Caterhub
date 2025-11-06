@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../store/auth';
 import RecruitmentPage from '../../components/admin/RecruitmentPage';
 import ApplicationDetailModal from '../../components/admin/ApplicationDetailModal';
@@ -51,6 +52,7 @@ export default function AdminDashboardScreen() {
   const [selectedApplication, setSelectedApplication] = useState<PartnerApplication | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const menuItems: MenuItem[] = [
     { id: "dashboard", label: "Dashboard", icon: "📊" },
@@ -154,10 +156,14 @@ export default function AdminDashboardScreen() {
   return (
     <View style={styles.container}>
       {/* Sidebar */}
-      <View style={styles.sidebar}>
-        <View style={styles.sidebarHeader}>
-          <Text style={styles.sidebarTitle}>CaterHub Admin</Text>
-          <Text style={styles.sidebarSubtitle}>Welcome, {user?.username}</Text>
+      <View style={[styles.sidebar, sidebarCollapsed && styles.sidebarCollapsed]}>
+        <View style={[styles.sidebarHeader, sidebarCollapsed && styles.sidebarHeaderCollapsed]}>
+          <Text style={[styles.sidebarTitle, sidebarCollapsed && styles.sidebarTitleCollapsed]}>
+            {sidebarCollapsed ? 'CH' : 'CaterHub Admin'}
+          </Text>
+          {!sidebarCollapsed && (
+            <Text style={styles.sidebarSubtitle}>Welcome, {user?.username}</Text>
+          )}
         </View>
 
         <ScrollView style={styles.menu}>
@@ -168,17 +174,22 @@ export default function AdminDashboardScreen() {
               style={[
                 styles.menuItem,
                 currentPage === item.id && styles.menuItemActive,
+                sidebarCollapsed && styles.menuItemCollapsed,
               ]}
             >
-              <Text style={styles.menuIcon}>{item.icon}</Text>
-              <Text
-                style={[
-                  styles.menuLabel,
-                  currentPage === item.id && styles.menuLabelActive,
-                ]}
-              >
-                {item.label}
+              <Text style={[styles.menuIcon, sidebarCollapsed && styles.menuIconCollapsed]}>
+                {item.icon}
               </Text>
+              {!sidebarCollapsed && (
+                <Text
+                  style={[
+                    styles.menuLabel,
+                    currentPage === item.id && styles.menuLabelActive,
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              )}
             </Pressable>
           ))}
         </ScrollView>
@@ -192,6 +203,17 @@ export default function AdminDashboardScreen() {
           </Pressable>
         </View>
       </View>
+
+      <Pressable
+        onPress={() => setSidebarCollapsed((prev) => !prev)}
+        style={styles.sidebarToggle}
+      >
+        <Ionicons
+          name={sidebarCollapsed ? 'chevron-forward' : 'chevron-back'}
+          size={20}
+          color={COLORS.textLight}
+        />
+      </Pressable>
 
       {/* Main Content */}
       <ScrollView style={styles.mainContent}>
@@ -229,15 +251,27 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'column',
   },
+  sidebarCollapsed: {
+    width: 88,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
   sidebarHeader: {
     paddingHorizontal: 24,
     marginBottom: 32,
+  },
+  sidebarHeaderCollapsed: {
+    paddingHorizontal: 12,
+    alignItems: 'center',
   },
   sidebarTitle: {
     fontSize: 24,
     fontWeight: '900',
     color: COLORS.primary,
     margin: 0,
+  },
+  sidebarTitleCollapsed: {
+    textAlign: 'center',
   },
   sidebarSubtitle: {
     marginTop: 4,
@@ -255,11 +289,19 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: 'transparent',
   },
+  menuItemCollapsed: {
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
   menuItemActive: {
     backgroundColor: COLORS.primary + '10',
   },
   menuIcon: {
     fontSize: 20,
+  },
+  menuIconCollapsed: {
+    textAlign: 'center',
+    width: '100%',
   },
   menuLabel: {
     fontSize: 16,
@@ -287,6 +329,15 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     fontWeight: '600',
     fontSize: 14,
+  },
+  sidebarToggle: {
+    width: 20,
+    backgroundColor: COLORS.white,
+    borderRightWidth: 1,
+    borderRightColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
   },
   mainContent: {
     flex: 1,
