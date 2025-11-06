@@ -40,13 +40,6 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.topSection}>
-        <TouchableOpacity 
-          style={[styles.closeButton, { top: insets.top + 10 }]} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="close" size={28} color="#fff" />
-        </TouchableOpacity>
-
         <Image
           source={require('../../../assets/blacklogo.png')}
           style={styles.heroImage}
@@ -152,7 +145,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FF8000' },
   topSection: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  closeButton: { position: 'absolute', top: 50, left: 20 },
   heroImage: { width: 550, height: 550 },
   bottomCard: {
     backgroundColor: '#fff',

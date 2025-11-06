@@ -5,6 +5,11 @@ import { useAuth } from '../../store/auth';
 import RecruitmentPage from '../../components/admin/RecruitmentPage';
 import ApplicationDetailModal from '../../components/admin/ApplicationDetailModal';
 import UsersPage from '../../components/admin/UsersPage';
+import BookingsPage from '../../components/admin/BookingsPage';
+import PaymentsPage from '../../components/admin/PaymentsPage';
+import AnalyticsPage from '../../components/admin/AnalyticsPage';
+import SettingsPage from '../../components/admin/SettingsPage';
+import RefundsPage from '../../components/admin/RefundsPage';
 
 const COLORS = {
   primary: "#FF8000",
@@ -134,10 +139,40 @@ export default function AdminDashboardScreen() {
             <RecruitmentPage onViewDetails={handleViewDetails} refreshTrigger={refreshTrigger} />
           </View>
         );
+      case "bookings":
+        return (
+          <View style={styles.contentContainer}>
+            <BookingsPage />
+          </View>
+        );
       case "users":
         return (
           <View style={styles.contentContainer}>
             <UsersPage refreshTrigger={refreshTrigger} />
+          </View>
+        );
+      case "payments":
+        return (
+          <View style={styles.contentContainer}>
+            <PaymentsPage />
+          </View>
+        );
+      case "analytics":
+        return (
+          <View style={styles.contentContainer}>
+            <AnalyticsPage />
+          </View>
+        );
+      case "settings":
+        return (
+          <View style={styles.contentContainer}>
+            <SettingsPage />
+          </View>
+        );
+      case "refunds":
+        return (
+          <View style={styles.contentContainer}>
+            <RefundsPage />
           </View>
         );
       default:
@@ -240,7 +275,6 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     backgroundColor: COLORS.bg,
-    minHeight: '100vh',
   },
   sidebar: {
     width: 280,
