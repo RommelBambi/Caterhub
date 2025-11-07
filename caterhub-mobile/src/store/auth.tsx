@@ -12,7 +12,8 @@ export type User = {
   email: string;
   username: string;
   role: Role;
-  location?: string | null;   // optional location field
+  location?: string | null;   // optional location field (legacy)
+  profile_image_url?: string | null; // profile image URL from users table
 };
 
 type AuthContext = {
@@ -22,7 +23,7 @@ type AuthContext = {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
-  updateMe: (patch: { location?: string | null; username?: string }) => Promise<void>;
+  updateMe: (patch: { location?: string | null; username?: string; profile_image_url?: string | null }) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
 };
@@ -116,11 +117,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await storage.removeItem(TOKEN_KEY);
     
     // On web, also clear all Supabase-related localStorage items
-    if (typeof window !== 'undefined') {
-      const supabaseKeys = Object.keys(localStorage).filter(key => 
-        key.startsWith('sb-') || key.includes('supabase')
-      );
-      supabaseKeys.forEach(key => localStorage.removeItem(key));
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      try {
+        const supabaseKeys = Object.keys(window.localStorage).filter(key => 
+          key.startsWith('sb-') || key.includes('supabase')
+        );
+        supabaseKeys.forEach(key => window.localStorage.removeItem(key));
+      } catch (error) {
+        // Ignore localStorage errors (e.g., in React Native)
+        console.warn('Error clearing localStorage:', error);
+      }
     }
   };
 

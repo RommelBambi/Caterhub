@@ -140,6 +140,11 @@ export default function PartnerSettingsScreen() {
   const [about, setAbout] = useState("");
   const [facebook, setFacebook] = useState("");
   const [instagram, setInstagram] = useState("");
+  // Owner information from partner_applications
+  const [ownerName, setOwnerName] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [telephoneNumber, setTelephoneNumber] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Location/Branch management
@@ -187,6 +192,11 @@ export default function PartnerSettingsScreen() {
     confirmPassword?: string;
   }>({});
   const [updatingPassword, setUpdatingPassword] = useState(false);
+  // Password visibility toggles
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showEmailVerificationPassword, setShowEmailVerificationPassword] = useState(false);
 
   // Delete account state
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
@@ -201,6 +211,11 @@ export default function PartnerSettingsScreen() {
   const [showLocationsSaveConfirmationModal, setShowLocationsSaveConfirmationModal] = useState(false);
   const [showLocationsSaveSuccessModal, setShowLocationsSaveSuccessModal] = useState(false);
   const [savingLocations, setSavingLocations] = useState(false);
+  
+  // Email and Password change success modals
+  const [showEmailSuccessModal, setShowEmailSuccessModal] = useState(false);
+  const [showPasswordSuccessModal, setShowPasswordSuccessModal] = useState(false);
+  const [showDeleteAccountSuccessModal, setShowDeleteAccountSuccessModal] = useState(false);
 
   // Profile image state
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -223,11 +238,11 @@ export default function PartnerSettingsScreen() {
         // Load profile from Supabase
         const prof = await loadProfileFromSupabase(user.id);
         if (prof) {
-          setContactNumber(prof.contactNumber ?? "");
+      setContactNumber(prof.contactNumber ?? "");
           setEmail(prof.email ?? user.email ?? "");
           setWebsite(prof.website ?? "");
-          setAddress(prof.address ?? "");
-          setAbout(prof.about ?? "");
+      setAddress(prof.address ?? "");
+      setAbout(prof.about ?? "");
           setFacebook(prof.facebook ?? "");
           setInstagram(prof.instagram ?? "");
         } else {
@@ -263,6 +278,26 @@ export default function PartnerSettingsScreen() {
           .single();
 
         if (application && !error) {
+          // Load business name and owner information from partner_applications
+          if (application.business_name) {
+            setBusinessName(application.business_name);
+          }
+          if (application.owner_name) {
+            setOwnerName(application.owner_name);
+          }
+          if (application.owner_phone) {
+            setOwnerPhone(application.owner_phone);
+          }
+          if (application.owner_email) {
+            setOwnerEmail(application.owner_email);
+          }
+          if (application.telephone_number) {
+            setTelephoneNumber(application.telephone_number);
+          }
+          if (application.contact_number) {
+            setContactNumber(application.contact_number);
+          }
+
           // Track last save time for determining new vs old files
           setLastSavedAt(application.updated_at || application.created_at || null);
 
@@ -701,7 +736,7 @@ export default function PartnerSettingsScreen() {
     setShowSaveConfirmationModal(false);
     setSaving(true);
     try {
-      // Save profile data to Supabase
+      // Save profile data to Supabase (caterer_profiles table)
       const newProfile: CatererProfile = {
         contactNumber: contactNumber.trim(),
         email: email.trim() || undefined,
@@ -712,6 +747,39 @@ export default function PartnerSettingsScreen() {
         instagram: instagram.trim() || undefined
       };
       await saveProfileToSupabase(user.id, newProfile);
+
+      // Save business name and owner information to partner_applications table
+      const { data: applications, error: appError } = await supabase
+        .from('partner_applications')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (appError) {
+        console.error('Error fetching application:', appError);
+        throw appError;
+      }
+
+      if (applications && applications.length > 0) {
+        const { error: updateError } = await supabase
+          .from('partner_applications')
+          .update({
+            business_name: businessName.trim(),
+            owner_name: ownerName.trim() || null,
+            owner_phone: ownerPhone.trim() || null,
+            owner_email: ownerEmail.trim() || null,
+            telephone_number: telephoneNumber.trim() || null,
+            contact_number: contactNumber.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', applications[0].id);
+
+        if (updateError) {
+          console.error('Error updating partner application:', updateError);
+          throw updateError;
+        }
+      }
 
       // Save locations and documents to Supabase
       await saveLocationsAndDocuments();
@@ -781,25 +849,57 @@ export default function PartnerSettingsScreen() {
 
     setUpdatingEmail(true);
     try {
-      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
-      if (error) {
-        throw error;
+      // Call Supabase Edge Function to update email
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session. Please log in again.');
       }
-      Alert.alert(
-        "Email Update Requested",
-        "A confirmation email has been sent to your new email address. Please check your inbox and click the confirmation link to complete the email change.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              setNewEmail("");
-              setShowChangeEmail(false);
-              refreshUser();
-            }
-          }
-        ]
-      );
+
+      const { data, error } = await supabase.functions.invoke('update-email', {
+        body: {
+          newEmail: newEmail.trim(),
+          password: emailVerificationPassword,
+        },
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to update email. Please try again.');
+      }
+
+      if (data?.error) {
+        console.error('Email update error:', data.error);
+        let errorMessage = data.error || 'Failed to update email. Please try again.';
+        
+        // Handle specific error cases
+        if (data.error.includes('already registered') || 
+            data.error.includes('already exists') ||
+            data.error.includes('already been registered')) {
+          errorMessage = 'This email address is already in use. Please use a different email.';
+        } else if (data.error.includes('Invalid password')) {
+          errorMessage = 'Incorrect password. Please try again.';
+        } else if (data.error.includes('Invalid email')) {
+          errorMessage = `Invalid email address: ${newEmail.trim()}. Please enter a valid email address.`;
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      // Refresh user data
+      refreshUser();
+
+      // Reset form
+      setNewEmail("");
+      setShowChangeEmail(false);
+      setEmailVerificationPassword("");
+      setEmailPasswordError("");
+      setEmailPasswordVerified(false);
+      setShowEmailVerificationPassword(false);
+
+      // Show success modal
+      setShowEmailSuccessModal(true);
     } catch (error: any) {
+      console.error('Email change error:', error);
       Alert.alert("Error", error?.message || "Failed to update email. Please try again.");
     } finally {
       setUpdatingEmail(false);
@@ -865,6 +965,9 @@ export default function PartnerSettingsScreen() {
     setConfirmPassword("");
     setPasswordErrors({});
     setCurrentPasswordVerified(false);
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
   };
 
   const handleChangePassword = async () => {
@@ -876,7 +979,9 @@ export default function PartnerSettingsScreen() {
       await changePassword(currentPassword, newPassword);
       resetPasswordForm();
       setShowChangePassword(false);
-      Alert.alert("Success", "Password updated successfully.");
+      
+      // Show success modal
+      setShowPasswordSuccessModal(true);
     } catch (error: any) {
       Alert.alert("Error", error?.message || "Failed to update password. Please try again.");
     } finally {
@@ -1084,87 +1189,42 @@ export default function PartnerSettingsScreen() {
 
     setDeletingAccount(true);
     try {
-      // Re-authenticate to verify password
-      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-        email: user?.email || '',
-        password: deleteAccountPassword,
+      // Call Supabase Edge Function to delete account
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session. Please log in again.');
+      }
+
+      const { data, error } = await supabase.functions.invoke('delete-account', {
+        body: {
+          password: deleteAccountPassword,
+        },
       });
 
-      if (loginError || !loginData.session) {
-        setDeleteAccountPasswordError("Incorrect password. Please try again.");
-        setDeletingAccount(false);
-        return;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to delete account. Please try again.');
       }
 
-      // Delete user from users table
-      const { error: deleteError } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', user?.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      // Delete user's storage files (documents, profile image, etc.)
-      try {
-        if (user?.id) {
-          // Delete profile image
-          if (profileImage) {
-            try {
-              // Extract path from URL - format: .../avatars/profiles/userId/filename
-              const urlParts = profileImage.split('/');
-              const bucketIndex = urlParts.findIndex(part => part === 'avatars');
-              if (bucketIndex >= 0 && bucketIndex < urlParts.length - 1) {
-                // Get path after bucket name
-                const oldPath = urlParts.slice(bucketIndex + 1).join('/');
-                await supabase.storage.from('avatars').remove([oldPath]);
-              }
-            } catch (error) {
-              console.warn('Error deleting profile image:', error);
-            }
-          }
-          // Delete documents
-          try {
-            const { data: files } = await supabase.storage
-              .from('partner-documents')
-              .list(user.id);
-            if (files && files.length > 0) {
-              const filePaths = files.map(f => `${user.id}/${f.name}`);
-              await supabase.storage.from('partner-documents').remove(filePaths);
-            }
-          } catch (error) {
-            console.warn('Error deleting documents:', error);
-          }
+      if (data?.error) {
+        console.error('Account deletion error:', data.error);
+        let errorMessage = data.error || 'Failed to delete account. Please try again.';
+        
+        // Handle specific error cases
+        if (data.error.includes('Invalid password')) {
+          errorMessage = 'Incorrect password. Please try again.';
         }
-      } catch (storageError) {
-        console.warn('Error deleting storage files:', storageError);
+        
+        throw new Error(errorMessage);
       }
 
-      // Sign out and clear local data
-      await logout();
-      
-      Alert.alert(
-        "Account Deleted",
-        "Your account has been permanently deleted.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              // Navigate to login
-              if (isWeb) {
-                window.location.href = '/';
-              } else {
-                // Navigate to login screen - use navigation.replace or navigate to root
-                navigation.getParent()?.reset({
-                  index: 0,
-                  routes: [{ name: 'Auth' as any }],
-                });
-              }
-            }
-          }
-        ]
-      );
+      // Close delete account modal
+      setShowDeleteAccountModal(false);
+      setDeleteAccountPassword('');
+      setDeleteAccountPasswordError('');
+
+      // Show success modal
+      setShowDeleteAccountSuccessModal(true);
     } catch (error: any) {
       console.error('Error deleting account:', error);
       setDeleteAccountPasswordError(error?.message || "Failed to delete account. Please try again.");
@@ -1373,6 +1433,18 @@ export default function PartnerSettingsScreen() {
                 </View>
 
                 <View style={styles.formGroup}>
+                  <Text style={styles.label}>Telephone Number</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. (02) 1234-5678"
+                    placeholderTextColor="#9ca3af"
+                    value={telephoneNumber}
+                    onChangeText={setTelephoneNumber}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
                   <Text style={styles.label}>Email</Text>
                   <TextInput
                     style={styles.input}
@@ -1421,6 +1493,50 @@ export default function PartnerSettingsScreen() {
                 </View>
               </View>
 
+              {/* Owner Information Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Owner Information</Text>
+                <Text style={styles.cardSubtitle}>
+                  Information about the business owner or primary contact person.
+                </Text>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Owner Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Juan Dela Cruz"
+                    placeholderTextColor="#9ca3af"
+                    value={ownerName}
+                    onChangeText={setOwnerName}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Owner Phone *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 0917 123 4567"
+                    placeholderTextColor="#9ca3af"
+                    value={ownerPhone}
+                    onChangeText={setOwnerPhone}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Owner Email *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. owner@yourcatering.com"
+                    placeholderTextColor="#9ca3af"
+                    value={ownerEmail}
+                    onChangeText={setOwnerEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
+
               {/* Social Media Card */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Social Media</Text>
@@ -1454,13 +1570,13 @@ export default function PartnerSettingsScreen() {
               </View>
 
               {/* Preview Card */}
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Preview for Customers</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Preview for Customers</Text>
                 <Text style={styles.cardSubtitle}>
                   This is how your business will appear to customers.
                 </Text>
                 <View style={styles.previewCard}>
-                  <View style={styles.previewHeaderRow}>
+            <View style={styles.previewHeaderRow}>
                     {profileImage ? (
                       <Image
                         source={{ uri: profileImage }}
@@ -1468,18 +1584,18 @@ export default function PartnerSettingsScreen() {
                         resizeMode="cover"
                       />
                     ) : (
-                      <View style={styles.previewAvatar}>
-                        <Text style={styles.previewAvatarText}>
-                          {businessName
-                            ? businessName.charAt(0).toUpperCase()
-                            : "?"}
-                        </Text>
-                      </View>
+              <View style={styles.previewAvatar}>
+                <Text style={styles.previewAvatarText}>
+                  {businessName
+                    ? businessName.charAt(0).toUpperCase()
+                    : "?"}
+                </Text>
+              </View>
                     )}
                     <View style={styles.previewHeaderInfo}>
-                      <Text style={styles.previewNameText}>
-                        {businessName || "Your Catering"}
-                      </Text>
+                <Text style={styles.previewNameText}>
+                  {businessName || "Your Catering"}
+                </Text>
                       {contactNumber && (
                         <Text style={styles.previewMetaText}>📞 {contactNumber}</Text>
                       )}
@@ -1654,7 +1770,7 @@ export default function PartnerSettingsScreen() {
                 >
                   <Text style={styles.saveBtnText}>
                     {savingLocations ? "Saving..." : "Save Locations"}
-                  </Text>
+            </Text>
                 </Pressable>
           </View>
             </>
@@ -1838,6 +1954,7 @@ export default function PartnerSettingsScreen() {
                       setEmailVerificationPassword("");
                       setEmailPasswordError("");
                       setEmailPasswordVerified(false);
+                      setShowEmailVerificationPassword(false);
                     }}
                     style={styles.changeButton}
                   >
@@ -1857,19 +1974,31 @@ export default function PartnerSettingsScreen() {
                           <Text style={styles.labelSubtext}>
                             Please enter your current password to verify your identity
                           </Text>
-                          <TextInput
-                            style={[styles.input, emailPasswordError && styles.inputError]}
-                            placeholder="Enter your current password"
-                            placeholderTextColor="#9ca3af"
-                            value={emailVerificationPassword}
-                            onChangeText={(text) => {
-                              setEmailVerificationPassword(text);
-                              setEmailPasswordError("");
-                            }}
-                            secureTextEntry
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                          />
+                          <View style={styles.passwordInputContainer}>
+                            <TextInput
+                              style={[styles.passwordInput, emailPasswordError && styles.inputError]}
+                              placeholder="Enter your current password"
+                              placeholderTextColor="#9ca3af"
+                              value={emailVerificationPassword}
+                              onChangeText={(text) => {
+                                setEmailVerificationPassword(text);
+                                setEmailPasswordError("");
+                              }}
+                              secureTextEntry={!showEmailVerificationPassword}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Pressable
+                              style={styles.passwordToggle}
+                              onPress={() => setShowEmailVerificationPassword(!showEmailVerificationPassword)}
+                            >
+                              <Ionicons
+                                name={showEmailVerificationPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color={COLORS.textLight}
+                              />
+                            </Pressable>
+                          </View>
                           {emailPasswordError ? (
                             <Text style={styles.errorText}>{emailPasswordError}</Text>
                           ) : null}
@@ -1948,19 +2077,31 @@ export default function PartnerSettingsScreen() {
                           <Text style={styles.labelSubtext}>
                             Please enter your current password to verify your identity
                           </Text>
-                          <TextInput
-                            style={[styles.input, passwordErrors.currentPassword && styles.inputError]}
-                            placeholder="Enter current password"
-                            placeholderTextColor="#9ca3af"
-                            value={currentPassword}
-                            onChangeText={(text) => {
-                              setCurrentPassword(text);
-                              setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
-                            }}
-                            secureTextEntry
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                          />
+                          <View style={styles.passwordInputContainer}>
+                            <TextInput
+                              style={[styles.passwordInput, passwordErrors.currentPassword && styles.inputError]}
+                              placeholder="Enter current password"
+                              placeholderTextColor="#9ca3af"
+                              value={currentPassword}
+                              onChangeText={(text) => {
+                                setCurrentPassword(text);
+                                setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
+                              }}
+                              secureTextEntry={!showCurrentPassword}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Pressable
+                              style={styles.passwordToggle}
+                              onPress={() => setShowCurrentPassword(!showCurrentPassword)}
+                            >
+                              <Ionicons
+                                name={showCurrentPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color={COLORS.textLight}
+                              />
+                            </Pressable>
+                          </View>
                           {passwordErrors.currentPassword ? (
                             <Text style={styles.errorText}>{passwordErrors.currentPassword}</Text>
                           ) : null}
@@ -1984,19 +2125,31 @@ export default function PartnerSettingsScreen() {
 
                         <View style={styles.formGroup}>
                           <Text style={styles.label}>New Password *</Text>
-                          <TextInput
-                            style={[styles.input, passwordErrors.newPassword && styles.inputError]}
-                            placeholder="Enter new password (min. 8 characters)"
-                            placeholderTextColor="#9ca3af"
-                            value={newPassword}
-                            onChangeText={(text) => {
-                              setNewPassword(text);
-                              setPasswordErrors({ ...passwordErrors, newPassword: undefined });
-                            }}
-                            secureTextEntry
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                          />
+                          <View style={styles.passwordInputContainer}>
+                            <TextInput
+                              style={[styles.passwordInput, passwordErrors.newPassword && styles.inputError]}
+                              placeholder="Enter new password (min. 8 characters)"
+                              placeholderTextColor="#9ca3af"
+                              value={newPassword}
+                              onChangeText={(text) => {
+                                setNewPassword(text);
+                                setPasswordErrors({ ...passwordErrors, newPassword: undefined });
+                              }}
+                              secureTextEntry={!showNewPassword}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Pressable
+                              style={styles.passwordToggle}
+                              onPress={() => setShowNewPassword(!showNewPassword)}
+                            >
+                              <Ionicons
+                                name={showNewPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color={COLORS.textLight}
+                              />
+                            </Pressable>
+                          </View>
                           {passwordErrors.newPassword ? (
                             <Text style={styles.errorText}>{passwordErrors.newPassword}</Text>
                           ) : null}
@@ -2004,19 +2157,31 @@ export default function PartnerSettingsScreen() {
 
                         <View style={styles.formGroup}>
                           <Text style={styles.label}>Confirm New Password *</Text>
-                          <TextInput
-                            style={[styles.input, passwordErrors.confirmPassword && styles.inputError]}
-                            placeholder="Confirm new password"
-                            placeholderTextColor="#9ca3af"
-                            value={confirmPassword}
-                            onChangeText={(text) => {
-                              setConfirmPassword(text);
-                              setPasswordErrors({ ...passwordErrors, confirmPassword: undefined });
-                            }}
-                            secureTextEntry
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                          />
+                          <View style={styles.passwordInputContainer}>
+                            <TextInput
+                              style={[styles.passwordInput, passwordErrors.confirmPassword && styles.inputError]}
+                              placeholder="Confirm new password"
+                              placeholderTextColor="#9ca3af"
+                              value={confirmPassword}
+                              onChangeText={(text) => {
+                                setConfirmPassword(text);
+                                setPasswordErrors({ ...passwordErrors, confirmPassword: undefined });
+                              }}
+                              secureTextEntry={!showConfirmPassword}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Pressable
+                              style={styles.passwordToggle}
+                              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                            >
+                              <Ionicons
+                                name={showConfirmPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color={COLORS.textLight}
+                              />
+                            </Pressable>
+                          </View>
                           {passwordErrors.confirmPassword ? (
                             <Text style={styles.errorText}>{passwordErrors.confirmPassword}</Text>
                           ) : null}
@@ -2390,6 +2555,126 @@ export default function PartnerSettingsScreen() {
         </View>
       </Modal>
 
+      {/* Email Change Success Modal */}
+      <Modal
+        visible={showEmailSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowEmailSuccessModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.successIconContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={COLORS.success || "#22c55e"} />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Email Updated Successfully!</Text>
+            <Text style={styles.successMessage}>
+              Your email address has been updated successfully.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalSuccessButton]}
+                onPress={() => {
+                  setShowEmailSuccessModal(false);
+                }}
+              >
+                <Text style={styles.modalSuccessButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Password Change Success Modal */}
+      <Modal
+        visible={showPasswordSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowPasswordSuccessModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.successIconContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={COLORS.success || "#22c55e"} />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Password Updated Successfully!</Text>
+            <Text style={styles.successMessage}>
+              Your password has been updated successfully. Please use your new password to sign in next time.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalSuccessButton]}
+                onPress={() => {
+                  setShowPasswordSuccessModal(false);
+                }}
+              >
+                <Text style={styles.modalSuccessButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Account Success Modal */}
+      <Modal
+        visible={showDeleteAccountSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          // Don't allow closing without navigating
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.successIconContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={COLORS.success || "#22c55e"} />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Account Deleted Successfully!</Text>
+            <Text style={styles.successMessage}>
+              Your account has been permanently deleted. You will be signed out and redirected to the login screen.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalSuccessButton]}
+                onPress={async () => {
+                  setShowDeleteAccountSuccessModal(false);
+                  // Sign out and clear local data
+                  await logout();
+                  // Navigate to login
+                  if (isWeb) {
+                    window.location.href = '/';
+                  } else {
+                    // Navigate to login screen
+                    navigation.getParent()?.reset({
+                      index: 0,
+                      routes: [{ name: 'Auth' as any }],
+                    });
+                  }
+                }}
+              >
+                <Text style={styles.modalSuccessButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Map Picker Modal (Mobile only) */}
       {Platform.OS !== 'web' && (
         <InteractiveMapPicker
@@ -2510,6 +2795,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: Platform.OS === 'web' ? 12 : 14,
     fontSize: Platform.OS === 'web' ? 14 : 15,
     color: "#111827"
+  },
+  passwordInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingRight: Platform.OS === 'web' ? 12 : 14,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 12 : 14,
+    fontSize: Platform.OS === 'web' ? 14 : 15,
+    color: "#111827"
+  },
+  passwordToggle: {
+    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   aboutInput: {
     minHeight: Platform.OS === 'web' ? 100 : 120,
