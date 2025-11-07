@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Image, StyleSheet, TouchableOpacity, Alert, Linking } from 'react-native';
+import { View, Image, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
@@ -126,8 +126,8 @@ export default function LoginScreen() {
           mode="text"
           onPress={() => {
             if (isCaterer) {
-              const applicationUrl = 'https://example.com/start-application';
-              Linking.openURL(applicationUrl);
+              // Navigate to Partner Application Screen for mobile
+              navigation.navigate('PartnerApplication');
             } else {
               navigation.navigate('Register');
             }

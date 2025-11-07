@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 
 interface ContainerProps {
   children: React.ReactNode;
@@ -15,6 +15,7 @@ const styles = StyleSheet.create({
     maxWidth: 980,
     marginHorizontal: 'auto',
     alignSelf: 'center',
+    paddingHorizontal: Platform.OS === 'web' ? 24 : 16,
   },
 });
 

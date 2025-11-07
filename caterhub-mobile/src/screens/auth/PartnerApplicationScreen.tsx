@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Pressable, Alert, Platform, KeyboardAvoidingView, Image, Modal } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Pressable, Alert, Platform, KeyboardAvoidingView, Image, Modal, Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { Container } from '../../components/ui/Container';
@@ -103,32 +104,34 @@ function Hero({ onStart }: { onStart: () => void }) {
 
   return (
     <View style={styles.heroContainer}>
-      <View style={styles.heroBackground}>
-        <View style={styles.heroOverlay} />
-      </View>
+      {Platform.OS === 'web' && (
+        <View style={styles.heroBackground}>
+          <View style={styles.heroOverlay} />
+        </View>
+      )}
       <Container>
-        <Card pad={48} style={styles.heroCard}>
+        <Card pad={Platform.OS === 'web' ? 48 : 20} style={styles.heroCard}>
           <View style={styles.heroContent}>
             <View style={styles.heroIconContainer}>
-              <Ionicons name="restaurant" size={48} color={COLORS.primary} />
+              <Ionicons name="restaurant" size={Platform.OS === 'web' ? 48 : 44} color={COLORS.primary} />
             </View>
             <Text style={styles.heroTitle}>Become a CaterHub Partner</Text>
             <Text style={styles.heroSubtitle}>
               Join our platform and grow your catering business. We'll guide you through a quick application process.
             </Text>
             <View style={styles.heroBenefits}>
-              <View style={[styles.heroBenefitItem, { marginBottom: 16 }]}>
+              <View style={[styles.heroBenefitItem, { marginBottom: Platform.OS === 'web' ? 16 : 12 }]}>
                 <View style={styles.heroBenefitIcon}>
-                  <Ionicons name="checkmark-circle" size={24} color={COLORS.primary} />
+                  <Ionicons name="checkmark-circle" size={Platform.OS === 'web' ? 24 : 22} color={COLORS.primary} />
                 </View>
                 <View style={styles.heroBenefitContent}>
                   <Text style={styles.heroBenefitTitle}>Reach thousands of customers</Text>
                   <Text style={styles.heroBenefitDesc}>Get discovered by customers in your area</Text>
                 </View>
               </View>
-              <View style={[styles.heroBenefitItem, { marginBottom: 16 }]}>
+              <View style={[styles.heroBenefitItem, { marginBottom: Platform.OS === 'web' ? 16 : 12 }]}>
                 <View style={styles.heroBenefitIcon}>
-                  <Ionicons name="calendar" size={24} color={COLORS.primary} />
+                  <Ionicons name="calendar" size={Platform.OS === 'web' ? 24 : 22} color={COLORS.primary} />
                 </View>
                 <View style={styles.heroBenefitContent}>
                   <Text style={styles.heroBenefitTitle}>Easy booking management</Text>
@@ -137,7 +140,7 @@ function Hero({ onStart }: { onStart: () => void }) {
               </View>
               <View style={styles.heroBenefitItem}>
                 <View style={styles.heroBenefitIcon}>
-                  <Ionicons name="shield-checkmark" size={24} color={COLORS.primary} />
+                  <Ionicons name="shield-checkmark" size={Platform.OS === 'web' ? 24 : 22} color={COLORS.primary} />
                 </View>
                 <View style={styles.heroBenefitContent}>
                   <Text style={styles.heroBenefitTitle}>Secure payment processing</Text>
@@ -233,10 +236,10 @@ function Step1({
 
   return (
     <>
-      <Card pad={32} style={styles.stepCard}>
+      <Card pad={Platform.OS === 'web' ? 32 : 24} style={styles.stepCard}>
         <View style={styles.stepHeader}>
           <View style={styles.stepHeaderIcon}>
-            <Ionicons name="business" size={24} color={COLORS.primary} />
+            <Ionicons name="business" size={Platform.OS === 'web' ? 24 : 20} color={COLORS.primary} />
           </View>
           <View style={styles.stepHeaderText}>
             <Text style={styles.stepTitle}>Business Profile</Text>
@@ -346,10 +349,15 @@ function Step1({
         </Pressable>
 
         <View style={styles.navButtons}>
-          <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
           <SquareNavButton
             label="Next"
-            onPress={handleNext}
+            onPress={() => {
+              if (!canProceed) {
+                Alert.alert("Step 1", "Please complete all required fields including at least one location.");
+                return;
+              }
+              next();
+            }}
             icon="arrow-forward"
             iconPosition="right"
             disabled={!canProceed}
@@ -439,10 +447,10 @@ function Step2({
   };
 
   return (
-    <Card pad={32} style={styles.stepCard}>
+    <Card pad={Platform.OS === 'web' ? 32 : 24} style={styles.stepCard}>
       <View style={styles.stepHeader}>
         <View style={styles.stepHeaderIcon}>
-          <Ionicons name="person" size={24} color={COLORS.primary} />
+          <Ionicons name="person" size={Platform.OS === 'web' ? 24 : 20} color={COLORS.primary} />
         </View>
         <View style={styles.stepHeaderText}>
           <Text style={styles.stepTitle}>Owner & Contact</Text>
@@ -471,7 +479,6 @@ function Step2({
       </View>
 
         <View style={styles.navButtons}>
-          <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
           <SquareNavButton
             label="Next"
             onPress={handleNext}
@@ -583,7 +590,11 @@ function Step3Compliance({
       const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
       const storagePath = `${userId}/${uniqueFileName}`;
 
+      // Fetch file and convert to blob - works on both web and mobile
       const response = await fetch(fileUri);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.statusText}`);
+      }
       const fileBlob = await response.blob();
 
       const { error } = await supabase.storage
@@ -610,7 +621,7 @@ function Step3Compliance({
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'image/*'],
         multiple: false,
-        copyToCacheDirectory: true,
+        copyToCacheDirectory: Platform.OS !== 'web',
       });
 
       if (result.canceled || !result.assets?.length) {
@@ -672,7 +683,7 @@ function Step3Compliance({
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'image/*'],
         multiple: true,
-        copyToCacheDirectory: true,
+        copyToCacheDirectory: Platform.OS !== 'web',
       });
 
       if (!result.canceled && result.assets) {
@@ -832,10 +843,10 @@ function Step3Compliance({
   };
 
   return (
-    <Card pad={32} style={styles.stepCard}>
+    <Card pad={Platform.OS === 'web' ? 32 : 24} style={styles.stepCard}>
       <View style={styles.stepHeader}>
         <View style={styles.stepHeaderIcon}>
-          <Ionicons name="shield-checkmark" size={24} color={COLORS.primary} />
+          <Ionicons name="shield-checkmark" size={Platform.OS === 'web' ? 24 : 20} color={COLORS.primary} />
         </View>
         <View style={styles.stepHeaderText}>
           <Text style={styles.stepTitle}>Compliance & Policies</Text>
@@ -978,7 +989,6 @@ function Step3Compliance({
       </View>
 
       <View style={styles.navButtons}>
-        <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
         <SquareNavButton
           label="Next"
           onPress={handleNext}
@@ -1041,10 +1051,10 @@ function Step4Review({
   const canSubmit = hasBusinessInfo && hasOwnerInfo && hasCompliance;
 
   return (
-    <Card pad={32} style={styles.stepCard}>
+    <Card pad={Platform.OS === 'web' ? 32 : 24} style={styles.stepCard}>
       <View style={styles.stepHeader}>
         <View style={styles.stepHeaderIcon}>
-          <Ionicons name="eye" size={24} color={COLORS.primary} />
+          <Ionicons name="eye" size={Platform.OS === 'web' ? 24 : 20} color={COLORS.primary} />
         </View>
         <View style={styles.stepHeaderText}>
           <Text style={styles.stepTitle}>Review Your Application</Text>
@@ -1078,7 +1088,6 @@ function Step4Review({
       </Section>
 
       <View style={styles.navButtons}>
-        <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
         <SquareNavButton
           label="Submit Application"
           onPress={() => {
@@ -1158,10 +1167,10 @@ function Step5Account({
     !loading;
 
   return (
-    <Card pad={32} style={styles.stepCard}>
+    <Card pad={Platform.OS === 'web' ? 32 : 24} style={styles.stepCard}>
       <View style={styles.stepHeader}>
         <View style={styles.stepHeaderIcon}>
-          <Ionicons name="person-add" size={24} color={COLORS.primary} />
+          <Ionicons name="person-add" size={Platform.OS === 'web' ? 24 : 20} color={COLORS.primary} />
         </View>
         <View style={styles.stepHeaderText}>
           <Text style={styles.stepTitle}>Create Your Account</Text>
@@ -1233,7 +1242,6 @@ function Step5Account({
       </View>
 
       <View style={styles.navButtons}>
-        <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
         <SquareNavButton
           label={loading ? "Creating Account..." : "Create Account & Submit"}
           onPress={handleSubmit}
@@ -1250,10 +1258,10 @@ function Step5Account({
 function WaitingApproval({ onBack, onGoToDashboard }: { onBack: () => void; onGoToDashboard: () => void }) {
   return (
     <View style={styles.successContainer}>
-      <Card pad={48} style={styles.successCard}>
+      <Card pad={Platform.OS === 'web' ? 48 : 32} style={styles.successCard}>
         <View style={styles.successIconContainer}>
           <View style={styles.successIconCircle}>
-            <Ionicons name="hourglass-outline" size={64} color={COLORS.primary} />
+            <Ionicons name="hourglass-outline" size={Platform.OS === 'web' ? 64 : 56} color={COLORS.primary} />
           </View>
         </View>
         <Text style={styles.successTitle}>Application Submitted!</Text>
@@ -1449,18 +1457,76 @@ export default function PartnerApplicationScreen() {
   };
 
   const canGoBack = navigation.canGoBack();
+  const insets = useSafeAreaInsets();
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {canGoBack && (
+      {canGoBack && Platform.OS !== 'web' && (
+        <View style={[styles.mobileHeader, { paddingTop: insets.top }]}>
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
+            onPress={() => {
+              if (step === "hero") {
+                // If on hero screen, go back to previous screen in navigation
+                navigation.goBack();
+              } else {
+                // Otherwise, go to previous step in the application flow
+                back();
+              }
+            }}
+            style={styles.mobileBackButton}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="arrow-back" size={20} color="#6b7280" />
-            <Text style={styles.backButtonText}>Back</Text>
+            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
           </TouchableOpacity>
+          {step !== "hero" && step !== "waiting" && (
+            <TouchableOpacity
+              onPress={() => {
+                const email = 'support@caterhub.io';
+                const subject = 'Partner Application Support';
+                const body = 'Hello,\n\nI need assistance with my partner application.\n\n';
+                const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                
+                Linking.canOpenURL(mailtoUrl)
+                  .then((supported) => {
+                    if (supported) {
+                      return Linking.openURL(mailtoUrl);
+                    } else {
+                      Alert.alert(
+                        'Email Not Available',
+                        'Please contact us at support@caterhub.io',
+                        [{ text: 'OK' }]
+                      );
+                    }
+                  })
+                  .catch((err) => {
+                    Alert.alert(
+                      'Error',
+                      'Unable to open email client. Please contact us at support@caterhub.io',
+                      [{ text: 'OK' }]
+                    );
+                  });
+              }}
+              style={styles.mobileHelpButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="help-circle" size={18} color={COLORS.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {canGoBack && Platform.OS === 'web' && (
+          <View style={styles.backButtonContainer}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.backButton}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={20} color={COLORS.text} />
+              <Text style={styles.backButtonText}>Back</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         <Container>
@@ -1586,7 +1652,7 @@ export default function PartnerApplicationScreen() {
         </Container>
       </ScrollView>
 
-      {step !== "hero" && step !== "waiting" && (
+      {step !== "hero" && step !== "waiting" && Platform.OS === 'web' && (
         <View style={styles.footer}>
           <Container>
             <Card pad={16} style={styles.footerCard}>
@@ -1611,21 +1677,61 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 120,
+    paddingBottom: Platform.OS === 'web' ? 120 : 100,
+    paddingTop: Platform.OS === 'web' ? 0 : 10,
   },
-  backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
+  // Mobile header
+  mobileHeader: {
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+    zIndex: 100,
+  },
+  mobileBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  mobileHelpButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 'auto',
+  },
+  // Web back button
+  backButtonContainer: {
+    paddingHorizontal: 0,
+    paddingTop: 12,
+    paddingBottom: 8,
+    marginBottom: 8,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 10,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    zIndex: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -1639,7 +1745,7 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   heroContainer: {
-    paddingVertical: 60,
+    paddingVertical: Platform.OS === 'web' ? 60 : 40,
     position: 'relative',
     zIndex: 1,
   },
@@ -1660,7 +1766,7 @@ const styles = StyleSheet.create({
     zIndex: 0,
   },
   heroCard: {
-    maxWidth: 700,
+    maxWidth: Platform.OS === 'web' ? 700 : '100%',
     alignSelf: 'center',
     backgroundColor: '#fff',
     position: 'relative',
@@ -1672,60 +1778,63 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   heroIconContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: Platform.OS === 'web' ? 96 : 80,
+    height: Platform.OS === 'web' ? 96 : 80,
+    borderRadius: Platform.OS === 'web' ? 48 : 40,
     backgroundColor: COLORS.primary + '15',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: Platform.OS === 'web' ? 24 : 20,
   },
   heroTitle: {
-    fontSize: 36,
+    fontSize: Platform.OS === 'web' ? 36 : 28,
     fontWeight: '900',
     color: COLORS.text,
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'web' ? 16 : 12,
     textAlign: 'center',
     letterSpacing: -0.5,
+    paddingHorizontal: Platform.OS === 'web' ? 0 : 16,
   },
   heroSubtitle: {
-    fontSize: 17,
+    fontSize: Platform.OS === 'web' ? 17 : 15,
     color: COLORS.textLight,
     textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 26,
-    maxWidth: 550,
+    marginBottom: Platform.OS === 'web' ? 32 : 24,
+    lineHeight: Platform.OS === 'web' ? 26 : 22,
+    maxWidth: Platform.OS === 'web' ? 550 : '100%',
+    paddingHorizontal: Platform.OS === 'web' ? 0 : 16,
   },
   heroBenefits: {
     width: '100%',
-    marginBottom: 40,
+    marginBottom: Platform.OS === 'web' ? 40 : 32,
+    paddingHorizontal: Platform.OS === 'web' ? 0 : 4,
   },
   heroBenefitItem: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    padding: 16,
+    padding: Platform.OS === 'web' ? 16 : 12,
     backgroundColor: COLORS.bg,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   heroBenefitIcon: {
-    marginRight: 12,
+    marginRight: Platform.OS === 'web' ? 12 : 10,
     marginTop: 2,
   },
   heroBenefitContent: {
     flex: 1,
   },
   heroBenefitTitle: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'web' ? 16 : 15,
     fontWeight: '700',
     color: COLORS.text,
-    marginBottom: 4,
+    marginBottom: Platform.OS === 'web' ? 4 : 3,
   },
   heroBenefitDesc: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 14 : 13,
     color: COLORS.textLight,
-    lineHeight: 20,
+    lineHeight: Platform.OS === 'web' ? 20 : 18,
   },
   heroButtonContainer: {
     width: '100%',
@@ -1733,7 +1842,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   stepperContainer: {
-    marginVertical: 24,
+    marginVertical: Platform.OS === 'web' ? 24 : 16,
   },
   stepCard: {
     backgroundColor: '#fff',
@@ -1741,15 +1850,15 @@ const styles = StyleSheet.create({
   stepHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 28,
-    paddingBottom: 20,
+    marginBottom: Platform.OS === 'web' ? 28 : 20,
+    paddingBottom: Platform.OS === 'web' ? 20 : 16,
     borderBottomWidth: 2,
     borderBottomColor: COLORS.border,
   },
   stepHeaderIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: Platform.OS === 'web' ? 48 : 40,
+    height: Platform.OS === 'web' ? 48 : 40,
+    borderRadius: Platform.OS === 'web' ? 24 : 20,
     backgroundColor: COLORS.primary + '15',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1759,30 +1868,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   stepTitle: {
-    fontSize: 24,
+    fontSize: Platform.OS === 'web' ? 24 : 20,
     fontWeight: '900',
     color: COLORS.text,
-    marginBottom: 6,
+    marginBottom: Platform.OS === 'web' ? 6 : 4,
     letterSpacing: -0.3,
   },
   stepSubtitle: {
     color: COLORS.textLight,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: Platform.OS === 'web' ? 15 : 14,
+    lineHeight: Platform.OS === 'web' ? 22 : 20,
   },
   sectionDivider: {
     height: 1,
     backgroundColor: COLORS.border,
-    marginVertical: 20,
+    marginVertical: Platform.OS === 'web' ? 20 : 16,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'web' ? 16 : 12,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'web' ? 18 : 16,
     fontWeight: '800',
     color: COLORS.text,
   },
@@ -1795,20 +1904,20 @@ const styles = StyleSheet.create({
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: Platform.OS === 'web' ? 8 : 6,
+    paddingHorizontal: Platform.OS === 'web' ? 12 : 10,
+    borderRadius: Platform.OS === 'web' ? 8 : 6,
     backgroundColor: COLORS.primary + '15',
   },
   addButtonText: {
     marginLeft: 6,
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 14 : 13,
     fontWeight: '700',
     color: COLORS.primary,
   },
   locationCard: {
-    marginBottom: 20,
-    padding: 20,
+    marginBottom: Platform.OS === 'web' ? 20 : 16,
+    padding: Platform.OS === 'web' ? 20 : 16,
     backgroundColor: COLORS.bg,
     borderRadius: 12,
     borderWidth: 1,
@@ -1818,10 +1927,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'web' ? 16 : 12,
   },
   locationTitle: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'web' ? 16 : 15,
     fontWeight: '800',
     color: COLORS.text,
   },
@@ -1832,18 +1941,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 10,
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 14,
+    borderRadius: Platform.OS === 'web' ? 10 : 8,
     borderWidth: 2,
     borderColor: COLORS.primary,
     borderStyle: 'dashed',
     backgroundColor: COLORS.white,
-    marginTop: 8,
+    marginTop: Platform.OS === 'web' ? 8 : 6,
   },
   mapPinButtonText: {
     marginLeft: 8,
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 14 : 13,
     fontWeight: '700',
     color: COLORS.primary,
   },
@@ -2063,22 +2172,24 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -6,
-    marginBottom: 12,
+    flexDirection: Platform.OS === 'web' ? 'row' : 'column',
+    flexWrap: Platform.OS === 'web' ? 'wrap' : 'nowrap',
+    marginHorizontal: Platform.OS === 'web' ? -6 : 0,
+    marginBottom: Platform.OS === 'web' ? 12 : 10,
   },
   col: {
-    paddingHorizontal: 6,
-    marginBottom: 12,
+    paddingHorizontal: Platform.OS === 'web' ? 6 : 0,
+    marginBottom: Platform.OS === 'web' ? 12 : 10,
   },
   col1: {
-    flex: 1,
-    minWidth: 200,
+    flex: Platform.OS === 'web' ? 1 : undefined,
+    minWidth: Platform.OS === 'web' ? 200 : undefined,
+    width: Platform.OS === 'web' ? undefined : '100%',
   },
   col2: {
-    flex: 2,
-    minWidth: 260,
+    flex: Platform.OS === 'web' ? 2 : undefined,
+    minWidth: Platform.OS === 'web' ? 260 : undefined,
+    width: Platform.OS === 'web' ? undefined : '100%',
   },
   chipContainer: {
     flexDirection: 'row',
@@ -2137,19 +2248,19 @@ const styles = StyleSheet.create({
   },
   navButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 32,
-    paddingTop: 24,
+    justifyContent: 'flex-end',
+    marginTop: Platform.OS === 'web' ? 32 : 24,
+    paddingTop: Platform.OS === 'web' ? 24 : 20,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
   navButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingVertical: Platform.OS === 'web' ? 16 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 32 : 24,
     borderRadius: 12,
-    minWidth: 200,
+    minWidth: Platform.OS === 'web' ? 200 : 160,
     justifyContent: 'center',
     cursor: 'pointer',
   },
@@ -2180,7 +2291,7 @@ const styles = StyleSheet.create({
   },
   navButtonText: {
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: Platform.OS === 'web' ? 15 : 14,
     letterSpacing: 0.2,
   },
   navButtonTextSolid: {
@@ -2199,26 +2310,26 @@ const styles = StyleSheet.create({
   termsButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 10,
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 14,
+    borderRadius: Platform.OS === 'web' ? 10 : 8,
     backgroundColor: COLORS.primary,
-    marginBottom: 24,
+    marginBottom: Platform.OS === 'web' ? 24 : 20,
     justifyContent: 'center',
   },
   termsButtonText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 14 : 13,
   },
   toggle: {
     borderWidth: 2,
     borderColor: COLORS.border,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    borderRadius: Platform.OS === 'web' ? 14 : 12,
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 14,
+    paddingVertical: Platform.OS === 'web' ? 16 : 14,
     backgroundColor: '#fff',
-    marginBottom: 12,
+    marginBottom: Platform.OS === 'web' ? 12 : 10,
   },
   toggleActive: {
     borderColor: COLORS.primary,
@@ -2234,21 +2345,21 @@ const styles = StyleSheet.create({
   toggleLabel: {
     color: COLORS.text,
     fontWeight: '800',
-    fontSize: 16,
+    fontSize: Platform.OS === 'web' ? 16 : 15,
     flex: 1,
   },
   toggleLabelActive: {
     color: COLORS.primary,
   },
   toggleContent: {
-    marginTop: 12,
-    paddingLeft: 32,
+    marginTop: Platform.OS === 'web' ? 12 : 10,
+    paddingLeft: Platform.OS === 'web' ? 32 : 24,
   },
   toggleDetail: {
     color: COLORS.textLight,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 8,
+    fontSize: Platform.OS === 'web' ? 14 : 13,
+    lineHeight: Platform.OS === 'web' ? 20 : 18,
+    marginBottom: Platform.OS === 'web' ? 8 : 6,
   },
   toggleBullets: {
     marginTop: 4,
@@ -2271,93 +2382,98 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   reviewRow: {
-    flexDirection: 'row',
-    paddingVertical: 10,
+    flexDirection: Platform.OS === 'web' ? 'row' : 'column',
+    paddingVertical: Platform.OS === 'web' ? 10 : 8,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
   reviewKey: {
-    width: 180,
+    width: Platform.OS === 'web' ? 180 : '100%',
     color: COLORS.textLight,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 14 : 13,
+    marginBottom: Platform.OS === 'web' ? 0 : 4,
   },
   reviewValue: {
-    flex: 1,
+    flex: Platform.OS === 'web' ? 1 : undefined,
+    width: Platform.OS === 'web' ? undefined : '100%',
   },
   reviewValueText: {
     color: COLORS.text,
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 14 : 13,
     fontWeight: '500',
   },
   reviewSection: {
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 14,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: Platform.OS === 'web' ? 14 : 12,
+    padding: Platform.OS === 'web' ? 20 : 16,
+    marginBottom: Platform.OS === 'web' ? 20 : 16,
     backgroundColor: COLORS.bg,
   },
   reviewSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    paddingBottom: 12,
+    marginBottom: Platform.OS === 'web' ? 16 : 12,
+    paddingBottom: Platform.OS === 'web' ? 12 : 10,
     borderBottomWidth: 2,
     borderBottomColor: COLORS.border,
   },
   reviewSectionTitle: {
     color: COLORS.text,
     fontWeight: '900',
-    fontSize: 17,
+    fontSize: Platform.OS === 'web' ? 17 : 16,
   },
   successContainer: {
-    paddingVertical: 80,
+    paddingVertical: Platform.OS === 'web' ? 80 : 60,
   },
   successCard: {
-    maxWidth: 600,
+    maxWidth: Platform.OS === 'web' ? 600 : '100%',
     alignSelf: 'center',
     alignItems: 'center',
   },
   successIconContainer: {
-    marginBottom: 24,
+    marginBottom: Platform.OS === 'web' ? 24 : 20,
   },
   successIconCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: Platform.OS === 'web' ? 120 : 100,
+    height: Platform.OS === 'web' ? 120 : 100,
+    borderRadius: Platform.OS === 'web' ? 60 : 50,
     backgroundColor: COLORS.primary + '15',
     alignItems: 'center',
     justifyContent: 'center',
   },
   successTitle: {
-    fontSize: 28,
+    fontSize: Platform.OS === 'web' ? 28 : 24,
     fontWeight: '900',
     color: COLORS.text,
-    marginBottom: 16,
+    marginBottom: Platform.OS === 'web' ? 16 : 12,
     textAlign: 'center',
     letterSpacing: -0.5,
+    paddingHorizontal: Platform.OS === 'web' ? 0 : 16,
   },
   successMessage: {
     color: COLORS.textLight,
-    marginBottom: 32,
-    fontSize: 16,
+    marginBottom: Platform.OS === 'web' ? 32 : 24,
+    fontSize: Platform.OS === 'web' ? 16 : 15,
     textAlign: 'center',
-    lineHeight: 24,
-    maxWidth: 500,
+    lineHeight: Platform.OS === 'web' ? 24 : 22,
+    maxWidth: Platform.OS === 'web' ? 500 : '100%',
+    paddingHorizontal: Platform.OS === 'web' ? 0 : 16,
   },
   successInfo: {
     width: '100%',
-    marginBottom: 32,
+    marginBottom: Platform.OS === 'web' ? 32 : 24,
   },
   successInfoItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: Platform.OS === 'web' ? 16 : 14,
     backgroundColor: COLORS.bg,
-    borderRadius: 12,
+    borderRadius: Platform.OS === 'web' ? 12 : 10,
     borderWidth: 1,
     borderColor: COLORS.border,
+    marginBottom: Platform.OS === 'web' ? 12 : 10,
   },
   successInfoText: {
     marginLeft: 12,
@@ -2374,26 +2490,31 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 14,
-    paddingHorizontal: 18,
+    bottom: Platform.OS === 'web' ? 14 : 0,
+    paddingHorizontal: Platform.OS === 'web' ? 18 : 16,
+    paddingBottom: Platform.OS === 'web' ? 0 : 16,
+    paddingTop: Platform.OS === 'web' ? 0 : 12,
   },
   footerCard: {
     backgroundColor: '#fff',
+    borderRadius: Platform.OS === 'web' ? 12 : 10,
   },
   footerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    flexWrap: 'wrap',
   },
   footerText: {
-    marginLeft: 10,
+    marginLeft: Platform.OS === 'web' ? 10 : 8,
     color: COLORS.textLight,
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 14 : 12,
     fontWeight: '500',
+    textAlign: 'center',
   },
   fileUploadSection: {
-    marginTop: 24,
-    padding: 20,
+    marginTop: Platform.OS === 'web' ? 24 : 20,
+    padding: Platform.OS === 'web' ? 20 : 16,
     backgroundColor: COLORS.bg,
     borderRadius: 12,
     borderWidth: 1,
@@ -2402,23 +2523,23 @@ const styles = StyleSheet.create({
   fileUploadTitle: {
     flexDirection: 'row',
     alignItems: 'center',
-    fontSize: 16,
+    fontSize: Platform.OS === 'web' ? 16 : 15,
     fontWeight: '800',
     color: COLORS.text,
-    marginBottom: 8,
+    marginBottom: Platform.OS === 'web' ? 8 : 6,
   },
   fileUploadSubtitle: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 14 : 13,
     color: COLORS.textLight,
-    marginBottom: 16,
-    lineHeight: 20,
+    marginBottom: Platform.OS === 'web' ? 16 : 12,
+    lineHeight: Platform.OS === 'web' ? 20 : 18,
   },
   filePickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: Platform.OS === 'web' ? 12 : 10,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 16,
     borderRadius: 10,
     borderWidth: 2,
     borderColor: COLORS.primary,
@@ -2428,7 +2549,7 @@ const styles = StyleSheet.create({
   },
   filePickerButtonText: {
     marginLeft: 8,
-    fontSize: 15,
+    fontSize: Platform.OS === 'web' ? 15 : 14,
     fontWeight: '700',
     color: COLORS.primary,
   },
@@ -2442,12 +2563,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 12,
+    padding: Platform.OS === 'web' ? 12 : 10,
     backgroundColor: COLORS.white,
-    borderRadius: 10,
+    borderRadius: Platform.OS === 'web' ? 10 : 8,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 8,
+    marginBottom: Platform.OS === 'web' ? 8 : 6,
   },
   dtiFileItem: {
     borderColor: COLORS.primary + '33',
@@ -2515,44 +2636,45 @@ const styles = StyleSheet.create({
   },
   passwordFieldWrapper: {
     position: 'relative',
-    marginBottom: 12,
+    marginBottom: Platform.OS === 'web' ? 12 : 10,
   },
   passwordInput: {
     borderWidth: 1.5,
     borderColor: COLORS.border,
     backgroundColor: COLORS.white,
     color: COLORS.text,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    paddingRight: 45,
-    fontSize: 14,
+    borderRadius: Platform.OS === 'web' ? 12 : 10,
+    paddingVertical: Platform.OS === 'web' ? 10 : 12,
+    paddingHorizontal: Platform.OS === 'web' ? 14 : 16,
+    paddingRight: Platform.OS === 'web' ? 45 : 48,
+    fontSize: Platform.OS === 'web' ? 14 : 15,
     width: '100%',
+    minHeight: Platform.OS === 'web' ? 44 : 48,
   },
   passwordToggle: {
     position: 'absolute',
-    right: 12,
-    top: 12,
+    right: Platform.OS === 'web' ? 12 : 14,
+    top: Platform.OS === 'web' ? 12 : 14,
     padding: 4,
     zIndex: 1,
   },
   passwordHint: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginTop: 8,
-    marginBottom: 16,
-    padding: 12,
+    marginTop: Platform.OS === 'web' ? 8 : 6,
+    marginBottom: Platform.OS === 'web' ? 16 : 12,
+    padding: Platform.OS === 'web' ? 12 : 10,
     backgroundColor: COLORS.bg,
-    borderRadius: 8,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   passwordHintText: {
     flex: 1,
-    marginLeft: 8,
-    fontSize: 13,
+    marginLeft: Platform.OS === 'web' ? 8 : 6,
+    fontSize: Platform.OS === 'web' ? 13 : 12,
     color: COLORS.textLight,
-    lineHeight: 18,
+    lineHeight: Platform.OS === 'web' ? 18 : 16,
   },
 });
 

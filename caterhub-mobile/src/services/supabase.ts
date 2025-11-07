@@ -94,8 +94,8 @@ export interface Database {
       bookings: {
         Row: {
           id: number;
-          user_id: string; // UUID string
-          service_id: number;
+          user_id: string | null; // UUID string - nullable in schema
+          service_id: number | null; // nullable in schema
           package_id?: string | null; // UUID string - links to packages table
           event_date: string;
           guests: number;
@@ -106,8 +106,8 @@ export interface Database {
         };
         Insert: {
           id?: number;
-          user_id: string; // UUID string
-          service_id: number;
+          user_id?: string | null; // UUID string - nullable in schema
+          service_id?: number | null; // nullable in schema
           package_id?: string | null;
           event_date: string;
           guests: number;
@@ -118,8 +118,8 @@ export interface Database {
         };
         Update: {
           id?: number;
-          user_id?: string; // UUID string
-          service_id?: number;
+          user_id?: string | null; // UUID string
+          service_id?: number | null;
           package_id?: string | null;
           event_date?: string;
           guests?: number;

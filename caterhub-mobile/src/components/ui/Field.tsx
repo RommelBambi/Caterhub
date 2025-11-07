@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TextStyle, ViewStyle } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TextStyle, ViewStyle, Platform } from 'react-native';
 import { COLORS } from '../../constants/colors';
 
 interface FieldProps {
@@ -32,11 +32,11 @@ export const Field: React.FC<FieldProps> = ({
     borderColor: focused ? COLORS.primary : COLORS.border,
     backgroundColor: COLORS.white,
     color: COLORS.text,
-    borderRadius: 12,
-    paddingVertical: multiline ? 12 : 10,
-    paddingHorizontal: 14,
-    minHeight: multiline ? 92 : undefined,
-    fontSize: 14,
+    borderRadius: Platform.OS === 'web' ? 12 : 10,
+    paddingVertical: multiline ? (Platform.OS === 'web' ? 12 : 10) : (Platform.OS === 'web' ? 10 : 8),
+    paddingHorizontal: Platform.OS === 'web' ? 14 : 12,
+    minHeight: multiline ? (Platform.OS === 'web' ? 92 : 80) : undefined,
+    fontSize: Platform.OS === 'web' ? 14 : 15,
     width: '100%',
   };
 
@@ -61,12 +61,12 @@ export const Field: React.FC<FieldProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 12,
+    marginBottom: Platform.OS === 'web' ? 12 : 10,
   },
   label: {
-    fontSize: 12,
+    fontSize: Platform.OS === 'web' ? 12 : 13,
     color: COLORS.textLight,
-    marginBottom: 6,
+    marginBottom: Platform.OS === 'web' ? 6 : 5,
     fontWeight: '600',
   },
 });
