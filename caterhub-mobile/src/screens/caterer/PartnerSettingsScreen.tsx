@@ -140,6 +140,11 @@ export default function PartnerSettingsScreen() {
   const [about, setAbout] = useState("");
   const [facebook, setFacebook] = useState("");
   const [instagram, setInstagram] = useState("");
+  // Owner information from partner_applications
+  const [ownerName, setOwnerName] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [telephoneNumber, setTelephoneNumber] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Location/Branch management
@@ -273,6 +278,26 @@ export default function PartnerSettingsScreen() {
           .single();
 
         if (application && !error) {
+          // Load business name and owner information from partner_applications
+          if (application.business_name) {
+            setBusinessName(application.business_name);
+          }
+          if (application.owner_name) {
+            setOwnerName(application.owner_name);
+          }
+          if (application.owner_phone) {
+            setOwnerPhone(application.owner_phone);
+          }
+          if (application.owner_email) {
+            setOwnerEmail(application.owner_email);
+          }
+          if (application.telephone_number) {
+            setTelephoneNumber(application.telephone_number);
+          }
+          if (application.contact_number) {
+            setContactNumber(application.contact_number);
+          }
+
           // Track last save time for determining new vs old files
           setLastSavedAt(application.updated_at || application.created_at || null);
 
@@ -711,17 +736,50 @@ export default function PartnerSettingsScreen() {
     setShowSaveConfirmationModal(false);
     setSaving(true);
     try {
-      // Save profile data to Supabase
-    const newProfile: CatererProfile = {
-      contactNumber: contactNumber.trim(),
+      // Save profile data to Supabase (caterer_profiles table)
+      const newProfile: CatererProfile = {
+        contactNumber: contactNumber.trim(),
         email: email.trim() || undefined,
         website: website.trim() || undefined,
-      address: address.trim(),
+        address: address.trim(),
         about: about.trim(),
         facebook: facebook.trim() || undefined,
         instagram: instagram.trim() || undefined
       };
       await saveProfileToSupabase(user.id, newProfile);
+
+      // Save business name and owner information to partner_applications table
+      const { data: applications, error: appError } = await supabase
+        .from('partner_applications')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (appError) {
+        console.error('Error fetching application:', appError);
+        throw appError;
+      }
+
+      if (applications && applications.length > 0) {
+        const { error: updateError } = await supabase
+          .from('partner_applications')
+          .update({
+            business_name: businessName.trim(),
+            owner_name: ownerName.trim() || null,
+            owner_phone: ownerPhone.trim() || null,
+            owner_email: ownerEmail.trim() || null,
+            telephone_number: telephoneNumber.trim() || null,
+            contact_number: contactNumber.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', applications[0].id);
+
+        if (updateError) {
+          console.error('Error updating partner application:', updateError);
+          throw updateError;
+        }
+      }
 
       // Save locations and documents to Supabase
       await saveLocationsAndDocuments();
@@ -1375,6 +1433,18 @@ export default function PartnerSettingsScreen() {
                 </View>
 
                 <View style={styles.formGroup}>
+                  <Text style={styles.label}>Telephone Number</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. (02) 1234-5678"
+                    placeholderTextColor="#9ca3af"
+                    value={telephoneNumber}
+                    onChangeText={setTelephoneNumber}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
                   <Text style={styles.label}>Email</Text>
                   <TextInput
                     style={styles.input}
@@ -1420,6 +1490,50 @@ export default function PartnerSettingsScreen() {
               value={about}
               onChangeText={setAbout}
             />
+                </View>
+              </View>
+
+              {/* Owner Information Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Owner Information</Text>
+                <Text style={styles.cardSubtitle}>
+                  Information about the business owner or primary contact person.
+                </Text>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Owner Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Juan Dela Cruz"
+                    placeholderTextColor="#9ca3af"
+                    value={ownerName}
+                    onChangeText={setOwnerName}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Owner Phone *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 0917 123 4567"
+                    placeholderTextColor="#9ca3af"
+                    value={ownerPhone}
+                    onChangeText={setOwnerPhone}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Owner Email *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. owner@yourcatering.com"
+                    placeholderTextColor="#9ca3af"
+                    value={ownerEmail}
+                    onChangeText={setOwnerEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
                 </View>
               </View>
 
