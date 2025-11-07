@@ -153,11 +153,13 @@ export default function PartnerSettingsScreen() {
     size: number;
     storagePath: string;
     isRemote: boolean;
+    uploadedAt?: string; // ISO timestamp when file was uploaded
   };
   const [dtiFile, setDtiFile] = useState<UploadedFile | null>(null);
   const [supportingFiles, setSupportingFiles] = useState<UploadedFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dtiUploading, setDtiUploading] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null); // Track when documents were last saved
 
   const [loaded, setLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'locations' | 'documents' | 'account'>('profile');
@@ -261,6 +263,9 @@ export default function PartnerSettingsScreen() {
           .single();
 
         if (application && !error) {
+          // Track last save time for determining new vs old files
+          setLastSavedAt(application.updated_at || application.created_at || null);
+
           // Load locations
           if (application.locations && Array.isArray(application.locations)) {
             setLocations(application.locations as BusinessLocation[]);
@@ -277,6 +282,8 @@ export default function PartnerSettingsScreen() {
                 size: 0,
                 storagePath,
                 isRemote: true,
+                // Files loaded from database are old (previously uploaded)
+                uploadedAt: application.updated_at || application.created_at,
               });
             }
             const otherEntries = docs.filter((doc: string) => !doc?.startsWith(DTI_PREFIX));
@@ -287,6 +294,8 @@ export default function PartnerSettingsScreen() {
                   size: 0,
                   storagePath,
                   isRemote: true,
+                  // Files loaded from database are old (previously uploaded)
+                  uploadedAt: application.updated_at || application.created_at,
                 }))
               );
             }
@@ -448,13 +457,17 @@ export default function PartnerSettingsScreen() {
         if (dtiFile?.storagePath) {
           await deleteStorageFile(dtiFile.storagePath);
         }
+        const now = new Date().toISOString();
         setDtiFile({
           name: file.name,
           size: file.size || 0,
           storagePath,
           isRemote: false,
+          uploadedAt: now, // Track upload time
         });
         await saveLocationsAndDocuments();
+        // Update last saved time after saving
+        setLastSavedAt(now);
       }
     } catch (error) {
       console.error('Error picking DTI document:', error);
@@ -504,6 +517,7 @@ export default function PartnerSettingsScreen() {
         }
 
         const newFiles: UploadedFile[] = [];
+        const now = new Date().toISOString();
         for (const file of result.assets) {
           try {
             const storagePath = await uploadFileToStorage(
@@ -518,6 +532,7 @@ export default function PartnerSettingsScreen() {
                 size: file.size || 0,
                 storagePath,
                 isRemote: false,
+                uploadedAt: now, // Track upload time
               });
             }
           } catch (error) {
@@ -528,6 +543,8 @@ export default function PartnerSettingsScreen() {
 
         setSupportingFiles([...supportingFiles, ...newFiles]);
         await saveLocationsAndDocuments();
+        // Update last saved time after saving
+        setLastSavedAt(now);
       }
     } catch (error) {
       console.error('Error picking documents:', error);
@@ -640,6 +657,8 @@ export default function PartnerSettingsScreen() {
     setSavingLocations(true);
     try {
       await saveLocationsAndDocuments();
+      // Update last saved time after saving
+      setLastSavedAt(new Date().toISOString());
       // Show success modal
       setShowLocationsSaveSuccessModal(true);
     } catch (error) {
@@ -648,6 +667,16 @@ export default function PartnerSettingsScreen() {
     } finally {
       setSavingLocations(false);
     }
+  };
+
+  // Helper function to determine if a file is new or old based on upload date
+  const isFileNew = (file: UploadedFile): boolean => {
+    if (!file.uploadedAt || !lastSavedAt) {
+      // If no timestamps, consider remote files as old, new files as new
+      return !file.isRemote;
+    }
+    // File is new if it was uploaded after the last save
+    return new Date(file.uploadedAt) > new Date(lastSavedAt);
   };
 
   // Show save confirmation modal
@@ -1656,13 +1685,28 @@ export default function PartnerSettingsScreen() {
                         <Ionicons name="document" size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
                         <View style={styles.fileItemInfo}>
                           <Text style={styles.fileItemName} numberOfLines={1}>{dtiFile.name}</Text>
-                          <Text style={styles.fileItemSize}>{dtiFile.size > 0 ? `${(dtiFile.size / 1024).toFixed(1)} KB` : 'Uploaded'}</Text>
+                          <View style={styles.fileItemMeta}>
+                            <Text style={styles.fileItemSize}>
+                              {dtiFile.size > 0 ? `${(dtiFile.size / 1024).toFixed(1)} KB` : 'Uploaded'}
+                            </Text>
+                            {isFileNew(dtiFile) ? (
+                              <View style={[styles.fileStatusBadge, styles.fileStatusBadgeNew]}>
+                                <Ionicons name="add-circle" size={12} color={COLORS.primary} />
+                                <Text style={[styles.fileStatusBadgeText, styles.fileStatusBadgeTextNew]}>New</Text>
+                              </View>
+                            ) : (
+                              <View style={styles.fileStatusBadge}>
+                                <Ionicons name="checkmark-circle" size={12} color={COLORS.success || "#22c55e"} />
+                                <Text style={styles.fileStatusBadgeText}>Previously Uploaded</Text>
+                              </View>
+                            )}
+                          </View>
                         </View>
                       </View>
                       <View style={styles.dtiBadge}>
                         <Text style={styles.dtiBadgeText}>Required</Text>
                       </View>
-                      <Pressable onPress={removeDtiFile} style={styles.fileRemoveButton}>
+                      <Pressable onPress={removeDtiFile} style={styles.fileRemoveButton} disabled={dtiUploading}>
                         <Ionicons name="trash" size={18} color={COLORS.danger || "#ef4444"} />
                       </Pressable>
                     </View>
@@ -1701,20 +1745,43 @@ export default function PartnerSettingsScreen() {
                     Upload permits, certificates, or other supporting documents (PDF or images).
                   </Text>
 
-                  {supportingFiles.map((file, index) => (
-                    <View key={index} style={styles.fileItem}>
-                      <View style={styles.fileItemLeft}>
-                        <Ionicons name="document" size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
-                        <View style={styles.fileItemInfo}>
-                          <Text style={styles.fileItemName} numberOfLines={1}>{file.name}</Text>
-                          <Text style={styles.fileItemSize}>{file.size > 0 ? `${(file.size / 1024).toFixed(1)} KB` : 'Uploaded'}</Text>
-                        </View>
-                      </View>
-                      <Pressable onPress={() => removeSupportingFile(index)} style={styles.fileRemoveButton}>
-                        <Ionicons name="trash" size={18} color={COLORS.danger || "#ef4444"} />
-                      </Pressable>
+                  {supportingFiles.length === 0 ? (
+                    <View style={styles.emptyFilesState}>
+                      <Ionicons name="document-outline" size={32} color={COLORS.textLight} />
+                      <Text style={styles.emptyFilesText}>No supporting documents uploaded yet</Text>
+                      <Text style={styles.emptyFilesSubtext}>Upload permits, certificates, or other supporting documents</Text>
                     </View>
-                  ))}
+                  ) : (
+                    supportingFiles.map((file, index) => (
+                      <View key={index} style={styles.fileItem}>
+                        <View style={styles.fileItemLeft}>
+                          <Ionicons name="document" size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
+                          <View style={styles.fileItemInfo}>
+                            <Text style={styles.fileItemName} numberOfLines={1}>{file.name}</Text>
+                            <View style={styles.fileItemMeta}>
+                              <Text style={styles.fileItemSize}>
+                                {file.size > 0 ? `${(file.size / 1024).toFixed(1)} KB` : 'Uploaded'}
+                              </Text>
+                              {isFileNew(file) ? (
+                                <View style={[styles.fileStatusBadge, styles.fileStatusBadgeNew]}>
+                                  <Ionicons name="add-circle" size={12} color={COLORS.primary} />
+                                  <Text style={[styles.fileStatusBadgeText, styles.fileStatusBadgeTextNew]}>New</Text>
+                                </View>
+                              ) : (
+                                <View style={styles.fileStatusBadge}>
+                                  <Ionicons name="checkmark-circle" size={12} color={COLORS.success || "#22c55e"} />
+                                  <Text style={styles.fileStatusBadgeText}>Previously Uploaded</Text>
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        </View>
+                        <Pressable onPress={() => removeSupportingFile(index)} style={styles.fileRemoveButton} disabled={uploading}>
+                          <Ionicons name="trash" size={18} color={COLORS.danger || "#ef4444"} />
+                        </Pressable>
+                      </View>
+                    ))
+                  )}
 
                   <Pressable
                     onPress={pickSupportingDocuments}
@@ -2748,6 +2815,51 @@ const styles = StyleSheet.create({
   fileItemSize: {
     fontSize: Platform.OS === 'web' ? 11 : 12,
     color: "#6b7280"
+  },
+  fileItemMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Platform.OS === 'web' ? 8 : 10,
+    marginTop: 2
+  },
+  fileStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: (COLORS.success || "#22c55e") + '15',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    gap: 4
+  },
+  fileStatusBadgeNew: {
+    backgroundColor: COLORS.primary + '15'
+  },
+  fileStatusBadgeText: {
+    fontSize: Platform.OS === 'web' ? 10 : 11,
+    fontWeight: "600",
+    color: COLORS.success || "#22c55e"
+  },
+  fileStatusBadgeTextNew: {
+    color: COLORS.primary
+  },
+  emptyFilesState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Platform.OS === 'web' ? 32 : 28,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 16,
+    marginBottom: Platform.OS === 'web' ? 12 : 10
+  },
+  emptyFilesText: {
+    fontSize: Platform.OS === 'web' ? 14 : 15,
+    fontWeight: "600",
+    color: COLORS.text,
+    marginTop: 12,
+    marginBottom: 4
+  },
+  emptyFilesSubtext: {
+    fontSize: Platform.OS === 'web' ? 12 : 13,
+    color: COLORS.textLight,
+    textAlign: "center"
   },
   dtiBadge: {
     backgroundColor: COLORS.primary + '15',
