@@ -3,25 +3,19 @@ import { View, Text, StyleSheet, Pressable } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
-import { useAuth } from "../../store/auth";
 
-type NavKey = "PartnerDashboard" | "PartnerOrders" | "PartnerManagePackages" | "PartnerSettings";
+type NavKey = "PartnerDashboard" | "PartnerOrders" | "PartnerManagePackages" | "PartnerSettings" | "PartnerWallet";
 
 export default function Sidebar() {
   const navigation =
     useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
   const route = useRoute();
   const current = route.name as NavKey | string;
-  const { logout } = useAuth();
 
   function go(screen: NavKey) {
     if (screen !== current) {
       navigation.navigate(screen as any);
     }
-  }
-
-  async function handleLogout() {
-    await logout();
   }
 
   return (
@@ -49,11 +43,12 @@ export default function Sidebar() {
           active={current === "PartnerSettings"}
           onPress={() => go("PartnerSettings")}
         />
+        <SidebarItem
+          label="Wallet"
+          active={current === "PartnerWallet"}
+          onPress={() => go("PartnerWallet")}
+        />
       </View>
-
-      <Pressable style={styles.logoutRow} onPress={handleLogout}>
-        <Text style={styles.logoutText}>⏻ Logout</Text>
-      </Pressable>
     </View>
   );
 }
@@ -95,8 +90,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderRightColor: "#e5e7eb",
     paddingTop: 16,
-    paddingHorizontal: 12,
-    justifyContent: "space-between"
+    paddingHorizontal: 12
   },
   logoText: {
     fontSize: 18,
@@ -132,16 +126,6 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: "#9333ea",
     marginRight: 8
-  },
-  logoutRow: {
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
-    paddingVertical: 12
-  },
-  logoutText: {
-    color: "#ef4444",
-    fontWeight: "600",
-    fontSize: 14
   }
 });
 

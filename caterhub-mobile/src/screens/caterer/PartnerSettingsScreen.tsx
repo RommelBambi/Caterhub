@@ -6,28 +6,49 @@ import {
   ScrollView,
   TextInput,
   Pressable,
-  Alert
+  Alert,
+  TouchableOpacity,
+  ActivityIndicator,
+  Modal,
+  Image
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
 import BottomNav from "../../components/caterer/BottomNav";
+import InteractiveMapPicker from "../../components/InteractiveMapPicker";
+import { Dropdown } from "../../components/ui/Dropdown";
+import { Field } from "../../components/ui/Field";
 
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
 import { isWeb } from "../../utils/platform";
 import { Platform } from "react-native";
+import { supabase } from "../../services/supabase";
+import { BusinessLocation } from "../../types/admin";
+import { COUNTRIES, PROVINCES_PH, CITIES_BY_PROVINCE } from "../../constants/locations";
+import { COLORS } from "../../constants/colors";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const DTI_PREFIX = 'DTI::';
 
 // Extra business profile data aside from what's in user
 // We persist this separately so you can extend it later.
 type CatererProfile = {
   contactNumber: string;
+  email?: string;
+  website?: string;
   address: string;
   about: string;
+  facebook?: string;
+  instagram?: string;
+  profileImageUrl?: string;
 };
 
 // We'll store extra profile data per username.
@@ -41,7 +62,8 @@ async function loadProfile(username: string): Promise<CatererProfile> {
       return {
         contactNumber: "",
         address: "",
-        about: ""
+        about: "",
+        profileImageUrl: ""
       };
     }
     return JSON.parse(raw) as CatererProfile;
@@ -70,17 +92,63 @@ async function saveProfile(username: string, data: CatererProfile) {
 export default function PartnerSettingsScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
-  const { user, logout } = useAuth();
+  const { user, logout, changePassword, refreshUser } = useAuth();
 
   // editable fields
   const [businessName, setBusinessName] = useState("");
   const [contactNumber, setContactNumber] = useState("");
+  const [email, setEmail] = useState("");
+  const [website, setWebsite] = useState("");
   const [address, setAddress] = useState("");
   const [about, setAbout] = useState("");
+  const [facebook, setFacebook] = useState("");
+  const [instagram, setInstagram] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Location/Branch management
+  const [locations, setLocations] = useState<BusinessLocation[]>([]);
+  const [mapPickerVisible, setMapPickerVisible] = useState(false);
+  const [editingLocationIndex, setEditingLocationIndex] = useState<number | null>(null);
+
+  // Document management
+  type UploadedFile = {
+    name: string;
+    size: number;
+    storagePath: string;
+    isRemote: boolean;
+  };
+  const [dtiFile, setDtiFile] = useState<UploadedFile | null>(null);
+  const [supportingFiles, setSupportingFiles] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [dtiUploading, setDtiUploading] = useState(false);
 
   const [loaded, setLoaded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'profile' | 'locations' | 'documents' | 'account'>('profile');
 
-  // Load current user + profile on mount
+  // Change email state
+  const [showChangeEmail, setShowChangeEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [updatingEmail, setUpdatingEmail] = useState(false);
+
+  // Change password state
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordErrors, setPasswordErrors] = useState<{
+    currentPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+  }>({});
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  // Profile image state
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  // Load current user + profile + application data on mount
   useEffect(() => {
     if (!user) {
       navigation.replace("PartnerDashboard");
@@ -88,16 +156,362 @@ export default function PartnerSettingsScreen() {
     }
 
     (async () => {
-      setBusinessName(user.username); // Use username as default business name
+      try {
+        // Load profile data
+        setBusinessName(user.username || "");
+        setEmail(user.email || "");
 
       const prof = await loadProfile(user.username);
       setContactNumber(prof.contactNumber ?? "");
+        setEmail(prof.email ?? user.email ?? "");
+        setWebsite(prof.website ?? "");
       setAddress(prof.address ?? "");
       setAbout(prof.about ?? "");
+        setFacebook(prof.facebook ?? "");
+        setInstagram(prof.instagram ?? "");
+        setProfileImage(prof.profileImageUrl ?? null);
 
+        // Load partner application data from Supabase
+        const { data: application, error } = await supabase
+          .from('partner_applications')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (application && !error) {
+          // Load locations
+          if (application.locations && Array.isArray(application.locations)) {
+            setLocations(application.locations as BusinessLocation[]);
+          }
+
+          // Load documents
+          if (application.uploaded_documents && Array.isArray(application.uploaded_documents)) {
+            const docs = application.uploaded_documents;
+            const dtiEntry = docs.find((doc: string) => doc?.startsWith(DTI_PREFIX));
+            if (dtiEntry) {
+              const storagePath = dtiEntry.slice(DTI_PREFIX.length);
+              setDtiFile({
+                name: storagePath.split('/').pop() || 'DTI Document',
+                size: 0,
+                storagePath,
+                isRemote: true,
+              });
+            }
+            const otherEntries = docs.filter((doc: string) => !doc?.startsWith(DTI_PREFIX));
+            if (otherEntries.length) {
+              setSupportingFiles(
+                otherEntries.map((storagePath: string) => ({
+                  name: storagePath.split('/').pop() || 'Document',
+                  size: 0,
+                  storagePath,
+                  isRemote: true,
+                }))
+              );
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      } finally {
       setLoaded(true);
+      }
     })();
   }, [navigation, user]);
+
+  // Location management functions
+  const addLocation = () => {
+    const newLocation: BusinessLocation = {
+      id: Date.now().toString(),
+      country: '',
+      province: '',
+      city: '',
+      postalCode: '',
+      address: '',
+    };
+    setLocations([...locations, newLocation]);
+  };
+
+  const updateLocation = (index: number, field: keyof BusinessLocation, value: any) => {
+    setLocations(locations.map((loc, i) => (i === index ? { ...loc, [field]: value } : loc)));
+  };
+
+  const removeLocation = (index: number) => {
+    Alert.alert(
+      "Remove Location",
+      "Are you sure you want to remove this location?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            setLocations(locations.filter((_, i) => i !== index));
+          }
+        }
+      ]
+    );
+  };
+
+  const handleLocationSelect = (location: { latitude: number; longitude: number; address: string }) => {
+    if (editingLocationIndex !== null) {
+      updateLocation(editingLocationIndex, 'latitude', location.latitude);
+      updateLocation(editingLocationIndex, 'longitude', location.longitude);
+      updateLocation(editingLocationIndex, 'address', location.address);
+    }
+    setMapPickerVisible(false);
+    setEditingLocationIndex(null);
+  };
+
+  const getAvailableCities = (province: string) => {
+    return CITIES_BY_PROVINCE[province] || [];
+  };
+
+  // Document management functions
+  const deleteStorageFile = async (path?: string) => {
+    if (!path) return;
+    try {
+      const { error } = await supabase.storage
+        .from('partner-documents')
+        .remove([path]);
+      if (error) {
+        console.error('Error deleting file from storage:', error);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error deleting file from storage:', error);
+      throw error;
+    }
+  };
+
+  const uploadFileToStorage = async (
+    fileUri: string,
+    fileName: string,
+    userId: string,
+    mimeType?: string
+  ): Promise<string | null> => {
+    try {
+      const timestamp = Date.now();
+      const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
+      const storagePath = `${userId}/${uniqueFileName}`;
+
+      const response = await fetch(fileUri);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.statusText}`);
+      }
+      const fileBlob = await response.blob();
+
+      const { error } = await supabase.storage
+        .from('partner-documents')
+        .upload(storagePath, fileBlob, {
+          contentType: mimeType || 'application/pdf',
+          upsert: false,
+        });
+
+      if (error) {
+        console.error('Upload error:', error);
+        throw error;
+      }
+
+      return storagePath;
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      throw error;
+    }
+  };
+
+  const uploadDtiDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        multiple: false,
+        copyToCacheDirectory: Platform.OS !== 'web',
+      });
+
+      if (result.canceled || !result.assets?.length) {
+        return;
+      }
+
+      setDtiUploading(true);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+
+      if (!authUser) {
+        Alert.alert('Authentication Required', 'Please log in to upload files.');
+        setDtiUploading(false);
+        return;
+      }
+
+      const file = result.assets[0];
+      const storagePath = await uploadFileToStorage(
+        file.uri,
+        file.name,
+        authUser.id,
+        file.mimeType || undefined,
+      );
+
+      if (storagePath) {
+        // Delete old DTI file if exists
+        if (dtiFile?.storagePath) {
+          await deleteStorageFile(dtiFile.storagePath);
+        }
+        setDtiFile({
+          name: file.name,
+          size: file.size || 0,
+          storagePath,
+          isRemote: false,
+        });
+        await saveLocationsAndDocuments();
+      }
+    } catch (error) {
+      console.error('Error picking DTI document:', error);
+      Alert.alert('Error', 'Failed to upload DTI certificate. Please try again.');
+    } finally {
+      setDtiUploading(false);
+    }
+  };
+
+  const removeDtiFile = async () => {
+    Alert.alert(
+      "Remove DTI Document",
+      "Are you sure you want to remove this DTI certificate?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            if (dtiFile?.storagePath) {
+              await deleteStorageFile(dtiFile.storagePath);
+            }
+            setDtiFile(null);
+            await saveLocationsAndDocuments();
+          }
+        }
+      ]
+    );
+  };
+
+  const pickSupportingDocuments = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        multiple: true,
+        copyToCacheDirectory: Platform.OS !== 'web',
+      });
+
+      if (!result.canceled && result.assets) {
+        setUploading(true);
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+
+        if (!authUser) {
+          Alert.alert('Authentication Required', 'Please log in to upload files.');
+          setUploading(false);
+          return;
+        }
+
+        const newFiles: UploadedFile[] = [];
+        for (const file of result.assets) {
+          try {
+            const storagePath = await uploadFileToStorage(
+              file.uri,
+              file.name,
+              authUser.id,
+              file.mimeType || undefined,
+            );
+            if (storagePath) {
+              newFiles.push({
+                name: file.name,
+                size: file.size || 0,
+                storagePath,
+                isRemote: false,
+              });
+            }
+          } catch (error) {
+            console.error(`Error uploading ${file.name}:`, error);
+            Alert.alert('Upload Error', `Failed to upload ${file.name}. Please try again.`);
+          }
+        }
+
+        setSupportingFiles([...supportingFiles, ...newFiles]);
+        await saveLocationsAndDocuments();
+      }
+    } catch (error) {
+      console.error('Error picking documents:', error);
+      setUploading(false);
+      Alert.alert('Error', 'Failed to pick documents. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeSupportingFile = async (index: number) => {
+    const file = supportingFiles[index];
+    Alert.alert(
+      "Remove Document",
+      `Are you sure you want to remove "${file.name}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            if (file.storagePath) {
+              await deleteStorageFile(file.storagePath);
+            }
+            setSupportingFiles(supportingFiles.filter((_, i) => i !== index));
+            await saveLocationsAndDocuments();
+          }
+        }
+      ]
+    );
+  };
+
+  // Save locations and documents to Supabase
+  const saveLocationsAndDocuments = async () => {
+    if (!user) return;
+
+    try {
+      const { data: application } = await supabase
+        .from('partner_applications')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (application) {
+        // Build uploaded documents array
+        const uploadedDocs: string[] = [];
+        if (dtiFile?.storagePath) {
+          uploadedDocs.push(`${DTI_PREFIX}${dtiFile.storagePath}`);
+        }
+        supportingFiles.forEach((file) => {
+          if (file.storagePath) {
+            uploadedDocs.push(file.storagePath);
+          }
+        });
+
+        // Update partner application
+        const { error } = await supabase
+          .from('partner_applications')
+          .update({
+            locations: locations,
+            uploaded_documents: uploadedDocs,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', application.id);
+
+        if (error) {
+          console.error('Error updating application:', error);
+          throw error;
+        }
+      }
+    } catch (error) {
+      console.error('Error saving locations and documents:', error);
+    }
+  };
 
   async function handleSaveProfile() {
     if (!user) return;
@@ -110,17 +524,417 @@ export default function PartnerSettingsScreen() {
       return;
     }
 
-    // TODO: Save to Supabase instead of AsyncStorage
-    // For now, just save extended profile info
-    const newProfile: CatererProfile = {
-      contactNumber: contactNumber.trim(),
-      address: address.trim(),
-      about: about.trim()
-    };
+    setSaving(true);
+    try {
+      // Save profile data
+      const newProfile: CatererProfile = {
+        contactNumber: contactNumber.trim(),
+        email: email.trim() || undefined,
+        website: website.trim() || undefined,
+        address: address.trim(),
+        about: about.trim(),
+        facebook: facebook.trim() || undefined,
+        instagram: instagram.trim() || undefined,
+        profileImageUrl: profileImage || undefined
+      };
     await saveProfile(user.username, newProfile);
 
-    Alert.alert("Saved", "Your profile has been updated.");
+      // Save locations and documents to Supabase
+      await saveLocationsAndDocuments();
+
+      Alert.alert("Saved", "Your profile has been updated successfully.");
+    } catch (error) {
+      Alert.alert("Error", "Failed to save profile. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
+
+  // Change email functions
+  const validateEmail = () => {
+    if (!newEmail.trim()) {
+      setEmailError("Please enter a new email address.");
+      return false;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail.trim())) {
+      setEmailError("Please enter a valid email address.");
+      return false;
+    }
+    if (newEmail.trim() === user?.email) {
+      setEmailError("New email must be different from current email.");
+      return false;
+    }
+    setEmailError("");
+    return true;
+  };
+
+  const handleChangeEmail = async () => {
+    if (!validateEmail()) return;
+
+    setUpdatingEmail(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+      if (error) {
+        throw error;
+      }
+      Alert.alert(
+        "Email Update Requested",
+        "A confirmation email has been sent to your new email address. Please check your inbox and click the confirmation link to complete the email change.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setNewEmail("");
+              setShowChangeEmail(false);
+              refreshUser();
+            }
+          }
+        ]
+      );
+    } catch (error: any) {
+      Alert.alert("Error", error?.message || "Failed to update email. Please try again.");
+    } finally {
+      setUpdatingEmail(false);
+    }
+  };
+
+  // Change password functions
+  const validatePassword = () => {
+    const errors: {
+      currentPassword?: string;
+      newPassword?: string;
+      confirmPassword?: string;
+    } = {};
+
+    if (!currentPassword) {
+      errors.currentPassword = "Enter your current password.";
+    }
+    if (!newPassword) {
+      errors.newPassword = "Enter a new password.";
+    } else if (newPassword.length < 8) {
+      errors.newPassword = "Password must be at least 8 characters.";
+    }
+    if (!confirmPassword) {
+      errors.confirmPassword = "Confirm your new password.";
+    } else if (newPassword !== confirmPassword) {
+      errors.confirmPassword = "Passwords do not match.";
+    }
+
+    setPasswordErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const resetPasswordForm = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordErrors({});
+  };
+
+  const handleChangePassword = async () => {
+    if (!changePassword) return;
+    if (!validatePassword()) return;
+
+    setUpdatingPassword(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      resetPasswordForm();
+      setShowChangePassword(false);
+      Alert.alert("Success", "Password updated successfully.");
+    } catch (error: any) {
+      Alert.alert("Error", error?.message || "Failed to update password. Please try again.");
+    } finally {
+      setUpdatingPassword(false);
+    }
+  };
+
+  // Profile image functions
+  const uploadImageToStorage = async (
+    imageUri: string,
+    userId: string,
+    mimeType?: string
+  ): Promise<string | null> => {
+    try {
+      const timestamp = Date.now();
+      const uniqueFileName = `profile-${timestamp}.jpg`;
+      const storagePath = `profiles/${userId}/${uniqueFileName}`;
+
+      const response = await fetch(imageUri);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.statusText}`);
+      }
+      const imageBlob = await response.blob();
+
+      // Delete old profile image if exists
+      if (profileImage) {
+        try {
+          const oldPath = profileImage.replace(/^.*\/profiles\//, 'profiles/');
+          await supabase.storage.from('avatars').remove([oldPath]);
+        } catch (error) {
+          console.warn('Error deleting old profile image:', error);
+        }
+      }
+
+      const { error } = await supabase.storage
+        .from('avatars')
+        .upload(storagePath, imageBlob, {
+          contentType: mimeType || 'image/jpeg',
+          upsert: false,
+        });
+
+      if (error) {
+        console.error('Upload error:', error);
+        throw error;
+      }
+
+      // Get public URL
+      const { data } = supabase.storage.from('avatars').getPublicUrl(storagePath);
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw error;
+    }
+  };
+
+  const pickProfileImage = async () => {
+    try {
+      // Request permissions
+      if (Platform.OS !== 'web') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Please grant camera roll permissions to upload a profile image.');
+          return;
+        }
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      setUploadingImage(true);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+
+      if (!authUser) {
+        Alert.alert('Authentication Required', 'Please log in to upload images.');
+        setUploadingImage(false);
+        return;
+      }
+
+      const asset = result.assets[0];
+      const imageUrl = await uploadImageToStorage(
+        asset.uri,
+        authUser.id,
+        asset.mimeType || undefined
+      );
+
+      if (imageUrl) {
+        setProfileImage(imageUrl);
+        // Save to profile
+        const prof = await loadProfile(user?.username || '');
+        const newProfile: CatererProfile = {
+          ...prof,
+          profileImageUrl: imageUrl
+        };
+        await saveProfile(user?.username || '', newProfile);
+        Alert.alert("Success", "Profile image updated successfully.");
+      }
+    } catch (error: any) {
+      console.error('Error picking profile image:', error);
+      Alert.alert('Error', error?.message || 'Failed to upload profile image. Please try again.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const removeProfileImage = async () => {
+    Alert.alert(
+      "Remove Profile Image",
+      "Are you sure you want to remove your profile image?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              if (profileImage) {
+                const oldPath = profileImage.replace(/^.*\/profiles\//, 'profiles/');
+                await supabase.storage.from('avatars').remove([oldPath]);
+              }
+              setProfileImage(null);
+              const prof = await loadProfile(user?.username || '');
+              const newProfile: CatererProfile = {
+                ...prof,
+                profileImageUrl: undefined
+              };
+              await saveProfile(user?.username || '', newProfile);
+              Alert.alert("Success", "Profile image removed successfully.");
+            } catch (error: any) {
+              Alert.alert("Error", "Failed to remove profile image. Please try again.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Delete account function
+  const handleDeleteAccount = async () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to delete your account? This action cannot be undone. All your data, including bookings, packages, and documents, will be permanently deleted.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Account",
+          style: "destructive",
+          onPress: async () => {
+            // For web, use a prompt dialog
+            if (Platform.OS === 'web') {
+              const password = prompt("Please enter your password to confirm account deletion:");
+              if (!password) {
+                Alert.alert("Error", "Password is required to delete your account.");
+                return;
+              }
+              await confirmDeleteAccount(password);
+            } else {
+              // For mobile, use Alert with input
+              Alert.alert(
+                "Confirm Deletion",
+                "Please enter your password to confirm account deletion:",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                      // On mobile, we'll need to show a text input modal
+                      // For now, let's use a simpler approach with a confirmation
+                      Alert.alert(
+                        "Final Confirmation",
+                        "This will permanently delete your account. Type 'DELETE' to confirm:",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Confirm",
+                            style: "destructive",
+                            onPress: async () => {
+                              // Request password separately
+                              const password = prompt("Enter your password:");
+                              if (password) {
+                                await confirmDeleteAccount(password);
+                              }
+                            }
+                          }
+                        ]
+                      );
+                    }
+                  }
+                ]
+              );
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = async (password: string) => {
+    if (!password) {
+      Alert.alert("Error", "Password is required to delete your account.");
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      // Re-authenticate to verify password
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+        email: user?.email || '',
+        password: password,
+      });
+
+      if (loginError || !loginData.session) {
+        Alert.alert("Error", "Incorrect password. Account deletion cancelled.");
+        setDeletingAccount(false);
+        return;
+      }
+
+      // Delete user from users table
+      const { error: deleteError } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', user?.id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      // Delete user's storage files (documents, profile image, etc.)
+      try {
+        if (user?.id) {
+          // Delete profile image
+          if (profileImage) {
+            try {
+              const oldPath = profileImage.replace(/^.*\/profiles\//, 'profiles/');
+              await supabase.storage.from('avatars').remove([oldPath]);
+            } catch (error) {
+              console.warn('Error deleting profile image:', error);
+            }
+          }
+          // Delete documents
+          try {
+            const { data: files } = await supabase.storage
+              .from('partner-documents')
+              .list(user.id);
+            if (files && files.length > 0) {
+              const filePaths = files.map(f => `${user.id}/${f.name}`);
+              await supabase.storage.from('partner-documents').remove(filePaths);
+            }
+          } catch (error) {
+            console.warn('Error deleting documents:', error);
+          }
+        }
+      } catch (storageError) {
+        console.warn('Error deleting storage files:', storageError);
+      }
+
+      // Sign out and clear local data
+      await logout();
+      
+      Alert.alert(
+        "Account Deleted",
+        "Your account has been permanently deleted.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Navigate to login
+              if (isWeb) {
+                window.location.href = '/';
+              } else {
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Login' }],
+                });
+              }
+            }
+          }
+        ]
+      );
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      Alert.alert("Error", error?.message || "Failed to delete account. Please try again.");
+      setDeletingAccount(false);
+    }
+  };
 
   async function handleLogout() {
     logout();
@@ -151,107 +965,813 @@ export default function PartnerSettingsScreen() {
         >
           {/* Header */}
           <View style={styles.pageHeaderRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.pageTitle}>Your Business Profile</Text>
+            <View style={styles.pageHeaderLeft}>
+              <Text style={styles.pageTitle}>Settings</Text>
               <Text style={styles.pageSubTitle}>
-                This information will be shown to customers when they view
-                your catering service.
+                Manage your business profile and account settings
               </Text>
             </View>
-
-            <Pressable style={styles.logoutBtn} onPress={handleLogout}>
-              <Text style={styles.logoutBtnText}>Log out</Text>
-            </Pressable>
           </View>
 
-          {/* Business Card */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Business Information</Text>
-
-            <Text style={styles.label}>Catering / Business Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Sevilla's Catering"
-              placeholderTextColor="#9ca3af"
-              value={businessName}
-              onChangeText={setBusinessName}
-            />
-
-            <Text style={styles.label}>Contact Number</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. 0917 123 4567"
-              placeholderTextColor="#9ca3af"
-              value={contactNumber}
-              onChangeText={setContactNumber}
-              keyboardType="phone-pad"
-            />
-
-            <Text style={styles.label}>Address / Service Area</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Tayabas / Lucena / nearby areas"
-              placeholderTextColor="#9ca3af"
-              value={address}
-              onChangeText={setAddress}
-            />
-
-            <Text style={styles.label}>About / Description</Text>
-            <TextInput
-              style={[styles.input, styles.aboutInput]}
-              placeholder="Describe your specialties, capacity, style of service..."
-              placeholderTextColor="#9ca3af"
-              multiline
-              value={about}
-              onChangeText={setAbout}
-            />
-
+          {/* Tabs Navigation */}
+          <View style={styles.tabsContainer}>
             <Pressable
-              style={styles.saveBtn}
-              onPress={handleSaveProfile}
+              style={[styles.tab, activeTab === 'profile' && styles.tabActive]}
+              onPress={() => setActiveTab('profile')}
             >
-              <Text style={styles.saveBtnText}>Save Changes</Text>
+              <Ionicons
+                name={activeTab === 'profile' ? 'person' : 'person-outline'}
+                size={18}
+                color={activeTab === 'profile' ? COLORS.primary : COLORS.textLight}
+              />
+              <Text style={[styles.tabText, activeTab === 'profile' && styles.tabTextActive]}>
+                Profile
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tab, activeTab === 'locations' && styles.tabActive]}
+              onPress={() => setActiveTab('locations')}
+            >
+              <Ionicons
+                name={activeTab === 'locations' ? 'location' : 'location-outline'}
+                size={18}
+                color={activeTab === 'locations' ? COLORS.primary : COLORS.textLight}
+              />
+              <Text style={[styles.tabText, activeTab === 'locations' && styles.tabTextActive]}>
+                Locations
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tab, activeTab === 'documents' && styles.tabActive]}
+              onPress={() => setActiveTab('documents')}
+            >
+              <Ionicons
+                name={activeTab === 'documents' ? 'document-text' : 'document-text-outline'}
+                size={18}
+                color={activeTab === 'documents' ? COLORS.primary : COLORS.textLight}
+              />
+              <Text style={[styles.tabText, activeTab === 'documents' && styles.tabTextActive]}>
+                Documents
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tab, activeTab === 'account' && styles.tabActive]}
+              onPress={() => setActiveTab('account')}
+            >
+              <Ionicons
+                name={activeTab === 'account' ? 'settings' : 'settings-outline'}
+                size={18}
+                color={activeTab === 'account' ? COLORS.primary : COLORS.textLight}
+              />
+              <Text style={[styles.tabText, activeTab === 'account' && styles.tabTextActive]}>
+                Account
+              </Text>
             </Pressable>
           </View>
 
-          {/* Display / Preview Card */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Preview for Customers</Text>
-
-            <View style={styles.previewHeaderRow}>
-              <View style={styles.previewAvatar}>
-                <Text style={styles.previewAvatarText}>
-                  {businessName
-                    ? businessName.charAt(0).toUpperCase()
-                    : "?"}
+          {/* Tab Content */}
+          {activeTab === 'profile' && (
+            <>
+              {/* Profile Image Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Business Profile Image</Text>
+                <Text style={styles.cardSubtitle}>
+                  Upload a profile image for your business. This will be shown to customers.
                 </Text>
+
+                <View style={styles.profileImageSection}>
+                  <Pressable
+                    onPress={pickProfileImage}
+                    style={styles.profileImageContainer}
+                    disabled={uploadingImage}
+                  >
+                    {profileImage ? (
+                      <Image
+                        source={{ uri: profileImage }}
+                        style={styles.profileImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.profileImagePlaceholder}>
+                        <Ionicons name="camera" size={48} color={COLORS.textLight} />
+                        <Text style={styles.profileImagePlaceholderText}>Tap to upload</Text>
+                      </View>
+                    )}
+                    {uploadingImage && (
+                      <View style={styles.profileImageOverlay}>
+                        <ActivityIndicator size="large" color="#fff" />
+                        <Text style={styles.profileImageOverlayText}>Uploading...</Text>
+                      </View>
+                    )}
+                    {!uploadingImage && profileImage && (
+                      <View style={styles.profileImageEditBadge}>
+                        <Ionicons name="camera" size={16} color="#fff" />
+                      </View>
+                    )}
+                  </Pressable>
+
+                  <View style={styles.profileImageActions}>
+                    <Pressable
+                      onPress={pickProfileImage}
+                      style={[styles.imageActionButton, uploadingImage && styles.imageActionButtonDisabled]}
+                      disabled={uploadingImage}
+                    >
+                      {uploadingImage ? (
+                        <>
+                          <ActivityIndicator size="small" color={COLORS.primary} />
+                          <Text style={styles.imageActionButtonText}>Uploading...</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name={profileImage ? "refresh" : "cloud-upload"} size={18} color={COLORS.primary} />
+                          <Text style={styles.imageActionButtonText}>
+                            {profileImage ? "Replace Image" : "Upload Image"}
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+
+                    {profileImage && (
+                      <Pressable
+                        onPress={removeProfileImage}
+                        style={[styles.imageActionButton, styles.imageActionButtonDanger]}
+                        disabled={uploadingImage}
+                      >
+                        <Ionicons name="trash" size={18} color={COLORS.danger || "#ef4444"} />
+                        <Text style={[styles.imageActionButtonText, styles.imageActionButtonTextDanger]}>
+                          Remove
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                </View>
               </View>
 
-              <View style={{ flexShrink: 1 }}>
-                <Text style={styles.previewNameText}>
-                  {businessName || "Your Catering"}
+              {/* Business Information Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Business Information</Text>
+                <Text style={styles.cardSubtitle}>
+                  This information will be shown to customers when they view your catering service.
                 </Text>
-                <Text style={styles.previewMetaText}>
-                  {contactNumber
-                    ? contactNumber
-                    : "No contact number yet"}
-                </Text>
-                <Text style={styles.previewMetaText}>
-                  {address ? address : "No service area set"}
-                </Text>
-              </View>
-            </View>
 
-            <Text style={styles.previewAboutHeader}>About</Text>
-            <Text style={styles.previewAboutText}>
-              {about
-                ? about
-                : "Tell customers what makes your catering special, what events you handle, and what they can expect."}
-            </Text>
-          </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Catering / Business Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Sevilla's Catering"
+                    placeholderTextColor="#9ca3af"
+                    value={businessName}
+                    onChangeText={setBusinessName}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Contact Number</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 0917 123 4567"
+                    placeholderTextColor="#9ca3af"
+                    value={contactNumber}
+                    onChangeText={setContactNumber}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Email</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. contact@yourcatering.com"
+                    placeholderTextColor="#9ca3af"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Website</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. www.yourcatering.com"
+                    placeholderTextColor="#9ca3af"
+                    value={website}
+                    onChangeText={setWebsite}
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Address / Service Area</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Tayabas / Lucena / nearby areas"
+                    placeholderTextColor="#9ca3af"
+                    value={address}
+                    onChangeText={setAddress}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>About / Description</Text>
+                  <TextInput
+                    style={[styles.input, styles.aboutInput]}
+                    placeholder="Describe your specialties, capacity, style of service..."
+                    placeholderTextColor="#9ca3af"
+                    multiline
+                    value={about}
+                    onChangeText={setAbout}
+                  />
+                </View>
+
+                <Pressable
+                  style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+                  onPress={handleSaveProfile}
+                  disabled={saving}
+                >
+                  <Text style={styles.saveBtnText}>
+                    {saving ? "Saving..." : "Save Changes"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* Social Media Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Social Media</Text>
+                <Text style={styles.cardSubtitle}>
+                  Add your social media links to help customers find you online.
+                </Text>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Facebook</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. facebook.com/yourcatering"
+                    placeholderTextColor="#9ca3af"
+                    value={facebook}
+                    onChangeText={setFacebook}
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Instagram</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. instagram.com/yourcatering"
+                    placeholderTextColor="#9ca3af"
+                    value={instagram}
+                    onChangeText={setInstagram}
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
+
+              {/* Preview Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Preview for Customers</Text>
+                <Text style={styles.cardSubtitle}>
+                  This is how your business will appear to customers.
+                </Text>
+
+                <View style={styles.previewCard}>
+                  <View style={styles.previewHeaderRow}>
+                    {profileImage ? (
+                      <Image
+                        source={{ uri: profileImage }}
+                        style={styles.previewAvatarImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.previewAvatar}>
+                        <Text style={styles.previewAvatarText}>
+                          {businessName
+                            ? businessName.charAt(0).toUpperCase()
+                            : "?"}
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.previewHeaderInfo}>
+                      <Text style={styles.previewNameText}>
+                        {businessName || "Your Catering"}
+                      </Text>
+                      {contactNumber && (
+                        <Text style={styles.previewMetaText}>📞 {contactNumber}</Text>
+                      )}
+                      {email && (
+                        <Text style={styles.previewMetaText}>✉️ {email}</Text>
+                      )}
+                      {address && (
+                        <Text style={styles.previewMetaText}>📍 {address}</Text>
+                      )}
+                      {website && (
+                        <Text style={styles.previewMetaText}>🌐 {website}</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  {about && (
+                    <>
+                      <View style={styles.previewDivider} />
+                      <Text style={styles.previewAboutHeader}>About</Text>
+                      <Text style={styles.previewAboutText}>{about}</Text>
+                    </>
+                  )}
+
+                  {(facebook || instagram) && (
+                    <>
+                      <View style={styles.previewDivider} />
+                      <View style={styles.previewSocialRow}>
+                        {facebook && (
+                          <Text style={styles.previewSocialText}>📘 Facebook</Text>
+                        )}
+                        {instagram && (
+                          <Text style={styles.previewSocialText}>📷 Instagram</Text>
+                        )}
+                      </View>
+                    </>
+                  )}
+                </View>
+              </View>
+            </>
+          )}
+
+          {activeTab === 'locations' && (
+            <>
+              {/* Location/Branch Management Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Business Locations / Branches</Text>
+                <Text style={styles.cardSubtitle}>
+                  Manage your business locations and branches. Add, update, or remove locations.
+                </Text>
+
+                {locations.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="location-outline" size={48} color={COLORS.textLight} />
+                    <Text style={styles.emptyStateText}>No locations added yet</Text>
+                    <Text style={styles.emptyStateSubtext}>Add your first business location to get started</Text>
+                  </View>
+                ) : (
+                  locations.map((location, index) => (
+                  <View key={location.id} style={styles.locationCard}>
+                    <View style={styles.locationHeader}>
+                      <Text style={styles.locationTitle}>Location {index + 1}</Text>
+                      {locations.length > 1 && (
+                        <Pressable onPress={() => removeLocation(index)} style={styles.removeButton}>
+                          <Ionicons name="trash" size={18} color={COLORS.danger || "#ef4444"} />
+                        </Pressable>
+                      )}
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Dropdown
+                        label="Country *"
+                        value={location.country}
+                        options={COUNTRIES}
+                        onSelect={(value) => updateLocation(index, 'country', value)}
+                      />
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Dropdown
+                        label="Province *"
+                        value={location.province}
+                        options={PROVINCES_PH}
+                        onSelect={(value) => {
+                          updateLocation(index, 'province', value);
+                          updateLocation(index, 'city', '');
+                        }}
+                        searchable
+                      />
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Dropdown
+                        label="City *"
+                        value={location.city}
+                        options={getAvailableCities(location.province)}
+                        onSelect={(value) => updateLocation(index, 'city', value)}
+                        searchable
+                        placeholder={!location.province ? "Select province first" : "Select city"}
+                      />
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Field
+                        label="Postal Code *"
+                        value={location.postalCode}
+                        onChangeText={(value) => updateLocation(index, 'postalCode', value)}
+                        keyboardType="numeric"
+                      />
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Field
+                        label="Address *"
+                        value={location.address}
+                        onChangeText={(value) => updateLocation(index, 'address', value)}
+                        multiline
+                      />
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Field
+                        label="Service Radius (km)"
+                        value={location.serviceRadiusKm !== undefined ? String(location.serviceRadiusKm) : ''}
+                        onChangeText={(value) => {
+                          const n = parseFloat(value);
+                          updateLocation(index, 'serviceRadiusKm', Number.isFinite(n) ? n : undefined);
+                        }}
+                        keyboardType="numeric"
+                        placeholder="e.g., 10"
+                      />
+                    </View>
+
+                    {Platform.OS !== 'web' && (
+                      <Pressable
+                        onPress={() => {
+                          setEditingLocationIndex(index);
+                          setMapPickerVisible(true);
+                        }}
+                        style={styles.mapPinButton}
+                      >
+                        <Ionicons name="location" size={20} color={COLORS.primary} />
+                        <Text style={styles.mapPinButtonText}>Set Location on Map</Text>
+                        {location.latitude && location.longitude && (
+                          <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} style={{ marginLeft: 8 }} />
+                        )}
+                      </Pressable>
+                    )}
+                  </View>
+                  ))
+                )}
+
+                <Pressable onPress={addLocation} style={styles.addButton}>
+                  <Ionicons name="add-circle" size={20} color={COLORS.primary} />
+                  <Text style={styles.addButtonText}>Add Another Location / Branch</Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+                  onPress={async () => {
+                    await saveLocationsAndDocuments();
+                    Alert.alert("Saved", "Locations have been updated successfully.");
+                  }}
+                  disabled={saving}
+                >
+                  <Text style={styles.saveBtnText}>
+                    {saving ? "Saving..." : "Save Locations"}
+                  </Text>
+                </Pressable>
+              </View>
+            </>
+          )}
+
+          {activeTab === 'documents' && (
+            <>
+              {/* Documents Management Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Documents</Text>
+                <Text style={styles.cardSubtitle}>
+                  Manage your business documents. Upload, update, or remove DTI/SEC and supporting documents.
+                </Text>
+
+                {/* DTI/SEC Document */}
+                <View style={styles.documentSection}>
+                  <View style={styles.documentHeader}>
+                    <Ionicons name="document-text" size={18} color={COLORS.primary} style={{ marginRight: 8 }} />
+                    <Text style={styles.documentTitle}>DTI / SEC Registration (Required)</Text>
+                  </View>
+                  <Text style={styles.documentSubtitle}>
+                    Upload your DTI or SEC certificate (PDF or images). This is required.
+                  </Text>
+
+                  {dtiFile && (
+                    <View style={styles.fileItem}>
+                      <View style={styles.fileItemLeft}>
+                        <Ionicons name="document" size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
+                        <View style={styles.fileItemInfo}>
+                          <Text style={styles.fileItemName} numberOfLines={1}>{dtiFile.name}</Text>
+                          <Text style={styles.fileItemSize}>{dtiFile.size > 0 ? `${(dtiFile.size / 1024).toFixed(1)} KB` : 'Uploaded'}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.dtiBadge}>
+                        <Text style={styles.dtiBadgeText}>Required</Text>
+                      </View>
+                      <Pressable onPress={removeDtiFile} style={styles.fileRemoveButton}>
+                        <Ionicons name="trash" size={18} color={COLORS.danger || "#ef4444"} />
+                      </Pressable>
+                    </View>
+                  )}
+
+                  <Pressable
+                    onPress={uploadDtiDocument}
+                    style={[
+                      styles.filePickerButton,
+                      dtiUploading && styles.filePickerButtonDisabled,
+                    ]}
+                    disabled={dtiUploading}
+                  >
+                    {dtiUploading ? (
+                      <>
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                        <Text style={styles.filePickerButtonText}>Uploading...</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
+                        <Text style={styles.filePickerButtonText}>
+                          {dtiFile ? 'Replace DTI Certificate' : 'Upload DTI Certificate'}
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
+
+                {/* Supporting Documents */}
+                <View style={styles.documentSection}>
+                  <View style={styles.documentHeader}>
+                    <Text style={styles.documentTitle}>Supporting Documents (Optional)</Text>
+                  </View>
+                  <Text style={styles.documentSubtitle}>
+                    Upload permits, certificates, or other supporting documents (PDF or images).
+                  </Text>
+
+                  {supportingFiles.map((file, index) => (
+                    <View key={index} style={styles.fileItem}>
+                      <View style={styles.fileItemLeft}>
+                        <Ionicons name="document" size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
+                        <View style={styles.fileItemInfo}>
+                          <Text style={styles.fileItemName} numberOfLines={1}>{file.name}</Text>
+                          <Text style={styles.fileItemSize}>{file.size > 0 ? `${(file.size / 1024).toFixed(1)} KB` : 'Uploaded'}</Text>
+                        </View>
+                      </View>
+                      <Pressable onPress={() => removeSupportingFile(index)} style={styles.fileRemoveButton}>
+                        <Ionicons name="trash" size={18} color={COLORS.danger || "#ef4444"} />
+                      </Pressable>
+                    </View>
+                  ))}
+
+                  <Pressable
+                    onPress={pickSupportingDocuments}
+                    style={[
+                      styles.filePickerButton,
+                      uploading && styles.filePickerButtonDisabled,
+                    ]}
+                    disabled={uploading}
+                  >
+                    {uploading ? (
+                      <>
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                        <Text style={styles.filePickerButtonText}>Uploading...</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons name="cloud-upload" size={20} color={COLORS.primary} />
+                        <Text style={styles.filePickerButtonText}>Upload Supporting Documents</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
+
+                <Pressable
+                  style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+                  onPress={async () => {
+                    await saveLocationsAndDocuments();
+                    Alert.alert("Saved", "Documents have been saved successfully.");
+                  }}
+                  disabled={saving}
+                >
+                  <Text style={styles.saveBtnText}>
+                    {saving ? "Saving..." : "Save Documents"}
+                  </Text>
+                </Pressable>
+              </View>
+            </>
+          )}
+
+          {activeTab === 'account' && (
+            <>
+              {/* Account Settings Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Account Settings</Text>
+                
+                <View style={styles.accountInfoRow}>
+                  <View style={styles.accountInfoLeft}>
+                    <Text style={styles.accountInfoLabel}>Email</Text>
+                    <Text style={styles.accountInfoValue}>{user.email || "Not set"}</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      setShowChangeEmail(!showChangeEmail);
+                      setShowChangePassword(false);
+                      setNewEmail("");
+                      setEmailError("");
+                    }}
+                    style={styles.changeButton}
+                  >
+                    <Ionicons name="pencil" size={16} color={COLORS.primary} />
+                    <Text style={styles.changeButtonText}>
+                      {showChangeEmail ? "Cancel" : "Change"}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {showChangeEmail && (
+                  <View style={styles.changeForm}>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>New Email Address</Text>
+                      <TextInput
+                        style={[styles.input, emailError && styles.inputError]}
+                        placeholder="Enter new email address"
+                        placeholderTextColor="#9ca3af"
+                        value={newEmail}
+                        onChangeText={(text) => {
+                          setNewEmail(text);
+                          setEmailError("");
+                        }}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      {emailError ? (
+                        <Text style={styles.errorText}>{emailError}</Text>
+                      ) : null}
+                    </View>
+                    <Pressable
+                      style={[styles.saveBtn, updatingEmail && styles.saveBtnDisabled]}
+                      onPress={handleChangeEmail}
+                      disabled={updatingEmail}
+                    >
+                      <Text style={styles.saveBtnText}>
+                        {updatingEmail ? "Updating..." : "Update Email"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                <View style={styles.accountInfoRow}>
+                  <View style={styles.accountInfoLeft}>
+                    <Text style={styles.accountInfoLabel}>Password</Text>
+                    <Text style={styles.accountInfoValue}>••••••••</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      setShowChangePassword(!showChangePassword);
+                      setShowChangeEmail(false);
+                      resetPasswordForm();
+                    }}
+                    style={styles.changeButton}
+                  >
+                    <Ionicons name="pencil" size={16} color={COLORS.primary} />
+                    <Text style={styles.changeButtonText}>
+                      {showChangePassword ? "Cancel" : "Change"}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {showChangePassword && (
+                  <View style={styles.changeForm}>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>Current Password</Text>
+                      <TextInput
+                        style={[styles.input, passwordErrors.currentPassword && styles.inputError]}
+                        placeholder="Enter current password"
+                        placeholderTextColor="#9ca3af"
+                        value={currentPassword}
+                        onChangeText={(text) => {
+                          setCurrentPassword(text);
+                          setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
+                        }}
+                        secureTextEntry
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      {passwordErrors.currentPassword ? (
+                        <Text style={styles.errorText}>{passwordErrors.currentPassword}</Text>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>New Password</Text>
+                      <TextInput
+                        style={[styles.input, passwordErrors.newPassword && styles.inputError]}
+                        placeholder="Enter new password (min. 8 characters)"
+                        placeholderTextColor="#9ca3af"
+                        value={newPassword}
+                        onChangeText={(text) => {
+                          setNewPassword(text);
+                          setPasswordErrors({ ...passwordErrors, newPassword: undefined });
+                        }}
+                        secureTextEntry
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      {passwordErrors.newPassword ? (
+                        <Text style={styles.errorText}>{passwordErrors.newPassword}</Text>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>Confirm New Password</Text>
+                      <TextInput
+                        style={[styles.input, passwordErrors.confirmPassword && styles.inputError]}
+                        placeholder="Confirm new password"
+                        placeholderTextColor="#9ca3af"
+                        value={confirmPassword}
+                        onChangeText={(text) => {
+                          setConfirmPassword(text);
+                          setPasswordErrors({ ...passwordErrors, confirmPassword: undefined });
+                        }}
+                        secureTextEntry
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      {passwordErrors.confirmPassword ? (
+                        <Text style={styles.errorText}>{passwordErrors.confirmPassword}</Text>
+                      ) : null}
+                    </View>
+
+                    <Pressable
+                      style={[styles.saveBtn, updatingPassword && styles.saveBtnDisabled]}
+                      onPress={handleChangePassword}
+                      disabled={updatingPassword}
+                    >
+                      <Text style={styles.saveBtnText}>
+                        {updatingPassword ? "Updating..." : "Update Password"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                <View style={styles.accountInfoRow}>
+                  <View style={styles.accountInfoLeft}>
+                    <Text style={styles.accountInfoLabel}>Account Status</Text>
+                    <Text style={[styles.accountInfoValue, styles.accountStatusActive]}>
+                      {user.role === "CATER" ? "✓ Verified" : "Pending Verification"}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.logoutSection}>
+                  <Pressable style={styles.logoutBtn} onPress={handleLogout}>
+                    <Text style={styles.logoutBtnText}>Log Out</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.deleteAccountSection}>
+                  <Text style={styles.deleteAccountWarning}>
+                    ⚠️ Deleting your account will permanently remove all your data, including bookings, packages, and documents. This action cannot be undone.
+                  </Text>
+                  <Pressable
+                    style={[styles.deleteAccountBtn, deletingAccount && styles.deleteAccountBtnDisabled]}
+                    onPress={handleDeleteAccount}
+                    disabled={deletingAccount}
+                  >
+                    {deletingAccount ? (
+                      <>
+                        <ActivityIndicator size="small" color="#fff" />
+                        <Text style={styles.deleteAccountBtnText}>Deleting...</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons name="trash" size={18} color="#fff" />
+                        <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            </>
+          )}
         </ScrollView>
       </View>
       {!isWeb && <BottomNav />}
+
+      {/* Map Picker Modal (Mobile only) */}
+      {Platform.OS !== 'web' && (
+        <InteractiveMapPicker
+          visible={mapPickerVisible}
+          onClose={() => {
+            setMapPickerVisible(false);
+            setEditingLocationIndex(null);
+          }}
+          onLocationSelect={handleLocationSelect}
+          currentLocation={
+            editingLocationIndex !== null &&
+            locations[editingLocationIndex]?.latitude &&
+            locations[editingLocationIndex]?.longitude
+              ? {
+                  latitude: locations[editingLocationIndex].latitude!,
+                  longitude: locations[editingLocationIndex].longitude!,
+                  address: locations[editingLocationIndex].address,
+                }
+              : undefined
+          }
+        />
+      )}
     </View>
   );
 }
@@ -285,154 +1805,576 @@ const styles = StyleSheet.create({
   },
 
   pageHeaderRow: {
-    flexDirection: "row",
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
     justifyContent: "space-between",
-    flexWrap: "wrap",
     alignItems: "flex-start",
-    marginBottom: 16
+    marginBottom: 24
+  },
+  pageHeaderLeft: {
+    flex: 1
   },
   pageTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'web' ? 24 : 22,
     fontWeight: "700",
-    color: "#111827"
+    color: "#111827",
+    marginBottom: 4
   },
   pageSubTitle: {
     color: "#6b7280",
-    fontSize: 13,
-    marginTop: 4,
-    maxWidth: 300,
-    lineHeight: 18
-  },
-
-  logoutBtn: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ef4444",
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    alignSelf: "flex-start",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2
-  },
-  logoutBtnText: {
-    color: "#ef4444",
-    fontWeight: "600",
-    fontSize: 13
+    fontSize: Platform.OS === 'web' ? 14 : 13,
+    lineHeight: 20
   },
 
   card: {
     backgroundColor: "#fff",
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 24,
+    borderRadius: Platform.OS === 'web' ? 12 : 16,
+    padding: Platform.OS === 'web' ? 20 : 16,
+    marginBottom: Platform.OS === 'web' ? 24 : 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 10 : 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 20,
+    shadowRadius: Platform.OS === 'web' ? 20 : 4,
     elevation: 2
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'web' ? 18 : 20,
     fontWeight: "700",
     color: "#111827",
-    marginBottom: 12
+    marginBottom: 4
+  },
+  cardSubtitle: {
+    fontSize: Platform.OS === 'web' ? 13 : 12,
+    color: "#6b7280",
+    marginBottom: 16,
+    lineHeight: 18
   },
 
+  formGroup: {
+    marginBottom: Platform.OS === 'web' ? 16 : 14
+  },
   label: {
     fontWeight: "600",
-    fontSize: 13,
+    fontSize: Platform.OS === 'web' ? 13 : 14,
     color: "#111827",
-    marginBottom: 4,
-    marginTop: 12
+    marginBottom: 6
   },
 
   input: {
     borderWidth: 1,
     borderColor: "#d1d5db",
     backgroundColor: "#ffffff",
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    fontSize: 14,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 12 : 14,
+    fontSize: Platform.OS === 'web' ? 14 : 15,
     color: "#111827"
   },
   aboutInput: {
-    minHeight: 100,
+    minHeight: Platform.OS === 'web' ? 100 : 120,
     textAlignVertical: "top"
   },
 
   saveBtn: {
     backgroundColor: "#FF8000",
-    borderRadius: 8,
-    alignSelf: "flex-start",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    alignSelf: Platform.OS === 'web' ? "flex-start" : "stretch",
+    width: Platform.OS === 'web' ? 'auto' : '100%',
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 8 : 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowRadius: Platform.OS === 'web' ? 12 : 4,
     elevation: 3,
-    marginTop: 24,
-    marginBottom: 8
+    marginTop: Platform.OS === 'web' ? 8 : 12,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  saveBtnDisabled: {
+    opacity: 0.6
   },
   saveBtnText: {
     color: "#fff",
     fontWeight: "600",
-    fontSize: 14
+    fontSize: Platform.OS === 'web' ? 14 : 15
   },
 
+  previewCard: {
+    backgroundColor: "#f9fafb",
+    borderRadius: Platform.OS === 'web' ? 8 : 12,
+    padding: Platform.OS === 'web' ? 16 : 14,
+    borderWidth: 1,
+    borderColor: "#e5e7eb"
+  },
   previewHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 16
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    alignItems: Platform.OS === 'web' ? "flex-start" : "center",
+    marginBottom: Platform.OS === 'web' ? 16 : 12
   },
   previewAvatar: {
-    width: 48,
-    height: 48,
+    width: Platform.OS === 'web' ? 56 : 64,
+    height: Platform.OS === 'web' ? 56 : 64,
     borderRadius: 9999,
     backgroundColor: "#FF8000",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: Platform.OS === 'web' ? 16 : 0,
+    marginBottom: Platform.OS === 'web' ? 0 : 12,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowRadius: 8,
     elevation: 3
   },
   previewAvatarText: {
     color: "#fff",
     fontWeight: "700",
-    fontSize: 16
+    fontSize: Platform.OS === 'web' ? 20 : 24
   },
-
+  previewHeaderInfo: {
+    flex: 1,
+    alignItems: Platform.OS === 'web' ? "flex-start" : "center"
+  },
   previewNameText: {
     color: "#111827",
     fontWeight: "700",
-    fontSize: 15
+    fontSize: Platform.OS === 'web' ? 18 : 20,
+    marginBottom: Platform.OS === 'web' ? 8 : 6,
+    textAlign: Platform.OS === 'web' ? "left" : "center"
   },
   previewMetaText: {
     color: "#6b7280",
-    fontSize: 13,
-    marginTop: 2
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    marginTop: Platform.OS === 'web' ? 4 : 3,
+    textAlign: Platform.OS === 'web' ? "left" : "center"
   },
-
+  previewDivider: {
+    height: 1,
+    backgroundColor: "#e5e7eb",
+    marginVertical: Platform.OS === 'web' ? 16 : 12
+  },
   previewAboutHeader: {
-    fontSize: 13,
+    fontSize: Platform.OS === 'web' ? 14 : 15,
     fontWeight: "600",
     color: "#111827",
-    marginBottom: 6
+    marginBottom: 8
   },
   previewAboutText: {
-    fontSize: 13,
+    fontSize: Platform.OS === 'web' ? 13 : 14,
     color: "#4b5563",
+    lineHeight: Platform.OS === 'web' ? 20 : 22
+  },
+  previewSocialRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12
+  },
+  previewSocialText: {
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    color: "#6b7280",
+    fontWeight: "500"
+  },
+
+  // Account Settings
+  accountInfoRow: {
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6"
+  },
+  accountInfoLeft: {
+    flex: 1
+  },
+  accountInfoLabel: {
+    fontSize: Platform.OS === 'web' ? 12 : 13,
+    color: "#6b7280",
+    fontWeight: "500",
+    marginBottom: 4
+  },
+  accountInfoValue: {
+    fontSize: Platform.OS === 'web' ? 14 : 15,
+    color: "#111827",
+    fontWeight: "600",
+    flex: 1
+  },
+  accountStatusActive: {
+    color: "#10b981"
+  },
+  changeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    backgroundColor: COLORS.primary + '15'
+  },
+  changeButtonText: {
+    fontSize: Platform.OS === 'web' ? 12 : 13,
+    fontWeight: "600",
+    color: COLORS.primary,
+    marginLeft: 4
+  },
+  changeForm: {
+    marginTop: Platform.OS === 'web' ? 12 : 10,
+    paddingTop: Platform.OS === 'web' ? 16 : 14,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb"
+  },
+  inputError: {
+    borderColor: COLORS.danger || "#ef4444"
+  },
+  errorText: {
+    fontSize: Platform.OS === 'web' ? 12 : 11,
+    color: COLORS.danger || "#ef4444",
+    marginTop: 4,
+    marginLeft: 4
+  },
+  logoutSection: {
+    marginTop: Platform.OS === 'web' ? 16 : 20,
+    paddingTop: Platform.OS === 'web' ? 16 : 20,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb"
+  },
+  logoutBtn: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ef4444",
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 10 : 12,
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 14,
+    alignSelf: Platform.OS === 'web' ? "flex-start" : "stretch",
+    width: Platform.OS === 'web' ? 'auto' : '100%',
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  logoutBtnText: {
+    color: "#ef4444",
+    fontWeight: "600",
+    fontSize: Platform.OS === 'web' ? 14 : 15
+  },
+
+  // Location/Branch Management Styles
+  locationCard: {
+    backgroundColor: "#f9fafb",
+    borderRadius: Platform.OS === 'web' ? 8 : 12,
+    padding: Platform.OS === 'web' ? 16 : 14,
+    marginBottom: Platform.OS === 'web' ? 16 : 14,
+    borderWidth: 1,
+    borderColor: "#e5e7eb"
+  },
+  locationHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Platform.OS === 'web' ? 12 : 10
+  },
+  locationTitle: {
+    fontSize: Platform.OS === 'web' ? 16 : 18,
+    fontWeight: "700",
+    color: "#111827"
+  },
+  removeButton: {
+    padding: 6,
+    borderRadius: 6
+  },
+  mapPinButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary + '15',
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 10 : 12,
+    paddingHorizontal: Platform.OS === 'web' ? 14 : 16,
+    marginTop: Platform.OS === 'web' ? 8 : 10
+  },
+  mapPinButtonText: {
+    color: COLORS.primary,
+    fontWeight: "600",
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    marginLeft: 8
+  },
+  addButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f9fafb",
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderStyle: "dashed",
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 18,
+    marginTop: Platform.OS === 'web' ? 8 : 10,
+    marginBottom: Platform.OS === 'web' ? 16 : 14
+  },
+  addButtonText: {
+    color: COLORS.primary,
+    fontWeight: "600",
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    marginLeft: 8
+  },
+
+  // Document Management Styles
+  documentSection: {
+    marginBottom: Platform.OS === 'web' ? 24 : 20,
+    paddingBottom: Platform.OS === 'web' ? 24 : 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb"
+  },
+  documentHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8
+  },
+  documentTitle: {
+    fontSize: Platform.OS === 'web' ? 15 : 16,
+    fontWeight: "700",
+    color: "#111827"
+  },
+  documentSubtitle: {
+    fontSize: Platform.OS === 'web' ? 12 : 13,
+    color: "#6b7280",
+    marginBottom: Platform.OS === 'web' ? 12 : 14,
     lineHeight: 18
+  },
+  fileItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    padding: Platform.OS === 'web' ? 12 : 14,
+    marginBottom: Platform.OS === 'web' ? 8 : 10,
+    borderWidth: 1,
+    borderColor: "#e5e7eb"
+  },
+  fileItemLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 12
+  },
+  fileItemInfo: {
+    flex: 1
+  },
+  fileItemName: {
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 2
+  },
+  fileItemSize: {
+    fontSize: Platform.OS === 'web' ? 11 : 12,
+    color: "#6b7280"
+  },
+  dtiBadge: {
+    backgroundColor: COLORS.primary + '15',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 8
+  },
+  dtiBadgeText: {
+    fontSize: Platform.OS === 'web' ? 10 : 11,
+    fontWeight: "600",
+    color: COLORS.primary
+  },
+  fileRemoveButton: {
+    padding: 6,
+    borderRadius: 6
+  },
+  filePickerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 18,
+    marginTop: Platform.OS === 'web' ? 8 : 10
+  },
+  filePickerButtonDisabled: {
+    opacity: 0.6
+  },
+  filePickerButtonText: {
+    color: COLORS.primary,
+    fontWeight: "600",
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    marginLeft: 8
+  },
+
+  // Empty State Styles
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Platform.OS === 'web' ? 40 : 32,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 16
+  },
+  emptyStateText: {
+    fontSize: Platform.OS === 'web' ? 16 : 18,
+    fontWeight: "600",
+    color: "#111827",
+    marginTop: 12,
+    marginBottom: 4
+  },
+  emptyStateSubtext: {
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    color: "#6b7280",
+    textAlign: "center"
+  },
+
+  // Tabs Navigation Styles
+  tabsContainer: {
+    flexDirection: "row",
+    backgroundColor: "#fff",
+    borderRadius: Platform.OS === 'web' ? 12 : 16,
+    padding: Platform.OS === 'web' ? 4 : 6,
+    marginBottom: Platform.OS === 'web' ? 24 : 16,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 2 : 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: Platform.OS === 'web' ? 4 : 2,
+    elevation: 2
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Platform.OS === 'web' ? 10 : 12,
+    paddingHorizontal: Platform.OS === 'web' ? 12 : 8,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    marginHorizontal: Platform.OS === 'web' ? 2 : 3
+  },
+  tabActive: {
+    backgroundColor: COLORS.primary + '15'
+  },
+  tabText: {
+    fontSize: Platform.OS === 'web' ? 13 : 12,
+    fontWeight: "600",
+    color: COLORS.textLight,
+    marginLeft: Platform.OS === 'web' ? 6 : 4
+  },
+  tabTextActive: {
+    color: COLORS.primary,
+    fontWeight: "700"
+  },
+
+  // Profile Image Styles
+  profileImageSection: {
+    alignItems: "center",
+    marginBottom: Platform.OS === 'web' ? 16 : 14
+  },
+  profileImageContainer: {
+    position: "relative",
+    marginBottom: Platform.OS === 'web' ? 16 : 14
+  },
+  profileImage: {
+    width: Platform.OS === 'web' ? 120 : 100,
+    height: Platform.OS === 'web' ? 120 : 100,
+    borderRadius: Platform.OS === 'web' ? 60 : 50,
+    borderWidth: 3,
+    borderColor: COLORS.primary
+  },
+  profileImagePlaceholder: {
+    width: Platform.OS === 'web' ? 120 : 100,
+    height: Platform.OS === 'web' ? 120 : 100,
+    borderRadius: Platform.OS === 'web' ? 60 : 50,
+    backgroundColor: COLORS.bg,
+    borderWidth: 3,
+    borderColor: COLORS.border,
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  profileImagePlaceholderText: {
+    fontSize: Platform.OS === 'web' ? 12 : 11,
+    color: COLORS.textLight,
+    marginTop: 8,
+    fontWeight: "500"
+  },
+  profileImageOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: Platform.OS === 'web' ? 60 : 50,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8
+  },
+  profileImageOverlayText: {
+    color: "#fff",
+    fontSize: Platform.OS === 'web' ? 12 : 11,
+    fontWeight: "600"
+  },
+  profileImageEditBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    backgroundColor: COLORS.primary,
+    borderRadius: 20,
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4
+  },
+  profileImageActions: {
+    flexDirection: "row",
+    gap: Platform.OS === 'web' ? 12 : 10,
+    flexWrap: "wrap",
+    justifyContent: "center"
+  },
+  imageActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.primary + '15',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 10 : 12,
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 14,
+    minWidth: Platform.OS === 'web' ? 140 : 120
+  },
+  imageActionButtonDisabled: {
+    opacity: 0.6
+  },
+  imageActionButtonDanger: {
+    backgroundColor: (COLORS.danger || "#ef4444") + '15',
+    borderColor: COLORS.danger || "#ef4444"
+  },
+  imageActionButtonText: {
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    fontWeight: "600",
+    color: COLORS.primary,
+    marginLeft: 6
+  },
+  imageActionButtonTextDanger: {
+    color: COLORS.danger || "#ef4444"
+  },
+  previewAvatarImage: {
+    width: Platform.OS === 'web' ? 56 : 64,
+    height: Platform.OS === 'web' ? 56 : 64,
+    borderRadius: Platform.OS === 'web' ? 28 : 32,
+    borderWidth: 2,
+    borderColor: COLORS.primary
   }
 });
 

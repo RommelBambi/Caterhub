@@ -8,7 +8,7 @@ import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
 import { isWeb } from "../../utils/platform";
 
-type NavKey = "PartnerDashboard" | "PartnerOrders" | "PartnerManagePackages" | "PartnerSettings";
+type NavKey = "PartnerDashboard" | "PartnerOrders" | "PartnerManagePackages" | "PartnerSettings" | "PartnerWallet";
 
 export default function BottomNav() {
   const navigation = useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
@@ -35,6 +35,7 @@ export default function BottomNav() {
     { key: "PartnerDashboard", label: "Dashboard", icon: "grid", iconOutline: "grid-outline" },
     { key: "PartnerOrders", label: "Orders", icon: "receipt", iconOutline: "receipt-outline" },
     { key: "PartnerManagePackages", label: "Packages", icon: "cube", iconOutline: "cube-outline" },
+    { key: "PartnerWallet", label: "Wallet", icon: "wallet", iconOutline: "wallet-outline" },
     { key: "PartnerSettings", label: "Settings", icon: "settings", iconOutline: "settings-outline" },
   ];
 
