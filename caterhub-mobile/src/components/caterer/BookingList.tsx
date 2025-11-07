@@ -1,6 +1,10 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { isWeb } from "../../utils/platform";
+import { COLORS } from "../../constants/colors";
 
 export type Booking = {
   id: string;
@@ -9,13 +13,28 @@ export type Booking = {
   headcount: number;
   status: "pending" | "accepted" | "declined" | "refunded";
   total: string;
+  bookingId?: number; // Database booking ID for navigation
 };
 
 type Props = {
   data: Booking[];
+  onDetailsPress?: (booking: Booking) => void;
 };
 
-export default function BookingList({ data }: Props) {
+export default function BookingList({ data, onDetailsPress }: Props) {
+  const navigation = useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
+
+  const handleDetailsPress = (booking: Booking) => {
+    if (onDetailsPress) {
+      onDetailsPress(booking);
+    } else if (booking.bookingId) {
+      // Navigate to order details if bookingId is available
+      // We'll need to fetch the full order data first
+      // For now, just navigate to orders screen
+      navigation.navigate("PartnerOrders");
+    }
+  };
+
   if (isWeb) {
     // Web: Table layout
     return (
@@ -67,9 +86,7 @@ export default function BookingList({ data }: Props) {
             <View style={[styles.cell, { flex: 1 }]}>
               <Pressable
                 style={styles.detailsBtn}
-                onPress={() => {
-                  // hook this up later (open booking details)
-                }}
+                onPress={() => handleDetailsPress(item)}
               >
                 <Text style={styles.detailsText}>Details</Text>
               </Pressable>
@@ -117,9 +134,7 @@ export default function BookingList({ data }: Props) {
 
             <Pressable
               style={styles.mobileDetailsBtn}
-              onPress={() => {
-                // hook this up later (open booking details)
-              }}
+              onPress={() => handleDetailsPress(item)}
             >
               <Text style={styles.mobileDetailsText}>View Details</Text>
             </Pressable>
@@ -224,7 +239,7 @@ const styles = StyleSheet.create({
   },
 
   detailsBtn: {
-    backgroundColor: "#9333ea",
+    backgroundColor: COLORS.primary,
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 10,
@@ -292,7 +307,7 @@ const styles = StyleSheet.create({
     textAlign: "right"
   },
   mobileDetailsBtn: {
-    backgroundColor: "#9333ea",
+    backgroundColor: COLORS.primary,
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,

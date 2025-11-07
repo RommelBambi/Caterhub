@@ -127,13 +127,19 @@ export default function PartnerSettingsScreen() {
 
   // Change email state
   const [showChangeEmail, setShowChangeEmail] = useState(false);
+  const [emailVerificationPassword, setEmailVerificationPassword] = useState("");
+  const [emailPasswordError, setEmailPasswordError] = useState("");
+  const [emailPasswordVerified, setEmailPasswordVerified] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [updatingEmail, setUpdatingEmail] = useState(false);
+  const [verifyingEmailPassword, setVerifyingEmailPassword] = useState(false);
 
   // Change password state
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
+  const [currentPasswordVerified, setCurrentPasswordVerified] = useState(false);
+  const [verifyingCurrentPassword, setVerifyingCurrentPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordErrors, setPasswordErrors] = useState<{
@@ -142,6 +148,11 @@ export default function PartnerSettingsScreen() {
     confirmPassword?: string;
   }>({});
   const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  // Delete account state
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
+  const [deleteAccountPasswordError, setDeleteAccountPasswordError] = useState("");
 
   // Profile image state
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -297,15 +308,27 @@ export default function PartnerSettingsScreen() {
       const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
       const storagePath = `${userId}/${uniqueFileName}`;
 
-      const response = await fetch(fileUri);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch file: ${response.statusText}`);
+      let fileData: Blob | { uri: string; type: string; name: string };
+
+      if (Platform.OS === 'web') {
+        // Web: Use fetch().blob()
+        const response = await fetch(fileUri);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file: ${response.statusText}`);
+        }
+        fileData = await response.blob();
+      } else {
+        // Mobile: Supabase storage accepts file objects with uri property
+        fileData = {
+          uri: fileUri,
+          type: mimeType || 'application/pdf',
+          name: fileName,
+        } as any;
       }
-      const fileBlob = await response.blob();
 
       const { error } = await supabase.storage
         .from('partner-documents')
-        .upload(storagePath, fileBlob, {
+        .upload(storagePath, fileData as any, {
           contentType: mimeType || 'application/pdf',
           upsert: false,
         });
@@ -550,6 +573,37 @@ export default function PartnerSettingsScreen() {
     }
   }
 
+  // Verify password for email change
+  const verifyEmailPassword = async () => {
+    if (!emailVerificationPassword.trim()) {
+      setEmailPasswordError("Password is required");
+      return;
+    }
+
+    setVerifyingEmailPassword(true);
+    setEmailPasswordError("");
+    try {
+      // Re-authenticate to verify password
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+        email: user?.email || '',
+        password: emailVerificationPassword,
+      });
+
+      if (loginError || !loginData.session) {
+        setEmailPasswordError("Incorrect password. Please try again.");
+        setVerifyingEmailPassword(false);
+        return;
+      }
+
+      setEmailPasswordVerified(true);
+      setEmailPasswordError("");
+    } catch (error: any) {
+      setEmailPasswordError(error?.message || "Failed to verify password. Please try again.");
+    } finally {
+      setVerifyingEmailPassword(false);
+    }
+  };
+
   // Change email functions
   const validateEmail = () => {
     if (!newEmail.trim()) {
@@ -599,17 +653,44 @@ export default function PartnerSettingsScreen() {
     }
   };
 
+  // Verify current password before allowing new password
+  const verifyCurrentPassword = async () => {
+    if (!currentPassword.trim()) {
+      setPasswordErrors({ ...passwordErrors, currentPassword: "Current password is required" });
+      return;
+    }
+
+    setVerifyingCurrentPassword(true);
+    setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
+    try {
+      // Re-authenticate to verify password
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+        email: user?.email || '',
+        password: currentPassword,
+      });
+
+      if (loginError || !loginData.session) {
+        setPasswordErrors({ ...passwordErrors, currentPassword: "Incorrect password. Please try again." });
+        setVerifyingCurrentPassword(false);
+        return;
+      }
+
+      setCurrentPasswordVerified(true);
+      setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
+    } catch (error: any) {
+      setPasswordErrors({ ...passwordErrors, currentPassword: error?.message || "Failed to verify password. Please try again." });
+    } finally {
+      setVerifyingCurrentPassword(false);
+    }
+  };
+
   // Change password functions
   const validatePassword = () => {
     const errors: {
-      currentPassword?: string;
       newPassword?: string;
       confirmPassword?: string;
     } = {};
 
-    if (!currentPassword) {
-      errors.currentPassword = "Enter your current password.";
-    }
     if (!newPassword) {
       errors.newPassword = "Enter a new password.";
     } else if (newPassword.length < 8) {
@@ -630,6 +711,7 @@ export default function PartnerSettingsScreen() {
     setNewPassword("");
     setConfirmPassword("");
     setPasswordErrors({});
+    setCurrentPasswordVerified(false);
   };
 
   const handleChangePassword = async () => {
@@ -660,11 +742,23 @@ export default function PartnerSettingsScreen() {
       const uniqueFileName = `profile-${timestamp}.jpg`;
       const storagePath = `profiles/${userId}/${uniqueFileName}`;
 
-      const response = await fetch(imageUri);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.statusText}`);
+      let imageData: Blob | { uri: string; type: string; name: string };
+
+      if (Platform.OS === 'web') {
+        // Web: Use fetch().blob()
+        const response = await fetch(imageUri);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.statusText}`);
+        }
+        imageData = await response.blob();
+      } else {
+        // Mobile: Supabase storage accepts file objects with uri property
+        imageData = {
+          uri: imageUri,
+          type: mimeType || 'image/jpeg',
+          name: uniqueFileName,
+        } as any;
       }
-      const imageBlob = await response.blob();
 
       // Delete old profile image if exists
       if (profileImage) {
@@ -678,7 +772,7 @@ export default function PartnerSettingsScreen() {
 
       const { error } = await supabase.storage
         .from('avatars')
-        .upload(storagePath, imageBlob, {
+        .upload(storagePath, imageData as any, {
           contentType: mimeType || 'image/jpeg',
           upsert: false,
         });
@@ -787,82 +881,34 @@ export default function PartnerSettingsScreen() {
   };
 
   // Delete account function
-  const handleDeleteAccount = async () => {
-    Alert.alert(
-      "Delete Account",
-      "Are you sure you want to delete your account? This action cannot be undone. All your data, including bookings, packages, and documents, will be permanently deleted.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete Account",
-          style: "destructive",
-          onPress: async () => {
-            // For web, use a prompt dialog
-            if (Platform.OS === 'web') {
-              const password = prompt("Please enter your password to confirm account deletion:");
-              if (!password) {
-                Alert.alert("Error", "Password is required to delete your account.");
-                return;
-              }
-              await confirmDeleteAccount(password);
-            } else {
-              // For mobile, use Alert with input
-              Alert.alert(
-                "Confirm Deletion",
-                "Please enter your password to confirm account deletion:",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: async () => {
-                      // On mobile, we'll need to show a text input modal
-                      // For now, let's use a simpler approach with a confirmation
-                      Alert.alert(
-                        "Final Confirmation",
-                        "This will permanently delete your account. Type 'DELETE' to confirm:",
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          {
-                            text: "Confirm",
-                            style: "destructive",
-                            onPress: async () => {
-                              // Request password separately
-                              const password = prompt("Enter your password:");
-                              if (password) {
-                                await confirmDeleteAccount(password);
-                              }
-                            }
-                          }
-                        ]
-                      );
-                    }
-                  }
-                ]
-              );
-            }
-          }
-        }
-      ]
-    );
+  const handleDeleteAccount = () => {
+    setShowDeleteAccountModal(true);
+    setDeleteAccountPassword("");
+    setDeleteAccountPasswordError("");
   };
 
-  const confirmDeleteAccount = async (password: string) => {
-    if (!password) {
-      Alert.alert("Error", "Password is required to delete your account.");
-      return;
+  const validateDeleteAccountPassword = () => {
+    if (!deleteAccountPassword.trim()) {
+      setDeleteAccountPasswordError("Password is required to delete your account");
+      return false;
     }
+    setDeleteAccountPasswordError("");
+    return true;
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (!validateDeleteAccountPassword()) return;
 
     setDeletingAccount(true);
     try {
       // Re-authenticate to verify password
       const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
         email: user?.email || '',
-        password: password,
+        password: deleteAccountPassword,
       });
 
       if (loginError || !loginData.session) {
-        Alert.alert("Error", "Incorrect password. Account deletion cancelled.");
+        setDeleteAccountPasswordError("Incorrect password. Please try again.");
         setDeletingAccount(false);
         return;
       }
@@ -931,7 +977,7 @@ export default function PartnerSettingsScreen() {
       );
     } catch (error: any) {
       console.error('Error deleting account:', error);
-      Alert.alert("Error", error?.message || "Failed to delete account. Please try again.");
+      setDeleteAccountPasswordError(error?.message || "Failed to delete account. Please try again.");
       setDeletingAccount(false);
     }
   };
@@ -1184,16 +1230,6 @@ export default function PartnerSettingsScreen() {
                     onChangeText={setAbout}
                   />
                 </View>
-
-                <Pressable
-                  style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-                  onPress={handleSaveProfile}
-                  disabled={saving}
-                >
-                  <Text style={styles.saveBtnText}>
-                    {saving ? "Saving..." : "Save Changes"}
-                  </Text>
-                </Pressable>
               </View>
 
               {/* Social Media Card */}
@@ -1295,6 +1331,17 @@ export default function PartnerSettingsScreen() {
                   )}
                 </View>
               </View>
+
+              {/* Save Changes Button */}
+              <Pressable
+                style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+                onPress={handleSaveProfile}
+                disabled={saving}
+              >
+                <Text style={styles.saveBtnText}>
+                  {saving ? "Saving..." : "Save Changes"}
+                </Text>
+              </Pressable>
             </>
           )}
 
@@ -1569,6 +1616,9 @@ export default function PartnerSettingsScreen() {
                       setShowChangePassword(false);
                       setNewEmail("");
                       setEmailError("");
+                      setEmailVerificationPassword("");
+                      setEmailPasswordError("");
+                      setEmailPasswordVerified(false);
                     }}
                     style={styles.changeButton}
                   >
@@ -1581,34 +1631,72 @@ export default function PartnerSettingsScreen() {
 
                 {showChangeEmail && (
                   <View style={styles.changeForm}>
-                    <View style={styles.formGroup}>
-                      <Text style={styles.label}>New Email Address</Text>
-                      <TextInput
-                        style={[styles.input, emailError && styles.inputError]}
-                        placeholder="Enter new email address"
-                        placeholderTextColor="#9ca3af"
-                        value={newEmail}
-                        onChangeText={(text) => {
-                          setNewEmail(text);
-                          setEmailError("");
-                        }}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-                      {emailError ? (
-                        <Text style={styles.errorText}>{emailError}</Text>
-                      ) : null}
-                    </View>
-                    <Pressable
-                      style={[styles.saveBtn, updatingEmail && styles.saveBtnDisabled]}
-                      onPress={handleChangeEmail}
-                      disabled={updatingEmail}
-                    >
-                      <Text style={styles.saveBtnText}>
-                        {updatingEmail ? "Updating..." : "Update Email"}
-                      </Text>
-                    </Pressable>
+                    {!emailPasswordVerified ? (
+                      <>
+                        <View style={styles.formGroup}>
+                          <Text style={styles.label}>Verify Password *</Text>
+                          <Text style={styles.labelSubtext}>
+                            Please enter your current password to verify your identity
+                          </Text>
+                          <TextInput
+                            style={[styles.input, emailPasswordError && styles.inputError]}
+                            placeholder="Enter your current password"
+                            placeholderTextColor="#9ca3af"
+                            value={emailVerificationPassword}
+                            onChangeText={(text) => {
+                              setEmailVerificationPassword(text);
+                              setEmailPasswordError("");
+                            }}
+                            secureTextEntry
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                          />
+                          {emailPasswordError ? (
+                            <Text style={styles.errorText}>{emailPasswordError}</Text>
+                          ) : null}
+                        </View>
+                        <Pressable
+                          style={[styles.saveBtn, verifyingEmailPassword && styles.saveBtnDisabled]}
+                          onPress={verifyEmailPassword}
+                          disabled={verifyingEmailPassword}
+                        >
+                          <Text style={styles.saveBtnText}>
+                            {verifyingEmailPassword ? "Verifying..." : "Verify Password"}
+                          </Text>
+                        </Pressable>
+                      </>
+                    ) : (
+                      <>
+                        <View style={styles.formGroup}>
+                          <Text style={styles.label}>New Email Address *</Text>
+                          <TextInput
+                            style={[styles.input, emailError && styles.inputError]}
+                            placeholder="Enter new email address"
+                            placeholderTextColor="#9ca3af"
+                            value={newEmail}
+                            onChangeText={(text) => {
+                              setNewEmail(text);
+                              setEmailError("");
+                            }}
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                          />
+                          {emailError ? (
+                            <Text style={styles.errorText}>{emailError}</Text>
+                          ) : null}
+                        </View>
+                        <Pressable
+                          style={[styles.saveBtn, updatingEmail && styles.saveBtnDisabled]}
+                          onPress={handleChangeEmail}
+                          disabled={updatingEmail}
+                        >
+                          <Text style={styles.saveBtnText}>
+                            {updatingEmail ? "Updating..." : "Update Email"}
+                          </Text>
+                        </Pressable>
+                      </>
+                    )}
                   </View>
                 )}
 
@@ -1634,75 +1722,98 @@ export default function PartnerSettingsScreen() {
 
                 {showChangePassword && (
                   <View style={styles.changeForm}>
-                    <View style={styles.formGroup}>
-                      <Text style={styles.label}>Current Password</Text>
-                      <TextInput
-                        style={[styles.input, passwordErrors.currentPassword && styles.inputError]}
-                        placeholder="Enter current password"
-                        placeholderTextColor="#9ca3af"
-                        value={currentPassword}
-                        onChangeText={(text) => {
-                          setCurrentPassword(text);
-                          setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
-                        }}
-                        secureTextEntry
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-                      {passwordErrors.currentPassword ? (
-                        <Text style={styles.errorText}>{passwordErrors.currentPassword}</Text>
-                      ) : null}
-                    </View>
+                    {!currentPasswordVerified ? (
+                      <>
+                        <View style={styles.formGroup}>
+                          <Text style={styles.label}>Current Password *</Text>
+                          <Text style={styles.labelSubtext}>
+                            Please enter your current password to verify your identity
+                          </Text>
+                          <TextInput
+                            style={[styles.input, passwordErrors.currentPassword && styles.inputError]}
+                            placeholder="Enter current password"
+                            placeholderTextColor="#9ca3af"
+                            value={currentPassword}
+                            onChangeText={(text) => {
+                              setCurrentPassword(text);
+                              setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
+                            }}
+                            secureTextEntry
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                          />
+                          {passwordErrors.currentPassword ? (
+                            <Text style={styles.errorText}>{passwordErrors.currentPassword}</Text>
+                          ) : null}
+                        </View>
+                        <Pressable
+                          style={[styles.saveBtn, verifyingCurrentPassword && styles.saveBtnDisabled]}
+                          onPress={verifyCurrentPassword}
+                          disabled={verifyingCurrentPassword}
+                        >
+                          <Text style={styles.saveBtnText}>
+                            {verifyingCurrentPassword ? "Verifying..." : "Verify Password"}
+                          </Text>
+                        </Pressable>
+                      </>
+                    ) : (
+                      <>
+                        <View style={styles.verifiedBadge}>
+                          <Ionicons name="checkmark-circle" size={20} color={COLORS.success || "#22c55e"} />
+                          <Text style={styles.verifiedText}>Password verified</Text>
+                        </View>
 
-                    <View style={styles.formGroup}>
-                      <Text style={styles.label}>New Password</Text>
-                      <TextInput
-                        style={[styles.input, passwordErrors.newPassword && styles.inputError]}
-                        placeholder="Enter new password (min. 8 characters)"
-                        placeholderTextColor="#9ca3af"
-                        value={newPassword}
-                        onChangeText={(text) => {
-                          setNewPassword(text);
-                          setPasswordErrors({ ...passwordErrors, newPassword: undefined });
-                        }}
-                        secureTextEntry
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-                      {passwordErrors.newPassword ? (
-                        <Text style={styles.errorText}>{passwordErrors.newPassword}</Text>
-                      ) : null}
-                    </View>
+                        <View style={styles.formGroup}>
+                          <Text style={styles.label}>New Password *</Text>
+                          <TextInput
+                            style={[styles.input, passwordErrors.newPassword && styles.inputError]}
+                            placeholder="Enter new password (min. 8 characters)"
+                            placeholderTextColor="#9ca3af"
+                            value={newPassword}
+                            onChangeText={(text) => {
+                              setNewPassword(text);
+                              setPasswordErrors({ ...passwordErrors, newPassword: undefined });
+                            }}
+                            secureTextEntry
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                          />
+                          {passwordErrors.newPassword ? (
+                            <Text style={styles.errorText}>{passwordErrors.newPassword}</Text>
+                          ) : null}
+                        </View>
 
-                    <View style={styles.formGroup}>
-                      <Text style={styles.label}>Confirm New Password</Text>
-                      <TextInput
-                        style={[styles.input, passwordErrors.confirmPassword && styles.inputError]}
-                        placeholder="Confirm new password"
-                        placeholderTextColor="#9ca3af"
-                        value={confirmPassword}
-                        onChangeText={(text) => {
-                          setConfirmPassword(text);
-                          setPasswordErrors({ ...passwordErrors, confirmPassword: undefined });
-                        }}
-                        secureTextEntry
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-                      {passwordErrors.confirmPassword ? (
-                        <Text style={styles.errorText}>{passwordErrors.confirmPassword}</Text>
-                      ) : null}
-                    </View>
+                        <View style={styles.formGroup}>
+                          <Text style={styles.label}>Confirm New Password *</Text>
+                          <TextInput
+                            style={[styles.input, passwordErrors.confirmPassword && styles.inputError]}
+                            placeholder="Confirm new password"
+                            placeholderTextColor="#9ca3af"
+                            value={confirmPassword}
+                            onChangeText={(text) => {
+                              setConfirmPassword(text);
+                              setPasswordErrors({ ...passwordErrors, confirmPassword: undefined });
+                            }}
+                            secureTextEntry
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                          />
+                          {passwordErrors.confirmPassword ? (
+                            <Text style={styles.errorText}>{passwordErrors.confirmPassword}</Text>
+                          ) : null}
+                        </View>
 
-                    <Pressable
-                      style={[styles.saveBtn, updatingPassword && styles.saveBtnDisabled]}
-                      onPress={handleChangePassword}
-                      disabled={updatingPassword}
-                    >
-                      <Text style={styles.saveBtnText}>
-                        {updatingPassword ? "Updating..." : "Update Password"}
-                      </Text>
-                    </Pressable>
+                        <Pressable
+                          style={[styles.saveBtn, updatingPassword && styles.saveBtnDisabled]}
+                          onPress={handleChangePassword}
+                          disabled={updatingPassword}
+                        >
+                          <Text style={styles.saveBtnText}>
+                            {updatingPassword ? "Updating..." : "Update Password"}
+                          </Text>
+                        </Pressable>
+                      </>
+                    )}
                   </View>
                 )}
 
@@ -1715,32 +1826,42 @@ export default function PartnerSettingsScreen() {
                   </View>
                 </View>
 
-                <View style={styles.logoutSection}>
-                  <Pressable style={styles.logoutBtn} onPress={handleLogout}>
-                    <Text style={styles.logoutBtnText}>Log Out</Text>
-                  </Pressable>
-                </View>
+                {!isWeb && (
+                  <>
+                    <View style={styles.logoutSection}>
+                      <Pressable style={styles.logoutBtn} onPress={handleLogout}>
+                        <Text style={styles.logoutBtnText}>Log Out</Text>
+                      </Pressable>
+                    </View>
+
+                    {/* Separator */}
+                    <View style={styles.dangerZoneSeparator} />
+                  </>
+                )}
+
+                {isWeb && (
+                  <View style={styles.dangerZoneSeparator} />
+                )}
 
                 <View style={styles.deleteAccountSection}>
-                  <Text style={styles.deleteAccountWarning}>
-                    ⚠️ Deleting your account will permanently remove all your data, including bookings, packages, and documents. This action cannot be undone.
-                  </Text>
+                  <View style={styles.deleteAccountHeader}>
+                    <View style={styles.deleteAccountIconContainer}>
+                      <Ionicons name="warning" size={24} color={COLORS.danger || "#ef4444"} />
+                    </View>
+                    <View style={styles.deleteAccountHeaderText}>
+                      <Text style={styles.deleteAccountTitle}>Danger Zone</Text>
+                      <Text style={styles.deleteAccountWarning}>
+                        Once you delete your account, there is no going back. All your data, including bookings, packages, and documents, will be permanently deleted.
+                      </Text>
+                    </View>
+                  </View>
                   <Pressable
                     style={[styles.deleteAccountBtn, deletingAccount && styles.deleteAccountBtnDisabled]}
                     onPress={handleDeleteAccount}
                     disabled={deletingAccount}
                   >
-                    {deletingAccount ? (
-                      <>
-                        <ActivityIndicator size="small" color="#fff" />
-                        <Text style={styles.deleteAccountBtnText}>Deleting...</Text>
-                      </>
-                    ) : (
-                      <>
-                        <Ionicons name="trash" size={18} color="#fff" />
-                        <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
-                      </>
-                    )}
+                    <Ionicons name="trash" size={18} color="#fff" />
+                    <Text style={styles.deleteAccountBtnText}>Delete My Account</Text>
                   </Pressable>
                 </View>
               </View>
@@ -1749,6 +1870,102 @@ export default function PartnerSettingsScreen() {
         </ScrollView>
       </View>
       {!isWeb && <BottomNav />}
+
+      {/* Delete Account Modal */}
+      <Modal
+        visible={showDeleteAccountModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          if (!deletingAccount) {
+            setShowDeleteAccountModal(false);
+            setDeleteAccountPassword("");
+            setDeleteAccountPasswordError("");
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Delete Account</Text>
+              <Pressable
+                onPress={() => {
+                  if (!deletingAccount) {
+                    setShowDeleteAccountModal(false);
+                    setDeleteAccountPassword("");
+                    setDeleteAccountPasswordError("");
+                  }
+                }}
+                style={styles.modalCloseButton}
+                disabled={deletingAccount}
+              >
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalWarning}>
+              ⚠️ This action cannot be undone. All your data will be permanently deleted.
+            </Text>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Enter Password to Confirm *</Text>
+              <Text style={styles.labelSubtext}>
+                Please enter your password to confirm account deletion
+              </Text>
+              <TextInput
+                style={[styles.input, deleteAccountPasswordError && styles.inputError]}
+                placeholder="Enter your password"
+                placeholderTextColor="#9ca3af"
+                value={deleteAccountPassword}
+                onChangeText={(text) => {
+                  setDeleteAccountPassword(text);
+                  setDeleteAccountPasswordError("");
+                }}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!deletingAccount}
+              />
+              {deleteAccountPasswordError ? (
+                <Text style={styles.errorText}>{deleteAccountPasswordError}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalCancelButton]}
+                onPress={() => {
+                  if (!deletingAccount) {
+                    setShowDeleteAccountModal(false);
+                    setDeleteAccountPassword("");
+                    setDeleteAccountPasswordError("");
+                  }
+                }}
+                disabled={deletingAccount}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalDeleteButton, deletingAccount && styles.modalDeleteButtonDisabled]}
+                onPress={confirmDeleteAccount}
+                disabled={deletingAccount}
+              >
+                {deletingAccount ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.modalDeleteButtonText}>Deleting...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="trash" size={18} color="#fff" />
+                    <Text style={styles.modalDeleteButtonText}>Delete Account</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Map Picker Modal (Mobile only) */}
       {Platform.OS !== 'web' && (
@@ -2034,7 +2251,12 @@ const styles = StyleSheet.create({
     marginTop: Platform.OS === 'web' ? 16 : 20,
     paddingTop: Platform.OS === 'web' ? 16 : 20,
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb"
+    borderTopColor: "#e5e7eb",
+    marginBottom: Platform.OS === 'web' ? 24 : 20
+  },
+  dangerZoneSeparator: {
+    height: Platform.OS === 'web' ? 32 : 28,
+    width: "100%"
   },
   logoutBtn: {
     backgroundColor: "#fff",
@@ -2375,6 +2597,175 @@ const styles = StyleSheet.create({
     borderRadius: Platform.OS === 'web' ? 28 : 32,
     borderWidth: 2,
     borderColor: COLORS.primary
+  },
+
+  // Verification Badge
+  verifiedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: (COLORS.success || "#22c55e") + '15',
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 10 : 12,
+    paddingHorizontal: Platform.OS === 'web' ? 14 : 16,
+    marginBottom: Platform.OS === 'web' ? 16 : 14,
+    gap: 8
+  },
+  verifiedText: {
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    fontWeight: "600",
+    color: COLORS.success || "#22c55e"
+  },
+  labelSubtext: {
+    fontSize: Platform.OS === 'web' ? 11 : 12,
+    color: COLORS.textLight,
+    marginTop: 4,
+    marginBottom: 8
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Platform.OS === 'web' ? 20 : 16
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: Platform.OS === 'web' ? 12 : 16,
+    width: Platform.OS === 'web' ? 500 : "100%",
+    maxWidth: Platform.OS === 'web' ? 500 : "100%",
+    padding: Platform.OS === 'web' ? 24 : 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Platform.OS === 'web' ? 16 : 14
+  },
+  modalTitle: {
+    fontSize: Platform.OS === 'web' ? 20 : 22,
+    fontWeight: "700",
+    color: "#111827"
+  },
+  modalCloseButton: {
+    padding: 4
+  },
+  modalWarning: {
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    color: COLORS.danger || "#ef4444",
+    marginBottom: Platform.OS === 'web' ? 20 : 18,
+    lineHeight: 20
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: Platform.OS === 'web' ? 12 : 10,
+    marginTop: Platform.OS === 'web' ? 20 : 18
+  },
+  modalCancelButton: {
+    flex: 1,
+    backgroundColor: "#f3f4f6",
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 18,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  modalCancelButtonText: {
+    color: "#374151",
+    fontWeight: "600",
+    fontSize: Platform.OS === 'web' ? 14 : 15
+  },
+  modalDeleteButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.danger || "#ef4444",
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 18,
+    gap: 8
+  },
+  modalDeleteButtonDisabled: {
+    opacity: 0.6
+  },
+  modalDeleteButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: Platform.OS === 'web' ? 14 : 15
+  },
+
+  // Delete Account Section Styles
+  deleteAccountSection: {
+    marginTop: 0,
+    paddingTop: Platform.OS === 'web' ? 24 : 20,
+    borderTopWidth: 2,
+    borderTopColor: "#fee2e2",
+    backgroundColor: "#fef2f2",
+    borderRadius: Platform.OS === 'web' ? 12 : 16,
+    padding: Platform.OS === 'web' ? 20 : 16,
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    marginBottom: Platform.OS === 'web' ? 24 : 20
+  },
+  deleteAccountHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: Platform.OS === 'web' ? 16 : 14,
+    gap: Platform.OS === 'web' ? 12 : 10
+  },
+  deleteAccountIconContainer: {
+    width: Platform.OS === 'web' ? 40 : 36,
+    height: Platform.OS === 'web' ? 40 : 36,
+    borderRadius: Platform.OS === 'web' ? 20 : 18,
+    backgroundColor: (COLORS.danger || "#ef4444") + '20',
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0
+  },
+  deleteAccountHeaderText: {
+    flex: 1
+  },
+  deleteAccountTitle: {
+    fontSize: Platform.OS === 'web' ? 16 : 18,
+    fontWeight: "700",
+    color: COLORS.danger || "#ef4444",
+    marginBottom: Platform.OS === 'web' ? 6 : 4
+  },
+  deleteAccountWarning: {
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    color: "#991b1b",
+    lineHeight: Platform.OS === 'web' ? 20 : 22
+  },
+  deleteAccountBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.danger || "#ef4444",
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 18,
+    width: "100%",
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  deleteAccountBtnDisabled: {
+    opacity: 0.6
+  },
+  deleteAccountBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: Platform.OS === 'web' ? 14 : 15
   }
 });
 

@@ -590,16 +590,27 @@ function Step3Compliance({
       const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
       const storagePath = `${userId}/${uniqueFileName}`;
 
-      // Fetch file and convert to blob - works on both web and mobile
-      const response = await fetch(fileUri);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch file: ${response.statusText}`);
+      let fileData: Blob | { uri: string; type: string; name: string };
+
+      if (Platform.OS === 'web') {
+        // Web: Use fetch().blob()
+        const response = await fetch(fileUri);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file: ${response.statusText}`);
+        }
+        fileData = await response.blob();
+      } else {
+        // Mobile: Supabase storage accepts file objects with uri property
+        fileData = {
+          uri: fileUri,
+          type: mimeType || 'application/pdf',
+          name: fileName,
+        } as any;
       }
-      const fileBlob = await response.blob();
 
       const { error } = await supabase.storage
         .from('partner-documents')
-        .upload(storagePath, fileBlob, {
+        .upload(storagePath, fileData as any, {
           contentType: mimeType || 'application/pdf',
           upsert: false,
         });
@@ -1564,20 +1575,27 @@ export default function PartnerApplicationScreen() {
                         const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
                         const storagePath = `${user.id}/${uniqueFileName}`;
 
-                        // Read file as blob
-                        let fileBlob: Blob;
+                        // Read file - platform-specific handling
+                        let fileData: Blob | { uri: string; type: string; name: string };
                         if (Platform.OS === 'web') {
                           const response = await fetch(tempFile.uri);
-                          fileBlob = await response.blob();
+                          if (!response.ok) {
+                            throw new Error(`Failed to fetch file: ${response.statusText}`);
+                          }
+                          fileData = await response.blob();
                         } else {
-                          const response = await fetch(tempFile.uri);
-                          fileBlob = await response.blob();
+                          // Mobile: Supabase storage accepts file objects with uri property
+                          fileData = {
+                            uri: tempFile.uri,
+                            type: tempFile.mimeType || 'application/pdf',
+                            name: tempFile.name,
+                          } as any;
                         }
 
                         // Upload to Supabase Storage
                         const { error: uploadError } = await supabase.storage
                           .from('partner-documents')
-                          .upload(storagePath, fileBlob, {
+                          .upload(storagePath, fileData as any, {
                             contentType: tempFile.mimeType || 'application/pdf',
                             upsert: false,
                           });

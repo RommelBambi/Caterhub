@@ -1,11 +1,12 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, Platform } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Platform, ActivityIndicator } from "react-native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
 import { isWeb } from "../../utils/platform";
+import { supabase } from "../../services/supabase";
 
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
@@ -17,45 +18,238 @@ export default function PartnerDashboardScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
   const { user } = useAuth();
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [kpis, setKpis] = useState([
+    { label: "New Orders (7d)", value: "0", sub: "Last 7 days" },
+    { label: "Revenue (₱)", value: "0", sub: "Last 30 days" },
+    { label: "Pending Orders", value: "0", sub: "Awaiting action" }
+  ]);
 
-  const bookings: Booking[] = [
-    {
-      id: "ORD-2025-014",
-      client: "Ana Reyes",
-      date: "Oct 30, 2025",
-      headcount: 80,
-      status: "pending",
-      total: "₱18,000"
-    },
-    {
-      id: "ORD-2025-013",
-      client: "Mark Santos",
-      date: "Oct 29, 2025",
-      headcount: 50,
-      status: "pending",
-      total: "₱12,500"
-    },
-    {
-      id: "ORD-2025-012",
-      client: "Eduardo Cruz",
-      date: "Oct 28, 2025",
-      headcount: 120,
-      status: "pending",
-      total: "₱0"
+  // Fetch bookings and calculate KPIs
+  const fetchDashboardData = async () => {
+    if (!user) {
+      setLoading(false);
+      return;
     }
-  ];
 
-  const pendingCount = bookings.filter((b) => b.status === "pending").length;
-  const kpis = [
-    { label: "New Orders (7d)", value: "5", sub: "↑ 2 vs last week" },
-    { label: "Revenue (₱)", value: "22,900", sub: "Last 30 days" },
-    { label: "Pending Orders", value: String(pendingCount), sub: "Awaiting action" }
-  ];
+    try {
+      // Get packages for this caterer
+      const { data: packages, error: packagesError } = await supabase
+        .from('packages')
+        .select('id')
+        .eq('caterer_id', user.id)
+        .eq('is_active', true);
+
+      const packageIds = packages?.map(p => p.id) || [];
+
+      // Get services for this caterer (fallback)
+      const { data: services, error: servicesError } = await supabase
+        .from('services')
+        .select('id')
+        .eq('user_id', user.id);
+
+      const serviceIds = services?.map(s => s.id) || [];
+
+      if (packageIds.length === 0 && serviceIds.length === 0) {
+        setBookings([]);
+        setKpis([
+          { label: "New Orders (7d)", value: "0", sub: "Last 7 days" },
+          { label: "Revenue (₱)", value: "0", sub: "Last 30 days" },
+          { label: "Pending Orders", value: "0", sub: "Awaiting action" }
+        ]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch all bookings for this caterer
+      let bookingsQuery = supabase
+        .from('bookings')
+        .select(`
+          *,
+          services:service_id (
+            id,
+            name,
+            price_per_head,
+            user_id
+          ),
+          packages:package_id (
+            id,
+            name,
+            price,
+            caterer_id
+          ),
+          customer:user_id (
+            id,
+            username,
+            email
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      // Filter by package_id or service_id
+      if (packageIds.length > 0) {
+        bookingsQuery = bookingsQuery.in('package_id', packageIds);
+      } else if (serviceIds.length > 0) {
+        bookingsQuery = bookingsQuery.in('service_id', serviceIds);
+      }
+
+      const { data: allBookings, error } = await bookingsQuery;
+
+      if (error) {
+        console.error('Error fetching bookings:', error);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch customer data if missing
+      const bookingsWithCustomers = await Promise.all(
+        (allBookings || []).map(async (booking: any) => {
+          if (booking.customer) {
+            return booking;
+          }
+
+          const { data: customerData } = await supabase
+            .from('users')
+            .select('id, username, email')
+            .eq('id', booking.user_id)
+            .single();
+
+          return {
+            ...booking,
+            customer: customerData || {
+              id: booking.user_id,
+              username: 'Unknown Customer',
+              email: 'N/A',
+            },
+          };
+        })
+      );
+
+      // Calculate date ranges
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Calculate KPIs
+      let newOrders7d = 0;
+      let revenue30d = 0;
+      let pendingCount = 0;
+
+      bookingsWithCustomers.forEach((booking: any) => {
+        const bookingDate = new Date(booking.created_at);
+        
+        // New orders in last 7 days
+        if (bookingDate >= sevenDaysAgo) {
+          newOrders7d++;
+        }
+
+        // Revenue in last 30 days (only confirmed/completed bookings)
+        if (bookingDate >= thirtyDaysAgo && (booking.status === 'CONFIRMED' || booking.status === 'COMPLETED')) {
+          let amount = 0;
+          if (booking.packages && booking.packages.price) {
+            amount = parseFloat(booking.packages.price) || 0;
+          } else if (booking.services && booking.services.price_per_head) {
+            amount = (parseFloat(booking.services.price_per_head) || 0) * (booking.guests || 0);
+          }
+          revenue30d += amount;
+        }
+
+        // Pending orders
+        if (booking.status === 'PENDING') {
+          pendingCount++;
+        }
+      });
+
+      // Transform bookings to Booking format (show only 3 most recent)
+      const recentBookings: Booking[] = bookingsWithCustomers
+        .slice(0, 3)
+        .map((booking: any) => {
+          const eventDate = new Date(booking.event_date);
+          const formattedDate = eventDate.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          });
+
+          let total = "₱0";
+          if (booking.packages && booking.packages.price) {
+            total = `₱${parseFloat(booking.packages.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          } else if (booking.services && booking.services.price_per_head) {
+            const amount = (parseFloat(booking.services.price_per_head) || 0) * (booking.guests || 0);
+            total = `₱${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          }
+
+          // Map status
+          let status: "pending" | "accepted" | "declined" | "refunded" = "pending";
+          if (booking.status === 'CONFIRMED') status = "accepted";
+          else if (booking.status === 'DECLINED') status = "declined";
+          else if (booking.status === 'CANCELLED') status = "refunded";
+          else if (booking.status === 'PENDING') status = "pending";
+
+          return {
+            id: `ORD-${booking.id}`,
+            client: booking.customer?.username || 'Unknown Customer',
+            date: formattedDate,
+            headcount: booking.guests || 0,
+            status,
+            total,
+            bookingId: booking.id // Store the database booking ID for navigation
+          };
+        });
+
+      setBookings(recentBookings);
+      setKpis([
+        { 
+          label: "New Orders (7d)", 
+          value: String(newOrders7d), 
+          sub: "Last 7 days" 
+        },
+        { 
+          label: "Revenue (₱)", 
+          value: revenue30d.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), 
+          sub: "Last 30 days" 
+        },
+        { 
+          label: "Pending Orders", 
+          value: String(pendingCount), 
+          sub: "Awaiting action" 
+        }
+      ]);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch data on mount and when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchDashboardData();
+    }, [user])
+  );
 
   if (!user) {
     return (
       <View style={styles.loadingWrap}>
         <Text style={{ color: "#6b6b6b" }}>Loading dashboard…</Text>
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.screen}>
+        {isWeb && <Sidebar />}
+        <View style={styles.mainArea}>
+          <TopBar title="Dashboard" />
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="large" color="#FF8000" />
+            <Text style={{ color: "#6b6b6b", marginTop: 12 }}>Loading dashboard…</Text>
+          </View>
+        </View>
+        {!isWeb && <BottomNav />}
       </View>
     );
   }
@@ -107,9 +301,86 @@ export default function PartnerDashboardScreen() {
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Recent Orders</Text>
-              <Text style={styles.smallMuted}>3 latest</Text>
+              <Text style={styles.smallMuted}>
+                {bookings.length > 0 ? `${bookings.length} latest` : 'No orders yet'}
+              </Text>
             </View>
-            <BookingList data={bookings} />
+            {bookings.length > 0 ? (
+              <BookingList 
+                data={bookings} 
+                onDetailsPress={async (booking) => {
+                  // Fetch full booking data and navigate to details
+                  if (booking.bookingId) {
+                    try {
+                      const { data: bookingData, error } = await supabase
+                        .from('bookings')
+                        .select(`
+                          *,
+                          services:service_id (
+                            id,
+                            name,
+                            price_per_head,
+                            user_id
+                          ),
+                          packages:package_id (
+                            id,
+                            name,
+                            price,
+                            caterer_id
+                          ),
+                          customer:user_id (
+                            id,
+                            username,
+                            email
+                          )
+                        `)
+                        .eq('id', booking.bookingId)
+                        .single();
+
+                      if (error || !bookingData) {
+                        console.error('Error fetching booking details:', error);
+                        return;
+                      }
+
+                      // Transform to Order format expected by PartnerOrderDetails
+                      const order = {
+                        id: bookingData.id,
+                        bookingId: `ORD-${bookingData.id}`,
+                        customerName: bookingData.customer?.username || 'Unknown Customer',
+                        customerEmail: bookingData.customer?.email || '',
+                        customerId: bookingData.user_id || '',
+                        serviceName: bookingData.services?.name || bookingData.packages?.name || 'N/A',
+                        packageName: bookingData.packages?.name,
+                        packagePrice: bookingData.packages?.price ? `₱${parseFloat(bookingData.packages.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : undefined,
+                        selectedDishes: [], // Will be populated from booking data if available
+                        venue: '', // Will be populated from booking data if available
+                        inclusions: [], // Will be populated from booking data if available
+                        status: bookingData.status as "PENDING" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED",
+                        eventDate: bookingData.event_date,
+                        guests: bookingData.guests || 0,
+                        totalPrice: bookingData.packages?.price ? `₱${parseFloat(bookingData.packages.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 
+                          (bookingData.services?.price_per_head ? `₱${((parseFloat(bookingData.services.price_per_head) || 0) * (bookingData.guests || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₱0'),
+                        notes: bookingData.notes || undefined
+                      };
+
+                      navigation.navigate("PartnerOrderDetails", { order } as any);
+                    } catch (error) {
+                      console.error('Error navigating to order details:', error);
+                    }
+                  } else {
+                    // Fallback: navigate to orders screen
+                    navigation.navigate("PartnerOrders");
+                  }
+                }}
+              />
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>No recent orders</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  New bookings will appear here once customers place orders.
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Footer */}
@@ -229,6 +500,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#ffffff"
+  },
+  emptyState: {
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  emptyStateText: {
+    fontSize: Platform.OS === 'web' ? 16 : 18,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 8
+  },
+  emptyStateSubtext: {
+    fontSize: Platform.OS === 'web' ? 14 : 15,
+    color: "#6b7280",
+    textAlign: "center"
   }
 });
 
