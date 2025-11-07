@@ -206,6 +206,11 @@ export default function PartnerSettingsScreen() {
   const [showLocationsSaveConfirmationModal, setShowLocationsSaveConfirmationModal] = useState(false);
   const [showLocationsSaveSuccessModal, setShowLocationsSaveSuccessModal] = useState(false);
   const [savingLocations, setSavingLocations] = useState(false);
+  
+  // Email and Password change success modals
+  const [showEmailSuccessModal, setShowEmailSuccessModal] = useState(false);
+  const [showPasswordSuccessModal, setShowPasswordSuccessModal] = useState(false);
+  const [showDeleteAccountSuccessModal, setShowDeleteAccountSuccessModal] = useState(false);
 
   // Profile image state
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -825,23 +830,16 @@ export default function PartnerSettingsScreen() {
       // Refresh user data
       refreshUser();
 
-      Alert.alert(
-        "Email Updated",
-        "Your email address has been updated successfully.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              setNewEmail("");
-              setShowChangeEmail(false);
-              setEmailVerificationPassword("");
-              setEmailPasswordError("");
-              setEmailPasswordVerified(false);
-              setShowEmailVerificationPassword(false);
-            }
-          }
-        ]
-      );
+      // Reset form
+      setNewEmail("");
+      setShowChangeEmail(false);
+      setEmailVerificationPassword("");
+      setEmailPasswordError("");
+      setEmailPasswordVerified(false);
+      setShowEmailVerificationPassword(false);
+
+      // Show success modal
+      setShowEmailSuccessModal(true);
     } catch (error: any) {
       console.error('Email change error:', error);
       Alert.alert("Error", error?.message || "Failed to update email. Please try again.");
@@ -923,7 +921,9 @@ export default function PartnerSettingsScreen() {
       await changePassword(currentPassword, newPassword);
       resetPasswordForm();
       setShowChangePassword(false);
-      Alert.alert("Success", "Password updated successfully.");
+      
+      // Show success modal
+      setShowPasswordSuccessModal(true);
     } catch (error: any) {
       Alert.alert("Error", error?.message || "Failed to update password. Please try again.");
     } finally {
@@ -1131,87 +1131,42 @@ export default function PartnerSettingsScreen() {
 
     setDeletingAccount(true);
     try {
-      // Re-authenticate to verify password
-      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-        email: user?.email || '',
-        password: deleteAccountPassword,
+      // Call Supabase Edge Function to delete account
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session. Please log in again.');
+      }
+
+      const { data, error } = await supabase.functions.invoke('delete-account', {
+        body: {
+          password: deleteAccountPassword,
+        },
       });
 
-      if (loginError || !loginData.session) {
-        setDeleteAccountPasswordError("Incorrect password. Please try again.");
-        setDeletingAccount(false);
-        return;
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to delete account. Please try again.');
       }
 
-      // Delete user from users table
-      const { error: deleteError } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', user?.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      // Delete user's storage files (documents, profile image, etc.)
-      try {
-        if (user?.id) {
-          // Delete profile image
-          if (profileImage) {
-            try {
-              // Extract path from URL - format: .../avatars/profiles/userId/filename
-              const urlParts = profileImage.split('/');
-              const bucketIndex = urlParts.findIndex(part => part === 'avatars');
-              if (bucketIndex >= 0 && bucketIndex < urlParts.length - 1) {
-                // Get path after bucket name
-                const oldPath = urlParts.slice(bucketIndex + 1).join('/');
-                await supabase.storage.from('avatars').remove([oldPath]);
-              }
-            } catch (error) {
-              console.warn('Error deleting profile image:', error);
-            }
-          }
-          // Delete documents
-          try {
-            const { data: files } = await supabase.storage
-              .from('partner-documents')
-              .list(user.id);
-            if (files && files.length > 0) {
-              const filePaths = files.map(f => `${user.id}/${f.name}`);
-              await supabase.storage.from('partner-documents').remove(filePaths);
-            }
-          } catch (error) {
-            console.warn('Error deleting documents:', error);
-          }
+      if (data?.error) {
+        console.error('Account deletion error:', data.error);
+        let errorMessage = data.error || 'Failed to delete account. Please try again.';
+        
+        // Handle specific error cases
+        if (data.error.includes('Invalid password')) {
+          errorMessage = 'Incorrect password. Please try again.';
         }
-      } catch (storageError) {
-        console.warn('Error deleting storage files:', storageError);
+        
+        throw new Error(errorMessage);
       }
 
-      // Sign out and clear local data
-      await logout();
-      
-      Alert.alert(
-        "Account Deleted",
-        "Your account has been permanently deleted.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              // Navigate to login
-              if (isWeb) {
-                window.location.href = '/';
-              } else {
-                // Navigate to login screen - use navigation.replace or navigate to root
-                navigation.getParent()?.reset({
-                  index: 0,
-                  routes: [{ name: 'Auth' as any }],
-                });
-              }
-            }
-          }
-        ]
-      );
+      // Close delete account modal
+      setShowDeleteAccountModal(false);
+      setDeleteAccountPassword('');
+      setDeleteAccountPasswordError('');
+
+      // Show success modal
+      setShowDeleteAccountSuccessModal(true);
     } catch (error: any) {
       console.error('Error deleting account:', error);
       setDeleteAccountPasswordError(error?.message || "Failed to delete account. Please try again.");
@@ -2477,6 +2432,126 @@ export default function PartnerSettingsScreen() {
                 style={[styles.modalSuccessButton]}
                 onPress={() => {
                   setShowLocationsSaveSuccessModal(false);
+                }}
+              >
+                <Text style={styles.modalSuccessButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Email Change Success Modal */}
+      <Modal
+        visible={showEmailSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowEmailSuccessModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.successIconContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={COLORS.success || "#22c55e"} />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Email Updated Successfully!</Text>
+            <Text style={styles.successMessage}>
+              Your email address has been updated successfully.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalSuccessButton]}
+                onPress={() => {
+                  setShowEmailSuccessModal(false);
+                }}
+              >
+                <Text style={styles.modalSuccessButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Password Change Success Modal */}
+      <Modal
+        visible={showPasswordSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowPasswordSuccessModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.successIconContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={COLORS.success || "#22c55e"} />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Password Updated Successfully!</Text>
+            <Text style={styles.successMessage}>
+              Your password has been updated successfully. Please use your new password to sign in next time.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalSuccessButton]}
+                onPress={() => {
+                  setShowPasswordSuccessModal(false);
+                }}
+              >
+                <Text style={styles.modalSuccessButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Account Success Modal */}
+      <Modal
+        visible={showDeleteAccountSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          // Don't allow closing without navigating
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.successIconContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={COLORS.success || "#22c55e"} />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Account Deleted Successfully!</Text>
+            <Text style={styles.successMessage}>
+              Your account has been permanently deleted. You will be signed out and redirected to the login screen.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalSuccessButton]}
+                onPress={async () => {
+                  setShowDeleteAccountSuccessModal(false);
+                  // Sign out and clear local data
+                  await logout();
+                  // Navigate to login
+                  if (isWeb) {
+                    window.location.href = '/';
+                  } else {
+                    // Navigate to login screen
+                    navigation.getParent()?.reset({
+                      index: 0,
+                      routes: [{ name: 'Auth' as any }],
+                    });
+                  }
                 }}
               >
                 <Text style={styles.modalSuccessButtonText}>OK</Text>

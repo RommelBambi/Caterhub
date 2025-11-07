@@ -12,7 +12,7 @@ import {
   Modal,
   Platform,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -98,6 +98,15 @@ export default function AccountScreen() {
     message: '',
     type: 'success',
   });
+
+  // Delete account state
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
+  const [deleteAccountPasswordError, setDeleteAccountPasswordError] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [showDeleteAccountSuccessModal, setShowDeleteAccountSuccessModal] = useState(false);
+
+  const navigation = useNavigation();
 
   // Load profile image and locations
   useFocusEffect(
@@ -467,6 +476,70 @@ export default function AccountScreen() {
       showSnackbar(message, 'error');
     } finally {
       setUpdatingPassword(false);
+    }
+  };
+
+  // Delete account functions
+  const handleDeleteAccount = () => {
+    setShowDeleteAccountModal(true);
+    setDeleteAccountPassword('');
+    setDeleteAccountPasswordError('');
+  };
+
+  const validateDeleteAccountPassword = () => {
+    if (!deleteAccountPassword.trim()) {
+      setDeleteAccountPasswordError('Password is required to delete your account');
+      return false;
+    }
+    setDeleteAccountPasswordError('');
+    return true;
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (!validateDeleteAccountPassword()) return;
+
+    setDeletingAccount(true);
+    try {
+      // Call Supabase Edge Function to delete account
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session. Please log in again.');
+      }
+
+      const { data, error } = await supabase.functions.invoke('delete-account', {
+        body: {
+          password: deleteAccountPassword,
+        },
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to delete account. Please try again.');
+      }
+
+      if (data?.error) {
+        console.error('Account deletion error:', data.error);
+        let errorMessage = data.error || 'Failed to delete account. Please try again.';
+        
+        // Handle specific error cases
+        if (data.error.includes('Invalid password')) {
+          errorMessage = 'Incorrect password. Please try again.';
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      // Close delete account modal
+      setShowDeleteAccountModal(false);
+      setDeleteAccountPassword('');
+      setDeleteAccountPasswordError('');
+
+      // Show success modal
+      setShowDeleteAccountSuccessModal(true);
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      setDeleteAccountPasswordError(error?.message || 'Failed to delete account. Please try again.');
+      setDeletingAccount(false);
     }
   };
 
@@ -1127,6 +1200,40 @@ export default function AccountScreen() {
                 </>
               )}
             </View>
+
+            {/* Logout Section */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Sign Out</Text>
+              <Text style={styles.cardSubtitle}>
+                Sign out of your account on this device
+              </Text>
+              <Pressable style={styles.logoutButton} onPress={logout}>
+                <Ionicons name="log-out-outline" size={20} color={COLORS.danger || '#ef4444'} />
+                <Text style={styles.logoutButtonText}>Log Out</Text>
+              </Pressable>
+            </View>
+
+            {/* Delete Account Section */}
+            <View style={styles.card}>
+              <View style={styles.dangerZoneHeader}>
+                <View style={styles.dangerZoneIconContainer}>
+                  <Ionicons name="warning" size={24} color={COLORS.danger || '#dc2626'} />
+                </View>
+                <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+              </View>
+              <Text style={styles.dangerZoneDescription}>
+                Once you delete your account, there is no going back. This action cannot be undone.
+                All your data, including saved locations, favorites, and bookings, will be permanently deleted.
+              </Text>
+              <Pressable
+                style={[styles.deleteAccountBtn, deletingAccount && styles.deleteAccountBtnDisabled]}
+                onPress={handleDeleteAccount}
+                disabled={deletingAccount}
+              >
+                <Ionicons name="trash" size={18} color="#fff" />
+                <Text style={styles.deleteAccountBtnText}>Delete My Account</Text>
+              </Pressable>
+            </View>
           </View>
         )}
 
@@ -1164,11 +1271,6 @@ export default function AccountScreen() {
                 </View>
               </View>
             </View>
-
-            <Pressable style={styles.logoutButton} onPress={logout}>
-              <Ionicons name="log-out-outline" size={20} color={COLORS.danger || '#ef4444'} />
-              <Text style={styles.logoutButtonText}>Log Out</Text>
-            </Pressable>
           </View>
         )}
       </ScrollView>
@@ -1193,6 +1295,145 @@ export default function AccountScreen() {
           }}
           onLocationSelect={handleLocationSelect}
         />
+      </Modal>
+
+      {/* Delete Account Modal */}
+      <Modal
+        visible={showDeleteAccountModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          if (!deletingAccount) {
+            setShowDeleteAccountModal(false);
+            setDeleteAccountPassword('');
+            setDeleteAccountPasswordError('');
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Delete Account</Text>
+              <Pressable
+                onPress={() => {
+                  if (!deletingAccount) {
+                    setShowDeleteAccountModal(false);
+                    setDeleteAccountPassword('');
+                    setDeleteAccountPasswordError('');
+                  }
+                }}
+                style={styles.modalCloseButton}
+                disabled={deletingAccount}
+              >
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalWarning}>
+              ⚠️ This action cannot be undone. All your data will be permanently deleted.
+            </Text>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Enter Password to Confirm *</Text>
+              <Text style={styles.labelSubtext}>
+                Please enter your password to confirm account deletion
+              </Text>
+              <TextInput
+                style={[styles.input, deleteAccountPasswordError && styles.inputError]}
+                placeholder="Enter your password"
+                placeholderTextColor="#9ca3af"
+                value={deleteAccountPassword}
+                onChangeText={(text) => {
+                  setDeleteAccountPassword(text);
+                  setDeleteAccountPasswordError('');
+                }}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!deletingAccount}
+              />
+              {deleteAccountPasswordError ? (
+                <Text style={styles.errorText}>{deleteAccountPasswordError}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalCancelButton]}
+                onPress={() => {
+                  if (!deletingAccount) {
+                    setShowDeleteAccountModal(false);
+                    setDeleteAccountPassword('');
+                    setDeleteAccountPasswordError('');
+                  }
+                }}
+                disabled={deletingAccount}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalDeleteButton, deletingAccount && styles.modalDeleteButtonDisabled]}
+                onPress={confirmDeleteAccount}
+                disabled={deletingAccount}
+              >
+                {deletingAccount ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.modalDeleteButtonText}>Deleting...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="trash" size={18} color="#fff" />
+                    <Text style={styles.modalDeleteButtonText}>Delete Account</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Account Success Modal */}
+      <Modal
+        visible={showDeleteAccountSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          // Don't allow closing without navigating
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.successIconContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={COLORS.success || '#22c55e'} />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Account Deleted Successfully!</Text>
+            <Text style={styles.successMessage}>
+              Your account has been permanently deleted. You will be signed out and redirected to the login screen.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalSuccessButton]}
+                onPress={async () => {
+                  setShowDeleteAccountSuccessModal(false);
+                  // Sign out and clear local data
+                  await logout();
+                  // Navigate to login
+                  navigation.getParent()?.reset({
+                    index: 0,
+                    routes: [{ name: 'Auth' as any }],
+                  });
+                }}
+              >
+                <Text style={styles.modalSuccessButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* Snackbar */}
@@ -1758,5 +1999,166 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     flex: 1,
+  },
+  // Delete Account Styles
+  dangerZoneHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  dangerZoneIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: (COLORS.danger || '#dc2626') + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dangerZoneTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.danger || '#dc2626',
+  },
+  dangerZoneDescription: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  deleteAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: COLORS.danger || '#dc2626',
+  },
+  deleteAccountBtnDisabled: {
+    opacity: 0.6,
+  },
+  deleteAccountBtnText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  modalCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bg,
+  },
+  modalWarning: {
+    fontSize: 14,
+    color: COLORS.danger || '#dc2626',
+    fontWeight: '600',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+  },
+  modalCancelButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  modalDeleteButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: COLORS.danger || '#dc2626',
+  },
+  modalDeleteButtonDisabled: {
+    opacity: 0.6,
+  },
+  modalDeleteButtonText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  // Success Modal Styles
+  successIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: (COLORS.success || '#22c55e') + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    alignSelf: 'center',
+  },
+  successTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  successMessage: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalSuccessButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+  },
+  modalSuccessButtonText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

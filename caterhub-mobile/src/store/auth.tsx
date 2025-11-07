@@ -117,11 +117,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await storage.removeItem(TOKEN_KEY);
     
     // On web, also clear all Supabase-related localStorage items
-    if (typeof window !== 'undefined') {
-      const supabaseKeys = Object.keys(localStorage).filter(key => 
-        key.startsWith('sb-') || key.includes('supabase')
-      );
-      supabaseKeys.forEach(key => localStorage.removeItem(key));
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      try {
+        const supabaseKeys = Object.keys(window.localStorage).filter(key => 
+          key.startsWith('sb-') || key.includes('supabase')
+        );
+        supabaseKeys.forEach(key => window.localStorage.removeItem(key));
+      } catch (error) {
+        // Ignore localStorage errors (e.g., in React Native)
+        console.warn('Error clearing localStorage:', error);
+      }
     }
   };
 
