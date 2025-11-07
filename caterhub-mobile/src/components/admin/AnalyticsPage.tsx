@@ -217,27 +217,53 @@ export default function AnalyticsPage() {
         </View>
       </View>
 
-      {/* Revenue by Month */}
+      {/* Revenue by Month & User Growth - Side by Side */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Revenue Trend (Last 6 Months)</Text>
-        <View style={styles.chartCard}>
-          {analytics.revenueByMonth.length === 0 ? (
-            <Text style={styles.emptyText}>No revenue data available</Text>
-          ) : (
-            analytics.revenueByMonth.map((item, index) => {
-              const maxRevenue = Math.max(...analytics.revenueByMonth.map(r => r.revenue));
-              const barWidth = maxRevenue > 0 ? (item.revenue / maxRevenue) * 100 : 0;
-              return (
-                <View key={index} style={styles.barRow}>
-                  <Text style={styles.barLabel}>{item.month}</Text>
-                  <View style={styles.barContainer}>
-                    <View style={[styles.bar, { width: `${barWidth}%` }]} />
+        <Text style={styles.sectionTitle}>Trends (Last 6 Months)</Text>
+        <View style={styles.chartsRow}>
+          {/* Revenue Trend */}
+          <View style={styles.chartCardHalf}>
+            <Text style={styles.chartTitle}>Revenue Trend</Text>
+            {analytics.revenueByMonth.length === 0 ? (
+              <Text style={styles.emptyText}>No revenue data available</Text>
+            ) : (
+              analytics.revenueByMonth.map((item, index) => {
+                const maxRevenue = Math.max(...analytics.revenueByMonth.map(r => r.revenue));
+                const barWidth = maxRevenue > 0 ? (item.revenue / maxRevenue) * 100 : 0;
+                return (
+                  <View key={index} style={styles.barRow}>
+                    <Text style={styles.barLabel}>{item.month}</Text>
+                    <View style={styles.barContainer}>
+                      <View style={[styles.bar, { width: `${barWidth}%` }]} />
+                    </View>
+                    <Text style={styles.barValue}>₱{item.revenue.toLocaleString()}</Text>
                   </View>
-                  <Text style={styles.barValue}>₱{item.revenue.toLocaleString()}</Text>
-                </View>
-              );
-            })
-          )}
+                );
+              })
+            )}
+          </View>
+
+          {/* User Growth */}
+          <View style={styles.chartCardHalf}>
+            <Text style={styles.chartTitle}>User Growth</Text>
+            {analytics.userGrowth.length === 0 ? (
+              <Text style={styles.emptyText}>No user growth data available</Text>
+            ) : (
+              analytics.userGrowth.map((item, index) => {
+                const maxCount = Math.max(...analytics.userGrowth.map(u => u.count));
+                const barWidth = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
+                return (
+                  <View key={index} style={styles.barRow}>
+                    <Text style={styles.barLabel}>{item.month}</Text>
+                    <View style={styles.barContainer}>
+                      <View style={[styles.bar, { width: `${barWidth}%`, backgroundColor: COLORS.info }]} />
+                    </View>
+                    <Text style={styles.barValue}>{item.count} users</Text>
+                  </View>
+                );
+              })
+            )}
+          </View>
         </View>
       </View>
 
@@ -296,29 +322,6 @@ export default function AnalyticsPage() {
         </View>
       </View>
 
-      {/* User Growth */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>User Growth (Last 6 Months)</Text>
-        <View style={styles.chartCard}>
-          {analytics.userGrowth.length === 0 ? (
-            <Text style={styles.emptyText}>No user growth data available</Text>
-          ) : (
-            analytics.userGrowth.map((item, index) => {
-              const maxCount = Math.max(...analytics.userGrowth.map(u => u.count));
-              const barWidth = maxCount > 0 ? (item.count / maxCount) * 100 : 0;
-              return (
-                <View key={index} style={styles.barRow}>
-                  <Text style={styles.barLabel}>{item.month}</Text>
-                  <View style={styles.barContainer}>
-                    <View style={[styles.bar, { width: `${barWidth}%`, backgroundColor: COLORS.info }]} />
-                  </View>
-                  <Text style={styles.barValue}>{item.count} users</Text>
-                </View>
-              );
-            })
-          )}
-        </View>
-      </View>
     </ScrollView>
   );
 }
@@ -391,6 +394,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  chartsRow: {
+    flexDirection: 'row',
+    gap: 16,
+    flexWrap: 'wrap',
+  },
+  chartCardHalf: {
+    flex: 1,
+    minWidth: 400,
+    backgroundColor: COLORS.white,
+    padding: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 16,
   },
   barRow: {
     flexDirection: 'row',

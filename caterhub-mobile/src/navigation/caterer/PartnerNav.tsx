@@ -3,11 +3,15 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import PartnerDashboardScreen from '../../screens/caterer/PartnerDashboardScreen';
 import PartnerOrdersScreen from '../../screens/caterer/PartnerOrdersScreen';
 import PartnerOrderDetailsScreen from '../../screens/caterer/PartnerOrderDetailsScreen';
+import PartnerManagePackagesScreen from '../../screens/caterer/PartnerManagePackagesScreen';
+import PartnerSettingsScreen from '../../screens/caterer/PartnerSettingsScreen';
 import { useAuth } from '../../store/auth';
 
 export type PartnerStackParamList = {
   PartnerDashboard: undefined;
   PartnerOrders: undefined;
+  PartnerManagePackages: undefined;
+  PartnerSettings: undefined;
   PartnerOrderDetails: {
     order: {
       id: string;
@@ -42,6 +46,16 @@ export default function PartnerNav() {
       <Stack.Screen
         name="PartnerOrders"
         component={PartnerOrdersScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="PartnerManagePackages"
+        component={PartnerManagePackagesScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="PartnerSettings"
+        component={PartnerSettingsScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

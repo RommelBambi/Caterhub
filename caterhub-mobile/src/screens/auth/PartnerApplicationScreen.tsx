@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Pressable, Alert, Platform, KeyboardAvoidingView, Image, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -349,15 +349,10 @@ function Step1({
           <SquareNavButton label="Back" variant="outline" onPress={back} icon="arrow-back" iconPosition="left" />
           <SquareNavButton
             label="Next"
-            onPress={() => {
-              if (!validate()) {
-                Alert.alert("Step 1", "Please complete all required fields including at least one location.");
-                return;
-              }
-              next();
-            }}
+            onPress={handleNext}
             icon="arrow-forward"
             iconPosition="right"
+            disabled={!canProceed}
           />
         </View>
       </Card>

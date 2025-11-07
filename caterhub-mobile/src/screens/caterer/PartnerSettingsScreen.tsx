@@ -80,7 +80,7 @@ export default function PartnerSettingsScreen() {
   // Load current user + profile on mount
   useEffect(() => {
     if (!user) {
-      navigation.replace("PartnerHome" as any);
+      navigation.replace("PartnerDashboard");
       return;
     }
 
@@ -123,7 +123,7 @@ export default function PartnerSettingsScreen() {
     logout();
     navigation.reset({
       index: 0,
-      routes: [{ name: "PartnerHome" }]
+      routes: [{ name: "PartnerDashboard" }]
     });
   }
 
