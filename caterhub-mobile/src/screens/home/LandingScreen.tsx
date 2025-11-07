@@ -669,13 +669,14 @@ const styles = StyleSheet.create({
   featuresGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginHorizontal: -12,
+    justifyContent: 'space-between',
+    marginHorizontal: 0,
     marginBottom: -24,
   },
   featureCard: {
-    width: '31%',
-    minWidth: 300,
-    marginHorizontal: 12,
+    flexBasis: '48%',
+    maxWidth: '48%',
+    marginHorizontal: 0,
     marginBottom: 24,
     alignItems: 'center',
     textAlign: 'center',
