@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { isWeb } from "../../utils/platform";
 
 export type Booking = {
@@ -39,46 +39,43 @@ export default function BookingList({ data }: Props) {
           </Text>
         </View>
 
-        <FlatList
-          data={data}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item, index }) => (
-            <View
-              style={[
-                styles.row,
-                index === data.length - 1 ? styles.lastRow : styles.bodyRow
-              ]}
-            >
-              <Text style={[styles.cell, { flex: 2 }]}>
-                {item.id}
-              </Text>
+        {data.map((item, index) => (
+          <View
+            key={item.id}
+            style={[
+              styles.row,
+              index === data.length - 1 ? styles.lastRow : styles.bodyRow
+            ]}
+          >
+            <Text style={[styles.cell, { flex: 2 }]}>
+              {item.id}
+            </Text>
 
-              <Text style={[styles.cell, { flex: 2 }]}>
-                {item.client}
-              </Text>
+            <Text style={[styles.cell, { flex: 2 }]}>
+              {item.client}
+            </Text>
 
-              <Text style={[styles.cell, { flex: 2 }]}>
-                {item.date}{"\n"}
-                {item.headcount} guests
-              </Text>
+            <Text style={[styles.cell, { flex: 2 }]}>
+              {item.date}{"\n"}
+              {item.headcount} guests
+            </Text>
 
-              <View style={[styles.cell, { flex: 1 }]}>
-                <StatusChip status={item.status} />
-              </View>
-
-              <View style={[styles.cell, { flex: 1 }]}>
-                <Pressable
-                  style={styles.detailsBtn}
-                  onPress={() => {
-                    // hook this up later (open booking details)
-                  }}
-                >
-                  <Text style={styles.detailsText}>Details</Text>
-                </Pressable>
-              </View>
+            <View style={[styles.cell, { flex: 1 }]}>
+              <StatusChip status={item.status} />
             </View>
-          )}
-        />
+
+            <View style={[styles.cell, { flex: 1 }]}>
+              <Pressable
+                style={styles.detailsBtn}
+                onPress={() => {
+                  // hook this up later (open booking details)
+                }}
+              >
+                <Text style={styles.detailsText}>Details</Text>
+              </Pressable>
+            </View>
+          </View>
+        ))}
       </View>
     );
   }
@@ -86,10 +83,8 @@ export default function BookingList({ data }: Props) {
   // Mobile: Card layout
   return (
     <View style={styles.mobileWrapper}>
-      <FlatList
-        data={data}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item, index }) => (
+      {data.map((item, index) => (
+        <React.Fragment key={item.id}>
           <View style={styles.mobileCard}>
             <View style={styles.mobileCardHeader}>
               <Text style={styles.mobileBookingId}>{item.id}</Text>
@@ -129,9 +124,9 @@ export default function BookingList({ data }: Props) {
               <Text style={styles.mobileDetailsText}>View Details</Text>
             </Pressable>
           </View>
-        )}
-        ItemSeparatorComponent={() => <View style={styles.mobileSeparator} />}
-      />
+          {index < data.length - 1 && <View style={styles.mobileSeparator} />}
+        </React.Fragment>
+      ))}
     </View>
   );
 }
