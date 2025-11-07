@@ -16,6 +16,7 @@ export interface Database {
           username: string;
           role: 'CUSTOMER' | 'CATER' | 'ADMIN' | 'CUSTOM';
           location?: string | null;
+          profile_image_url?: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -25,6 +26,7 @@ export interface Database {
           username: string;
           role: 'CUSTOMER' | 'CATER' | 'ADMIN' | 'CUSTOM';
           location?: string | null;
+          profile_image_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -34,6 +36,7 @@ export interface Database {
           username?: string;
           role?: 'CUSTOMER' | 'CATER' | 'ADMIN';
           location?: string | null;
+          profile_image_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -279,6 +282,47 @@ export interface Database {
           sections?: any;
           inclusions?: any;
           is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      caterer_profiles: {
+        Row: {
+          id: string;
+          user_id: string;
+          contact_number: string;
+          email: string | null;
+          website: string | null;
+          address: string;
+          about: string;
+          facebook: string | null;
+          instagram: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          contact_number: string;
+          email?: string | null;
+          website?: string | null;
+          address: string;
+          about?: string;
+          facebook?: string | null;
+          instagram?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          contact_number?: string;
+          email?: string | null;
+          website?: string | null;
+          address?: string;
+          about?: string;
+          facebook?: string | null;
+          instagram?: string | null;
           created_at?: string;
           updated_at?: string;
         };

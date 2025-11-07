@@ -34,8 +34,6 @@ import { BusinessLocation } from "../../types/admin";
 import { COUNTRIES, PROVINCES_PH, CITIES_BY_PROVINCE } from "../../constants/locations";
 import { COLORS } from "../../constants/colors";
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
 const DTI_PREFIX = 'DTI::';
 
 // Extra business profile data aside from what's in user
@@ -51,41 +49,80 @@ type CatererProfile = {
   profileImageUrl?: string;
 };
 
-// We'll store extra profile data per username.
-// TODO: Replace with Supabase
-async function loadProfile(username: string): Promise<CatererProfile> {
+// Load profile data from Supabase
+async function loadProfileFromSupabase(userId: string): Promise<CatererProfile | null> {
   try {
-    const raw = await AsyncStorage.getItem(
-      "caterhub_profile_" + username
-    );
-    if (!raw) {
-      return {
-        contactNumber: "",
-        address: "",
-        about: "",
-        profileImageUrl: ""
-      };
+    const { data, error } = await supabase
+      .from('caterer_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) {
+      return null;
     }
-    return JSON.parse(raw) as CatererProfile;
-  } catch (e) {
-    console.warn("loadProfile error", e);
+
     return {
-      contactNumber: "",
-      address: "",
-      about: ""
+      contactNumber: data.contact_number || "",
+      email: data.email || undefined,
+      website: data.website || undefined,
+      address: data.address || "",
+      about: data.about || "",
+      facebook: data.facebook || undefined,
+      instagram: data.instagram || undefined,
     };
+  } catch (e) {
+    console.warn("loadProfileFromSupabase error", e);
+    return null;
   }
 }
 
-// TODO: Replace with Supabase
-async function saveProfile(username: string, data: CatererProfile) {
+// Save profile data to Supabase
+async function saveProfileToSupabase(userId: string, data: CatererProfile): Promise<void> {
   try {
-    await AsyncStorage.setItem(
-      "caterhub_profile_" + username,
-      JSON.stringify(data)
-    );
+    // Check if profile exists
+    const { data: existing } = await supabase
+      .from('caterer_profiles')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+
+    if (existing) {
+      // Update existing profile
+      const { error } = await supabase
+        .from('caterer_profiles')
+        .update({
+          contact_number: data.contactNumber,
+          email: data.email || null,
+          website: data.website || null,
+          address: data.address,
+          about: data.about,
+          facebook: data.facebook || null,
+          instagram: data.instagram || null,
+        })
+        .eq('user_id', userId);
+
+      if (error) throw error;
+    } else {
+      // Insert new profile
+      const { error } = await supabase
+        .from('caterer_profiles')
+        .insert({
+          user_id: userId,
+          contact_number: data.contactNumber,
+          email: data.email || null,
+          website: data.website || null,
+          address: data.address,
+          about: data.about,
+          facebook: data.facebook || null,
+          instagram: data.instagram || null,
+        });
+
+      if (error) throw error;
+    }
   } catch (e) {
-    console.warn("saveProfile error", e);
+    console.error("saveProfileToSupabase error", e);
+    throw e;
   }
 }
 
@@ -154,6 +191,10 @@ export default function PartnerSettingsScreen() {
   const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
   const [deleteAccountPasswordError, setDeleteAccountPasswordError] = useState("");
 
+  // Save confirmation and success modals
+  const [showSaveConfirmationModal, setShowSaveConfirmationModal] = useState(false);
+  const [showSaveSuccessModal, setShowSaveSuccessModal] = useState(false);
+
   // Profile image state
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -172,15 +213,38 @@ export default function PartnerSettingsScreen() {
         setBusinessName(user.username || "");
         setEmail(user.email || "");
 
-      const prof = await loadProfile(user.username);
-      setContactNumber(prof.contactNumber ?? "");
-        setEmail(prof.email ?? user.email ?? "");
-        setWebsite(prof.website ?? "");
-      setAddress(prof.address ?? "");
-      setAbout(prof.about ?? "");
-        setFacebook(prof.facebook ?? "");
-        setInstagram(prof.instagram ?? "");
-        setProfileImage(prof.profileImageUrl ?? null);
+        // Load profile from Supabase
+        const prof = await loadProfileFromSupabase(user.id);
+        if (prof) {
+          setContactNumber(prof.contactNumber ?? "");
+          setEmail(prof.email ?? user.email ?? "");
+          setWebsite(prof.website ?? "");
+          setAddress(prof.address ?? "");
+          setAbout(prof.about ?? "");
+          setFacebook(prof.facebook ?? "");
+          setInstagram(prof.instagram ?? "");
+        } else {
+          // Default values if no profile exists
+          setContactNumber("");
+          setWebsite("");
+          setAddress("");
+          setAbout("");
+          setFacebook("");
+          setInstagram("");
+        }
+
+        // Load profile image from Supabase users table
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('profile_image_url')
+          .eq('id', user.id)
+          .single();
+
+        if (userData && !userError && userData.profile_image_url) {
+          setProfileImage(userData.profile_image_url);
+        } else {
+          setProfileImage(null);
+        }
 
         // Load partner application data from Supabase
         const { data: application, error } = await supabase
@@ -496,47 +560,72 @@ export default function PartnerSettingsScreen() {
     if (!user) return;
 
     try {
-      const { data: application } = await supabase
+      // Get the most recent application (could be pending or approved)
+      const { data: applications, error: queryError } = await supabase
         .from('partner_applications')
-        .select('id')
+        .select('id, status')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
 
-      if (application) {
-        // Build uploaded documents array
-        const uploadedDocs: string[] = [];
-        if (dtiFile?.storagePath) {
-          uploadedDocs.push(`${DTI_PREFIX}${dtiFile.storagePath}`);
+      if (queryError) {
+        console.error('Error fetching application:', queryError);
+        throw queryError;
+      }
+
+      if (!applications || applications.length === 0) {
+        // No application found - this shouldn't happen for a caterer, but handle gracefully
+        console.warn('No partner application found for user');
+        return;
+      }
+
+      const application = applications[0];
+
+      // Build uploaded documents array (text[] format)
+      const uploadedDocs: string[] = [];
+      if (dtiFile?.storagePath) {
+        uploadedDocs.push(`${DTI_PREFIX}${dtiFile.storagePath}`);
+      }
+      supportingFiles.forEach((file) => {
+        if (file.storagePath) {
+          uploadedDocs.push(file.storagePath);
         }
-        supportingFiles.forEach((file) => {
-          if (file.storagePath) {
-            uploadedDocs.push(file.storagePath);
+      });
+
+      // Update partner application with locations (jsonb) and uploaded_documents (text[])
+      const { error: updateError } = await supabase
+        .from('partner_applications')
+        .update({
+          locations: locations as any, // JSONB format
+          uploaded_documents: uploadedDocs, // text[] format
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', application.id);
+
+      if (updateError) {
+        console.error('Error updating application:', updateError);
+        // Check if it's an RLS policy issue
+        if (updateError.code === '42501' || updateError.message.includes('permission')) {
+          console.warn('RLS policy may be blocking update. Application status:', application.status);
+          // Users can only update pending applications per RLS policy
+          if (application.status !== 'Pending') {
+            Alert.alert(
+              'Update Restricted',
+              'You can only update locations and documents for pending applications. Please contact support if you need to update an approved application.'
+            );
+            return;
           }
-        });
-
-        // Update partner application
-        const { error } = await supabase
-          .from('partner_applications')
-          .update({
-            locations: locations,
-            uploaded_documents: uploadedDocs,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', application.id);
-
-        if (error) {
-          console.error('Error updating application:', error);
-          throw error;
         }
+        throw updateError;
       }
     } catch (error) {
       console.error('Error saving locations and documents:', error);
+      throw error;
     }
   };
 
-  async function handleSaveProfile() {
+  // Show save confirmation modal
+  const handleSaveClick = () => {
     if (!user) return;
 
     if (!businessName.trim()) {
@@ -547,9 +636,17 @@ export default function PartnerSettingsScreen() {
       return;
     }
 
+    setShowSaveConfirmationModal(true);
+  };
+
+  // Confirm and save profile
+  const confirmSaveProfile = async () => {
+    if (!user) return;
+
+    setShowSaveConfirmationModal(false);
     setSaving(true);
     try {
-      // Save profile data
+      // Save profile data to Supabase
       const newProfile: CatererProfile = {
         contactNumber: contactNumber.trim(),
         email: email.trim() || undefined,
@@ -557,21 +654,22 @@ export default function PartnerSettingsScreen() {
         address: address.trim(),
         about: about.trim(),
         facebook: facebook.trim() || undefined,
-        instagram: instagram.trim() || undefined,
-        profileImageUrl: profileImage || undefined
+        instagram: instagram.trim() || undefined
       };
-    await saveProfile(user.username, newProfile);
+      await saveProfileToSupabase(user.id, newProfile);
 
       // Save locations and documents to Supabase
       await saveLocationsAndDocuments();
 
-      Alert.alert("Saved", "Your profile has been updated successfully.");
+      // Show success modal
+      setShowSaveSuccessModal(true);
     } catch (error) {
+      console.error("Error saving profile:", error);
       Alert.alert("Error", "Failed to save profile. Please try again.");
     } finally {
       setSaving(false);
     }
-  }
+  };
 
   // Verify password for email change
   const verifyEmailPassword = async () => {
@@ -763,8 +861,14 @@ export default function PartnerSettingsScreen() {
       // Delete old profile image if exists
       if (profileImage) {
         try {
-          const oldPath = profileImage.replace(/^.*\/profiles\//, 'profiles/');
-          await supabase.storage.from('avatars').remove([oldPath]);
+          // Extract path from URL - format: .../avatars/profiles/userId/filename
+          const urlParts = profileImage.split('/');
+          const bucketIndex = urlParts.findIndex(part => part === 'avatars');
+          if (bucketIndex >= 0 && bucketIndex < urlParts.length - 1) {
+            // Get path after bucket name
+            const oldPath = urlParts.slice(bucketIndex + 1).join('/');
+            await supabase.storage.from('avatars').remove([oldPath]);
+          }
         } catch (error) {
           console.warn('Error deleting old profile image:', error);
         }
@@ -793,7 +897,9 @@ export default function PartnerSettingsScreen() {
 
   const pickProfileImage = async () => {
     try {
-      // Request permissions
+      console.log('pickProfileImage called, Platform.OS:', Platform.OS);
+      
+      // Request permissions (not needed on web)
       if (Platform.OS !== 'web') {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
@@ -802,14 +908,19 @@ export default function PartnerSettingsScreen() {
         }
       }
 
+      // On web, expo-image-picker should work, but we need to ensure it's properly configured
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
+        mediaTypes: 'images' as any, // Use string format for web compatibility
+        allowsEditing: Platform.OS === 'web' ? false : true, // Editing might not work well on web
+        aspect: Platform.OS === 'web' ? undefined : [1, 1], // Aspect ratio might not work on web
         quality: 0.8,
+        base64: false,
       });
 
+      console.log('ImagePicker result:', result);
+
       if (result.canceled || !result.assets || result.assets.length === 0) {
+        console.log('Image picker was canceled or no assets');
         return;
       }
 
@@ -823,6 +934,8 @@ export default function PartnerSettingsScreen() {
       }
 
       const asset = result.assets[0];
+      console.log('Selected asset:', { uri: asset.uri, mimeType: asset.mimeType, width: asset.width, height: asset.height });
+      
       const imageUrl = await uploadImageToStorage(
         asset.uri,
         authUser.id,
@@ -831,14 +944,18 @@ export default function PartnerSettingsScreen() {
 
       if (imageUrl) {
         setProfileImage(imageUrl);
-        // Save to profile
-        const prof = await loadProfile(user?.username || '');
-        const newProfile: CatererProfile = {
-          ...prof,
-          profileImageUrl: imageUrl
-        };
-        await saveProfile(user?.username || '', newProfile);
-        Alert.alert("Success", "Profile image updated successfully.");
+        // Save to Supabase users table
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ profile_image_url: imageUrl })
+          .eq('id', authUser.id);
+
+        if (updateError) {
+          console.error('Error updating profile image URL:', updateError);
+          Alert.alert("Error", "Failed to save profile image URL. Please try again.");
+        } else {
+          Alert.alert("Success", "Profile image updated successfully.");
+        }
       }
     } catch (error: any) {
       console.error('Error picking profile image:', error);
@@ -860,17 +977,28 @@ export default function PartnerSettingsScreen() {
           onPress: async () => {
             try {
               if (profileImage) {
-                const oldPath = profileImage.replace(/^.*\/profiles\//, 'profiles/');
-                await supabase.storage.from('avatars').remove([oldPath]);
+                // Extract path from URL - format: .../avatars/profiles/userId/filename
+                const urlParts = profileImage.split('/');
+                const bucketIndex = urlParts.findIndex(part => part === 'avatars');
+                if (bucketIndex >= 0 && bucketIndex < urlParts.length - 1) {
+                  // Get path after bucket name
+                  const oldPath = urlParts.slice(bucketIndex + 1).join('/');
+                  await supabase.storage.from('avatars').remove([oldPath]);
+                }
               }
               setProfileImage(null);
-              const prof = await loadProfile(user?.username || '');
-              const newProfile: CatererProfile = {
-                ...prof,
-                profileImageUrl: undefined
-              };
-              await saveProfile(user?.username || '', newProfile);
-              Alert.alert("Success", "Profile image removed successfully.");
+              // Remove from Supabase users table
+              const { error: updateError } = await supabase
+                .from('users')
+                .update({ profile_image_url: null })
+                .eq('id', user?.id);
+
+              if (updateError) {
+                console.error('Error removing profile image URL:', updateError);
+                Alert.alert("Error", "Failed to remove profile image URL. Please try again.");
+              } else {
+                Alert.alert("Success", "Profile image removed successfully.");
+              }
             } catch (error: any) {
               Alert.alert("Error", "Failed to remove profile image. Please try again.");
             }
@@ -901,8 +1029,65 @@ export default function PartnerSettingsScreen() {
 
     setDeletingAccount(true);
     try {
-      // Use centralized auth delete to remove Supabase auth user and sign out
-      await deleteAccount(deleteAccountPassword);
+      // Re-authenticate to verify password
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+        email: user?.email || '',
+        password: deleteAccountPassword,
+      });
+
+      if (loginError || !loginData.session) {
+        setDeleteAccountPasswordError("Incorrect password. Please try again.");
+        setDeletingAccount(false);
+        return;
+      }
+
+      // Delete user from users table
+      const { error: deleteError } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', user?.id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      // Delete user's storage files (documents, profile image, etc.)
+      try {
+        if (user?.id) {
+          // Delete profile image
+          if (profileImage) {
+            try {
+              // Extract path from URL - format: .../avatars/profiles/userId/filename
+              const urlParts = profileImage.split('/');
+              const bucketIndex = urlParts.findIndex(part => part === 'avatars');
+              if (bucketIndex >= 0 && bucketIndex < urlParts.length - 1) {
+                // Get path after bucket name
+                const oldPath = urlParts.slice(bucketIndex + 1).join('/');
+                await supabase.storage.from('avatars').remove([oldPath]);
+              }
+            } catch (error) {
+              console.warn('Error deleting profile image:', error);
+            }
+          }
+          // Delete documents
+          try {
+            const { data: files } = await supabase.storage
+              .from('partner-documents')
+              .list(user.id);
+            if (files && files.length > 0) {
+              const filePaths = files.map(f => `${user.id}/${f.name}`);
+              await supabase.storage.from('partner-documents').remove(filePaths);
+            }
+          } catch (error) {
+            console.warn('Error deleting documents:', error);
+          }
+        }
+      } catch (storageError) {
+        console.warn('Error deleting storage files:', storageError);
+      }
+
+      // Sign out and clear local data
+      await logout();
       
       Alert.alert(
         "Account Deleted",
@@ -915,9 +1100,10 @@ export default function PartnerSettingsScreen() {
               if (isWeb) {
                 window.location.href = '/';
               } else {
-                navigation.reset({
+                // Navigate to login screen - use navigation.replace or navigate to root
+                navigation.getParent()?.reset({
                   index: 0,
-                  routes: [{ name: 'Login' }],
+                  routes: [{ name: 'Auth' as any }],
                 });
               }
             }
@@ -966,7 +1152,7 @@ export default function PartnerSettingsScreen() {
                 Manage your business profile and account settings
               </Text>
             </View>
-          </View>
+            </View>
 
           {/* Tabs Navigation */}
           <View style={styles.tabsContainer}>
@@ -1064,7 +1250,6 @@ export default function PartnerSettingsScreen() {
                       </View>
                     )}
                   </Pressable>
-
                   <View style={styles.profileImageActions}>
                     <Pressable
                       onPress={pickProfileImage}
@@ -1103,33 +1288,33 @@ export default function PartnerSettingsScreen() {
               </View>
 
               {/* Business Information Card */}
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Business Information</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Business Information</Text>
                 <Text style={styles.cardSubtitle}>
                   This information will be shown to customers when they view your catering service.
                 </Text>
 
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Catering / Business Name *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. Sevilla's Catering"
-                    placeholderTextColor="#9ca3af"
-                    value={businessName}
-                    onChangeText={setBusinessName}
-                  />
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Sevilla's Catering"
+              placeholderTextColor="#9ca3af"
+              value={businessName}
+              onChangeText={setBusinessName}
+            />
                 </View>
 
                 <View style={styles.formGroup}>
-                  <Text style={styles.label}>Contact Number</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. 0917 123 4567"
-                    placeholderTextColor="#9ca3af"
-                    value={contactNumber}
-                    onChangeText={setContactNumber}
-                    keyboardType="phone-pad"
-                  />
+            <Text style={styles.label}>Contact Number</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. 0917 123 4567"
+              placeholderTextColor="#9ca3af"
+              value={contactNumber}
+              onChangeText={setContactNumber}
+              keyboardType="phone-pad"
+            />
                 </View>
 
                 <View style={styles.formGroup}>
@@ -1158,26 +1343,26 @@ export default function PartnerSettingsScreen() {
                 </View>
 
                 <View style={styles.formGroup}>
-                  <Text style={styles.label}>Address / Service Area</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. Tayabas / Lucena / nearby areas"
-                    placeholderTextColor="#9ca3af"
-                    value={address}
-                    onChangeText={setAddress}
-                  />
+            <Text style={styles.label}>Address / Service Area</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Tayabas / Lucena / nearby areas"
+              placeholderTextColor="#9ca3af"
+              value={address}
+              onChangeText={setAddress}
+            />
                 </View>
 
                 <View style={styles.formGroup}>
-                  <Text style={styles.label}>About / Description</Text>
-                  <TextInput
-                    style={[styles.input, styles.aboutInput]}
-                    placeholder="Describe your specialties, capacity, style of service..."
-                    placeholderTextColor="#9ca3af"
-                    multiline
-                    value={about}
-                    onChangeText={setAbout}
-                  />
+            <Text style={styles.label}>About / Description</Text>
+            <TextInput
+              style={[styles.input, styles.aboutInput]}
+              placeholder="Describe your specialties, capacity, style of service..."
+              placeholderTextColor="#9ca3af"
+              multiline
+              value={about}
+              onChangeText={setAbout}
+            />
                 </View>
               </View>
 
@@ -1198,7 +1383,7 @@ export default function PartnerSettingsScreen() {
                     onChangeText={setFacebook}
                     autoCapitalize="none"
                   />
-                </View>
+          </View>
 
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Instagram</Text>
@@ -1219,7 +1404,6 @@ export default function PartnerSettingsScreen() {
                 <Text style={styles.cardSubtitle}>
                   This is how your business will appear to customers.
                 </Text>
-
                 <View style={styles.previewCard}>
                   <View style={styles.previewHeaderRow}>
                     {profileImage ? (
@@ -1237,7 +1421,6 @@ export default function PartnerSettingsScreen() {
                         </Text>
                       </View>
                     )}
-
                     <View style={styles.previewHeaderInfo}>
                       <Text style={styles.previewNameText}>
                         {businessName || "Your Catering"}
@@ -1284,7 +1467,7 @@ export default function PartnerSettingsScreen() {
               {/* Save Changes Button */}
               <Pressable
                 style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-                onPress={handleSaveProfile}
+                onPress={handleSaveClick}
                 disabled={saving}
               >
                 <Text style={styles.saveBtnText}>
@@ -1308,7 +1491,7 @@ export default function PartnerSettingsScreen() {
                     <Ionicons name="location-outline" size={48} color={COLORS.textLight} />
                     <Text style={styles.emptyStateText}>No locations added yet</Text>
                     <Text style={styles.emptyStateSubtext}>Add your first business location to get started</Text>
-                  </View>
+              </View>
                 ) : (
                   locations.map((location, index) => (
                   <View key={location.id} style={styles.locationCard}>
@@ -1319,7 +1502,7 @@ export default function PartnerSettingsScreen() {
                           <Ionicons name="trash" size={18} color={COLORS.danger || "#ef4444"} />
                         </Pressable>
                       )}
-                    </View>
+            </View>
 
                     <View style={styles.formGroup}>
                       <Dropdown
@@ -1419,9 +1602,9 @@ export default function PartnerSettingsScreen() {
                 >
                   <Text style={styles.saveBtnText}>
                     {saving ? "Saving..." : "Save Locations"}
-                  </Text>
+            </Text>
                 </Pressable>
-              </View>
+          </View>
             </>
           )}
 
@@ -1910,6 +2093,108 @@ export default function PartnerSettingsScreen() {
                     <Text style={styles.modalDeleteButtonText}>Delete Account</Text>
                   </>
                 )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Save Confirmation Modal */}
+      <Modal
+        visible={showSaveConfirmationModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          if (!saving) {
+            setShowSaveConfirmationModal(false);
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Save Changes</Text>
+              <Pressable
+                onPress={() => {
+                  if (!saving) {
+                    setShowSaveConfirmationModal(false);
+                  }
+                }}
+                style={styles.modalCloseButton}
+                disabled={saving}
+              >
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalWarning}>
+              Are you sure you want to save these changes? This will update your business profile information.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalCancelButton]}
+                onPress={() => {
+                  if (!saving) {
+                    setShowSaveConfirmationModal(false);
+                  }
+                }}
+                disabled={saving}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalSaveButton, saving && styles.modalSaveButtonDisabled]}
+                onPress={confirmSaveProfile}
+                disabled={saving}
+              >
+                {saving ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.modalSaveButtonText}>Saving...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <Text style={styles.modalSaveButtonText}>Save Changes</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Save Success Modal */}
+      <Modal
+        visible={showSaveSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowSaveSuccessModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.successIconContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={COLORS.success || "#22c55e"} />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Changes Saved Successfully!</Text>
+            <Text style={styles.successMessage}>
+              Your profile has been updated successfully. All changes have been saved.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalSuccessButton]}
+                onPress={() => {
+                  setShowSaveSuccessModal(false);
+                }}
+              >
+                <Text style={styles.modalSuccessButtonText}>OK</Text>
               </Pressable>
             </View>
           </View>
@@ -2446,7 +2731,12 @@ const styles = StyleSheet.create({
   },
   profileImageContainer: {
     position: "relative",
-    marginBottom: Platform.OS === 'web' ? 16 : 14
+    marginBottom: Platform.OS === 'web' ? 16 : 14,
+    ...(Platform.OS === 'web' && {
+      cursor: 'pointer',
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+    } as any)
   },
   profileImage: {
     width: Platform.OS === 'web' ? 120 : 100,
@@ -2648,6 +2938,59 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: Platform.OS === 'web' ? 14 : 15
+  },
+  modalSaveButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 18,
+    gap: 8
+  },
+  modalSaveButtonDisabled: {
+    opacity: 0.6
+  },
+  modalSaveButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: Platform.OS === 'web' ? 14 : 15
+  },
+  modalSuccessButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 18
+  },
+  modalSuccessButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: Platform.OS === 'web' ? 14 : 15
+  },
+  successIconContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Platform.OS === 'web' ? 16 : 14,
+    width: "100%"
+  },
+  successTitle: {
+    fontSize: Platform.OS === 'web' ? 20 : 22,
+    fontWeight: "700",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: Platform.OS === 'web' ? 12 : 10
+  },
+  successMessage: {
+    fontSize: Platform.OS === 'web' ? 14 : 15,
+    color: "#6b7280",
+    textAlign: "center",
+    lineHeight: Platform.OS === 'web' ? 22 : 24,
+    marginBottom: Platform.OS === 'web' ? 20 : 18
   },
 
   // Delete Account Section Styles
