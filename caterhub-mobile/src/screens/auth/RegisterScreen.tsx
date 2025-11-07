@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { View, Image, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Text, TextInput, Button, Card } from 'react-native-paper';
+import { Text, TextInput, Button, Card, Checkbox } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { register } from '../../services/api';
 import PartnerApplicationScreen from './PartnerApplicationScreen';
+import TermsModal from '../../components/common/TermsModal';
 
 type Form = {
   username: string;
@@ -23,6 +24,8 @@ export default function RegisterScreen() {
   const [showPw, setShowPw] = useState(false);
   const [showPw2, setShowPw2] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
   const canGoBack = navigation.canGoBack();
@@ -37,7 +40,8 @@ export default function RegisterScreen() {
     watchUsername.trim() !== '' &&
     watchEmail.trim() !== '' &&
     watchPassword.trim() !== '' &&
-    watchConfirm.trim() !== '';
+    watchConfirm.trim() !== '' &&
+    acceptedTerms;
 
   const onSubmit = async (d: Form) => {
     if (d.password !== d.confirm) {
@@ -45,6 +49,14 @@ export default function RegisterScreen() {
         alert('Passwords do not match.');
       } else {
         Alert.alert('Error', 'Passwords do not match.');
+      }
+      return;
+    }
+    if (!acceptedTerms) {
+      if (isWeb) {
+        alert('Please accept the Terms & Conditions to continue.');
+      } else {
+        Alert.alert('Error', 'Please accept the Terms & Conditions to continue.');
       }
       return;
     }
@@ -333,6 +345,33 @@ export default function RegisterScreen() {
           )}
         />
 
+        {/* Terms & Conditions */}
+        <TouchableOpacity
+          style={styles.termsContainer}
+          onPress={() => setAcceptedTerms(!acceptedTerms)}
+          activeOpacity={0.7}
+        >
+          <Checkbox.Android
+            status={acceptedTerms ? 'checked' : 'unchecked'}
+            onPress={() => setAcceptedTerms(!acceptedTerms)}
+            color="#FF8000"
+          />
+          <View style={styles.termsTextContainer}>
+            <Text style={styles.termsText}>
+              I agree to the{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  setShowTermsModal(true);
+                }}
+              >
+                Terms & Conditions
+              </Text>
+            </Text>
+          </View>
+        </TouchableOpacity>
+
         <Button
           mode="contained"
           onPress={handleSubmit(onSubmit)}
@@ -345,6 +384,17 @@ export default function RegisterScreen() {
         >
           Sign up
         </Button>
+
+        {/* Terms Modal */}
+        <TermsModal
+          visible={showTermsModal}
+          onAccept={() => {
+            setAcceptedTerms(true);
+            setShowTermsModal(false);
+          }}
+          onDecline={() => setShowTermsModal(false)}
+          requireAcceptance={false}
+        />
 
         {/* Divider */}
         <View style={styles.dividerWrap}>
@@ -380,6 +430,25 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
   input: { marginTop: 10 },
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  termsTextContainer: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  termsText: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  termsLink: {
+    color: '#FF8000',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   primaryBtn: { marginTop: 16, paddingVertical: 6, backgroundColor: '#FF8000' },
   dividerWrap: { marginTop: 22, marginBottom: 8 },
   line: { height: 1, backgroundColor: '#e5e7eb' },

@@ -1,0 +1,153 @@
+// Supabase Edge Function for PayMongo Redirect Handler
+// Deploy: supabase functions deploy paymongo-redirect
+
+// @ts-ignore - Deno is available in Supabase Edge Functions runtime
+Deno.serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    })
+  }
+
+  try {
+    const url = new URL(req.url)
+    const status = url.searchParams.get('status')
+    const bookingId = url.searchParams.get('booking_id')
+
+    console.log('PayMongo redirect received:', { status, bookingId })
+
+    // Create a simple HTML page that redirects back to the app
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Payment ${status === 'success' ? 'Successful' : 'Failed'}</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+              background: ${status === 'success' ? '#f0fdf4' : '#fef2f2'};
+            }
+            .container {
+              text-align: center;
+              padding: 40px;
+              background: white;
+              border-radius: 12px;
+              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+              max-width: 400px;
+            }
+            .icon {
+              font-size: 64px;
+              margin-bottom: 20px;
+            }
+            .success { color: #22c55e; }
+            .failed { color: #dc2626; }
+            h1 {
+              font-size: 24px;
+              margin: 0 0 12px 0;
+              color: #1e293b;
+            }
+            p {
+              color: #64748b;
+              margin: 0 0 24px 0;
+              line-height: 1.6;
+            }
+            .button {
+              display: inline-block;
+              padding: 12px 24px;
+              background: #FF8000;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: 600;
+              transition: background 0.2s;
+            }
+            .button:hover {
+              background: #e67300;
+            }
+            .info {
+              margin-top: 20px;
+              padding: 12px;
+              background: #f8fafc;
+              border-radius: 6px;
+              font-size: 14px;
+              color: #64748b;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            ${status === 'success' ? `
+              <div class="icon success">✓</div>
+              <h1>Payment Successful!</h1>
+              <p>Your deposit payment has been processed successfully. You can now close this window and return to the app.</p>
+            ` : `
+              <div class="icon failed">✗</div>
+              <h1>Payment Failed</h1>
+              <p>Unfortunately, your payment could not be processed. Please try again or contact support if the problem persists.</p>
+            `}
+            
+            <div class="info">
+              ${status === 'success' 
+                ? 'Your booking is confirmed. Check your app for details.' 
+                : 'No charges were made to your account.'}
+            </div>
+            
+            <p style="margin-top: 24px; font-size: 14px;">
+              You can close this window now.
+            </p>
+          </div>
+          
+          <script>
+            // Auto-close after 5 seconds
+            setTimeout(() => {
+              window.close();
+            }, 5000);
+            
+            // Try to communicate with the app (if in webview)
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'payment_redirect',
+                status: '${status}',
+                bookingId: '${bookingId}'
+              }));
+            }
+          </script>
+        </body>
+      </html>
+    `
+
+    return new Response(html, {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+      },
+    })
+  } catch (error) {
+    console.error('Error in paymongo-redirect:', error)
+    
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred'
+    
+    return new Response(
+      JSON.stringify({ error: errorMessage }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      }
+    )
+  }
+})

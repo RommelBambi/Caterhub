@@ -34,22 +34,23 @@ const COLORS = {
   danger: '#dc2626',
 };
 
-type PaymentMethod = 'gcash' | 'grab_pay' | 'paymaya' | 'card' | 'cash';
+type PaymentMethod = 'gcash';
 
 export default function PaymentScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { bookingId, amount, description } = route.params;
+  
+  // Calculate deposit (50%) and remaining (50%)
+  const depositAmount = Math.round(amount / 2);
+  const remainingAmount = amount - depositAmount;
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [loading, setLoading] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
 
   const paymentMethods = [
-    { id: 'gcash', name: 'GCash', icon: 'wallet', color: '#007DFF' },
-    { id: 'grab_pay', name: 'GrabPay', icon: 'car', color: '#00B14F' },
-    { id: 'paymaya', name: 'PayMaya', icon: 'card', color: '#00D632' },
-    { id: 'cash', name: 'Cash on Delivery', icon: 'cash', color: COLORS.success },
+    { id: 'gcash', name: 'GCash', icon: 'wallet', color: '#007DFF', description: 'Pay via GCash e-wallet' },
   ];
 
   const handlePayment = async () => {
@@ -58,52 +59,21 @@ export default function PaymentScreen({ route, navigation }: any) {
       return;
     }
 
-    if (selectedMethod === 'cash') {
-      // Handle cash payment - just update booking status
-      try {
-        setLoading(true);
-        const { error } = await supabase
-          .from('bookings')
-          .update({
-            payment_method: 'cash',
-            payment_status: 'PENDING',
-          })
-          .eq('id', bookingId);
-
-        if (error) throw error;
-
-        Alert.alert(
-          'Booking Confirmed',
-          'Your booking has been confirmed. Please prepare cash payment on the event day.',
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.navigate('Bookings'),
-            },
-          ]
-        );
-      } catch (error: any) {
-        console.error('Error updating booking:', error);
-        Alert.alert('Error', 'Failed to confirm booking. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
+    // Only online payments allowed for deposit
 
     // Handle online payment with PayMongo
     try {
       setLoading(true);
       setProcessingPayment(true);
 
-      // Check if amount exceeds PayMongo limit (₱100,000 = 10,000,000 centavos)
-      const payMongoAmount = toPayMongoAmount(amount);
+      // Check if deposit amount exceeds PayMongo limit (₱100,000 = 10,000,000 centavos)
+      const payMongoAmount = toPayMongoAmount(depositAmount);
       const MAX_AMOUNT = 10000000; // ₱100,000 in centavos
       
       if (payMongoAmount > MAX_AMOUNT) {
         Alert.alert(
           'Amount Too Large',
-          `PayMongo has a maximum transaction limit of ₱100,000. Your booking amount is ₱${amount.toLocaleString()}. Please contact us directly for large bookings.`,
+          `PayMongo has a maximum transaction limit of ₱100,000. Your deposit amount is ₱${depositAmount.toLocaleString()}. Please contact us directly for large bookings.`,
           [
             {
               text: 'OK',
@@ -116,11 +86,11 @@ export default function PaymentScreen({ route, navigation }: any) {
         return;
       }
 
-      // Step 1: Create Payment Intent
+      // Step 1: Create Payment Intent for 50% deposit
       const paymentIntent = await createPaymentIntent({
         amount: payMongoAmount,
         currency: 'PHP',
-        description: description || `CaterHub Booking #${bookingId}`,
+        description: `Deposit (50%) - ${description || `Booking #${bookingId}`}`,
         statement_descriptor: 'CaterHub',
         metadata: {
           bookingId: bookingId.toString(),
@@ -130,17 +100,17 @@ export default function PaymentScreen({ route, navigation }: any) {
 
       console.log('Payment Intent created:', paymentIntent.id);
 
-      // Step 2: Create Payment Source (for GCash, GrabPay)
-      if (selectedMethod === 'gcash' || selectedMethod === 'grab_pay') {
-        // Note: Replace these URLs with your actual domain when deployed
-        // For now, using a generic success page that redirects back to app
+      // Step 2: Create Payment Source (for GCash only)
+      if (selectedMethod === 'gcash') {
+        // Use a simple redirect approach - PayMongo provides a generic success page
+        // The app will poll for payment status instead of relying on redirects
         const source = await createSource(
           payMongoAmount,
           selectedMethod,
-          description || `CaterHub Booking #${bookingId}`,
+          `Deposit (50%) - ${description || `Booking #${bookingId}`}`,
           {
-            success: `https://paymongo.com/redirect?status=success&booking_id=${bookingId}`,
-            failed: `https://paymongo.com/redirect?status=failed&booking_id=${bookingId}`,
+            success: 'https://www.paymongo.com/success',
+            failed: 'https://www.paymongo.com/failed',
           },
           {
             bookingId: bookingId.toString(),
@@ -150,7 +120,7 @@ export default function PaymentScreen({ route, navigation }: any) {
 
         console.log('Payment Source created:', source);
 
-        // Update booking with payment info
+        // Update booking with deposit payment info
         await supabase
           .from('bookings')
           .update({
@@ -158,6 +128,8 @@ export default function PaymentScreen({ route, navigation }: any) {
             payment_status: 'PENDING',
             payment_intent_id: paymentIntent.id,
             payment_source_id: source.id,
+            deposit_paid: false, // Will be updated when payment succeeds
+            remaining_paid: false,
           })
           .eq('id', bookingId);
 
@@ -180,6 +152,7 @@ export default function PaymentScreen({ route, navigation }: any) {
                     navigation.navigate('PaymentPending', {
                       bookingId,
                       paymentIntentId: paymentIntent.id,
+                      paymentSourceId: source.id,
                     });
                   },
                 },
@@ -189,12 +162,6 @@ export default function PaymentScreen({ route, navigation }: any) {
             throw new Error('Cannot open payment URL');
           }
         }
-      } else {
-        // For card/paymaya - would need additional UI for card details
-        Alert.alert(
-          'Coming Soon',
-          'Card and PayMaya payments will be available soon. Please use GCash or Cash on Delivery.'
-        );
       }
     } catch (error: any) {
       console.error('Payment error:', error);
@@ -219,9 +186,24 @@ export default function PaymentScreen({ route, navigation }: any) {
       <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
         {/* Amount Summary */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Total Amount</Text>
+          <Text style={styles.summaryLabel}>Total Booking Amount</Text>
           <Text style={styles.summaryAmount}>₱{amount.toLocaleString()}</Text>
           <Text style={styles.summaryDescription}>{description}</Text>
+          
+          {/* Deposit Info */}
+          <View style={styles.depositInfo}>
+            <View style={styles.depositRow}>
+              <Text style={styles.depositLabel}>Deposit Required (50%)</Text>
+              <Text style={styles.depositAmount}>₱{depositAmount.toLocaleString()}</Text>
+            </View>
+            <View style={styles.depositRow}>
+              <Text style={styles.depositLabelSecondary}>Remaining (50%)</Text>
+              <Text style={styles.depositAmountSecondary}>₱{remainingAmount.toLocaleString()}</Text>
+            </View>
+            <Text style={styles.depositNote}>
+              Pay remaining amount during the event (cash or online)
+            </Text>
+          </View>
         </View>
 
         {/* Payment Methods */}
@@ -256,24 +238,22 @@ export default function PaymentScreen({ route, navigation }: any) {
         </View>
 
         {/* Payment Info */}
-        {selectedMethod && selectedMethod !== 'cash' && (
+        {selectedMethod && (
           <View style={styles.infoCard}>
             <Ionicons name="information-circle" size={20} color={COLORS.primary} />
             <Text style={styles.infoText}>
-              You will be redirected to complete your payment securely. Please return to the app
-              after completing the payment.
+              You will be redirected to complete your 50% deposit payment securely. Please return to the app after completing the payment.
             </Text>
           </View>
         )}
-
-        {selectedMethod === 'cash' && (
-          <View style={[styles.infoCard, { backgroundColor: COLORS.success + '15' }]}>
-            <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
-            <Text style={[styles.infoText, { color: COLORS.success }]}>
-              Your booking will be confirmed. Please prepare the exact amount on the event day.
-            </Text>
-          </View>
-        )}
+        
+        {/* Important Notice */}
+        <View style={[styles.infoCard, { backgroundColor: COLORS.primary + '10' }]}>
+          <Ionicons name="alert-circle" size={20} color={COLORS.primary} />
+          <Text style={styles.infoText}>
+            <Text style={{ fontWeight: '600' }}>Important:</Text> This is a 50% deposit to confirm your booking. The remaining 50% can be paid during the event.
+          </Text>
+        </View>
       </ScrollView>
 
       {/* Footer */}
@@ -292,7 +272,7 @@ export default function PaymentScreen({ route, navigation }: any) {
           ) : (
             <>
               <Text style={styles.payButtonText}>
-                {selectedMethod === 'cash' ? 'Confirm Booking' : 'Proceed to Payment'}
+                Pay Deposit (₱{depositAmount.toLocaleString()})
               </Text>
               <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
             </>
@@ -356,6 +336,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text,
     textAlign: 'center',
+  },
+  depositInfo: {
+    width: '100%',
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  depositRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  depositLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  depositAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  depositLabelSecondary: {
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+  depositAmountSecondary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textLight,
+  },
+  depositNote: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginTop: 8,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   section: {
     paddingHorizontal: 16,

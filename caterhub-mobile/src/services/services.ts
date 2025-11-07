@@ -232,21 +232,39 @@ export async function createBooking(payload: {
   guests: number;
   notes?: string;
   packageId?: string; // UUID of the package
+  address?: string;
+  depositAmount?: number;
+  remainingAmount?: number;
 }) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('User not authenticated');
   
+  // Build insert data - only include fields that exist in current schema
+  const insertData: any = {
+    user_id: user.id,
+    service_id: payload.serviceId,
+    event_date: payload.eventDate,
+    guests: payload.guests,
+    notes: payload.notes,
+    package_id: payload.packageId || null,
+    status: 'PENDING',
+  };
+
+  // Add new fields only if they're provided (for backward compatibility)
+  // These will work after running the migration
+  if (payload.address !== undefined) {
+    insertData.address = payload.address;
+  }
+  if (payload.depositAmount !== undefined) {
+    insertData.deposit_amount = payload.depositAmount;
+  }
+  if (payload.remainingAmount !== undefined) {
+    insertData.remaining_amount = payload.remainingAmount;
+  }
+  
   const { data, error } = await supabase
     .from('bookings')
-    .insert({
-      user_id: user.id,
-      service_id: payload.serviceId,
-      event_date: payload.eventDate,
-      guests: payload.guests,
-      notes: payload.notes,
-      package_id: payload.packageId || null,
-      status: 'PENDING',
-    })
+    .insert(insertData)
     .select()
     .single();
     
