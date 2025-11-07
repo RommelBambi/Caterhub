@@ -103,7 +103,7 @@ export interface Database {
           event_date: string;
           guests: number;
           notes?: string | null;
-          status: 'PENDING' | 'CONFIRMED' | 'DECLINED' | 'COMPLETED' | 'CANCELLED';
+          status: 'PENDING' | 'CONFIRMED' | 'ON_THE_WAY' | 'DECLINED' | 'COMPLETED' | 'CANCELLED';
           created_at: string;
           updated_at: string;
         };

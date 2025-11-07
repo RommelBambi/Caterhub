@@ -37,7 +37,7 @@ type OrderDetailsRouteParams = {
     }>;
     venue: string;
     inclusions: string[];
-    status: "PENDING" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED";
+    status: "PENDING" | "CONFIRMED" | "ON_THE_WAY" | "DECLINED" | "COMPLETED" | "CANCELLED";
     eventDate: string;
     guests: number;
     totalPrice: string;
@@ -205,6 +205,12 @@ export default function PartnerOrderDetailsScreen() {
     openReasonModal('decline');
   }
 
+  async function handleOnTheWay() {
+    console.log('[PartnerOrderDetailsScreen] handleOnTheWay called');
+    // Update status immediately without confirmation
+    updateBookingStatus('ON_THE_WAY');
+  }
+
   async function handleComplete() {
     console.log('[PartnerOrderDetailsScreen] handleComplete called');
     
@@ -279,12 +285,13 @@ export default function PartnerOrderDetailsScreen() {
                     styles.statusBadge,
                     currentStatus === "PENDING" && styles.statusBadgePending,
                     currentStatus === "CONFIRMED" && styles.statusBadgeConfirmed,
+                    currentStatus === "ON_THE_WAY" && styles.statusBadgeOnTheWay,
                     currentStatus === "COMPLETED" && styles.statusBadgeCompleted,
                     currentStatus === "DECLINED" && styles.statusBadgeDeclined,
                     currentStatus === "CANCELLED" && styles.statusBadgeCancelled
                   ]}
                 >
-                  {currentStatus}
+                  {currentStatus === "ON_THE_WAY" ? "ON THE WAY" : currentStatus}
                 </Text>
               </Text>
             </View>
@@ -463,15 +470,15 @@ export default function PartnerOrderDetailsScreen() {
             {currentStatus === "CONFIRMED" && (
               <>
                 <TouchableOpacity
-                  style={[styles.actionBtn, styles.completeBtn]}
-                  onPress={handleComplete}
+                  style={[styles.actionBtn, styles.onTheWayBtn]}
+                  onPress={handleOnTheWay}
                   disabled={updating}
                   activeOpacity={0.7}
                 >
                   {updating ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.actionBtnText}>Mark as Completed</Text>
+                    <Text style={styles.actionBtnText}>Mark as On the Way</Text>
                   )}
                 </TouchableOpacity>
 
@@ -482,6 +489,23 @@ export default function PartnerOrderDetailsScreen() {
                   activeOpacity={0.7}
                 >
                   <Text style={styles.actionBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {currentStatus === "ON_THE_WAY" && (
+              <>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.completeBtn]}
+                  onPress={handleComplete}
+                  disabled={updating}
+                  activeOpacity={0.7}
+                >
+                  {updating ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.actionBtnText}>Mark as Completed</Text>
+                  )}
                 </TouchableOpacity>
               </>
             )}
@@ -595,6 +619,10 @@ const styles = StyleSheet.create({
   statusBadgeConfirmed: {
     backgroundColor: "#D1FAE5",
     color: "#065F46"
+  },
+  statusBadgeOnTheWay: {
+    backgroundColor: "#FEF3C7",
+    color: "#92400E"
   },
   statusBadgeCompleted: {
     backgroundColor: "#E5E7EB",
@@ -745,6 +773,9 @@ const styles = StyleSheet.create({
   },
   completeBtn: {
     backgroundColor: "#10b981"
+  },
+  onTheWayBtn: {
+    backgroundColor: "#f59e0b"
   },
   declineBtn: {
     backgroundColor: "#ef4444"

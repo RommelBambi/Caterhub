@@ -155,6 +155,8 @@ const BookingDetails = ({ route, navigation }: any) => {
   const statusColor = (s?: string) =>
     s === 'CONFIRMED'
       ? '#10b981'
+      : s === 'ON_THE_WAY'
+      ? '#f59e0b'
       : s === 'COMPLETED'
       ? '#2563eb'
       : s === 'DECLINED'
