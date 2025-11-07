@@ -31,7 +31,7 @@ import { isWeb } from "../../utils/platform";
 import { Platform } from "react-native";
 import { supabase } from "../../services/supabase";
 import { BusinessLocation } from "../../types/admin";
-import { COUNTRIES, PROVINCES_PH, CITIES_BY_PROVINCE } from "../../constants/locations";
+import { COUNTRIES, PROVINCES_PH, getCitiesByProvince } from "../../constants/locations";
 import { COLORS } from "../../constants/colors";
 
 const DTI_PREFIX = 'DTI::';
@@ -194,6 +194,11 @@ export default function PartnerSettingsScreen() {
   // Save confirmation and success modals
   const [showSaveConfirmationModal, setShowSaveConfirmationModal] = useState(false);
   const [showSaveSuccessModal, setShowSaveSuccessModal] = useState(false);
+  
+  // Locations/Documents save confirmation and success modals
+  const [showLocationsSaveConfirmationModal, setShowLocationsSaveConfirmationModal] = useState(false);
+  const [showLocationsSaveSuccessModal, setShowLocationsSaveSuccessModal] = useState(false);
+  const [savingLocations, setSavingLocations] = useState(false);
 
   // Profile image state
   const [profileImage, setProfileImage] = useState<string | null>(null);
@@ -340,7 +345,7 @@ export default function PartnerSettingsScreen() {
   };
 
   const getAvailableCities = (province: string) => {
-    return CITIES_BY_PROVINCE[province] || [];
+    return getCitiesByProvince(province);
   };
 
   // Document management functions
@@ -607,20 +612,41 @@ export default function PartnerSettingsScreen() {
         // Check if it's an RLS policy issue
         if (updateError.code === '42501' || updateError.message.includes('permission')) {
           console.warn('RLS policy may be blocking update. Application status:', application.status);
-          // Users can only update pending applications per RLS policy
-          if (application.status !== 'Pending') {
-            Alert.alert(
-              'Update Restricted',
-              'You can only update locations and documents for pending applications. Please contact support if you need to update an approved application.'
-            );
-            return;
-          }
+          Alert.alert(
+            'Update Restricted',
+            'Unable to update locations and documents. Please ensure you have the necessary permissions or contact support.'
+          );
+          return;
         }
         throw updateError;
       }
     } catch (error) {
       console.error('Error saving locations and documents:', error);
       throw error;
+    }
+  };
+
+  // Show locations save confirmation modal
+  const handleSaveLocationsClick = () => {
+    if (!user) return;
+    setShowLocationsSaveConfirmationModal(true);
+  };
+
+  // Confirm and save locations
+  const confirmSaveLocations = async () => {
+    if (!user) return;
+
+    setShowLocationsSaveConfirmationModal(false);
+    setSavingLocations(true);
+    try {
+      await saveLocationsAndDocuments();
+      // Show success modal
+      setShowLocationsSaveSuccessModal(true);
+    } catch (error) {
+      console.error("Error saving locations:", error);
+      Alert.alert("Error", "Failed to save locations. Please try again.");
+    } finally {
+      setSavingLocations(false);
     }
   };
 
@@ -1593,16 +1619,13 @@ export default function PartnerSettingsScreen() {
                 </Pressable>
 
                 <Pressable
-                  style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-                  onPress={async () => {
-                    await saveLocationsAndDocuments();
-                    Alert.alert("Saved", "Locations have been updated successfully.");
-                  }}
-                  disabled={saving}
+                  style={[styles.saveBtn, savingLocations && styles.saveBtnDisabled]}
+                  onPress={handleSaveLocationsClick}
+                  disabled={savingLocations}
                 >
                   <Text style={styles.saveBtnText}>
-                    {saving ? "Saving..." : "Save Locations"}
-            </Text>
+                    {savingLocations ? "Saving..." : "Save Locations"}
+                  </Text>
                 </Pressable>
           </View>
             </>
@@ -1716,15 +1739,12 @@ export default function PartnerSettingsScreen() {
                 </View>
 
                 <Pressable
-                  style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-                  onPress={async () => {
-                    await saveLocationsAndDocuments();
-                    Alert.alert("Saved", "Documents have been saved successfully.");
-                  }}
-                  disabled={saving}
+                  style={[styles.saveBtn, savingLocations && styles.saveBtnDisabled]}
+                  onPress={handleSaveLocationsClick}
+                  disabled={savingLocations}
                 >
                   <Text style={styles.saveBtnText}>
-                    {saving ? "Saving..." : "Save Documents"}
+                    {savingLocations ? "Saving..." : "Save Documents"}
                   </Text>
                 </Pressable>
               </View>
@@ -2192,6 +2212,108 @@ export default function PartnerSettingsScreen() {
                 style={[styles.modalSuccessButton]}
                 onPress={() => {
                   setShowSaveSuccessModal(false);
+                }}
+              >
+                <Text style={styles.modalSuccessButtonText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Locations/Documents Save Confirmation Modal */}
+      <Modal
+        visible={showLocationsSaveConfirmationModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          if (!savingLocations) {
+            setShowLocationsSaveConfirmationModal(false);
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Save Changes</Text>
+              <Pressable
+                onPress={() => {
+                  if (!savingLocations) {
+                    setShowLocationsSaveConfirmationModal(false);
+                  }
+                }}
+                style={styles.modalCloseButton}
+                disabled={savingLocations}
+              >
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.modalWarning}>
+              Are you sure you want to save these changes? This will update your business locations and documents.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalCancelButton]}
+                onPress={() => {
+                  if (!savingLocations) {
+                    setShowLocationsSaveConfirmationModal(false);
+                  }
+                }}
+                disabled={savingLocations}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalSaveButton, savingLocations && styles.modalSaveButtonDisabled]}
+                onPress={confirmSaveLocations}
+                disabled={savingLocations}
+              >
+                {savingLocations ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.modalSaveButtonText}>Saving...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <Text style={styles.modalSaveButtonText}>Save Changes</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Locations/Documents Save Success Modal */}
+      <Modal
+        visible={showLocationsSaveSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowLocationsSaveSuccessModal(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.successIconContainer}>
+                <Ionicons name="checkmark-circle" size={48} color={COLORS.success || "#22c55e"} />
+              </View>
+            </View>
+
+            <Text style={styles.successTitle}>Changes Saved Successfully!</Text>
+            <Text style={styles.successMessage}>
+              Your business locations and documents have been updated successfully. All changes have been saved.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalSuccessButton]}
+                onPress={() => {
+                  setShowLocationsSaveSuccessModal(false);
                 }}
               >
                 <Text style={styles.modalSuccessButtonText}>OK</Text>

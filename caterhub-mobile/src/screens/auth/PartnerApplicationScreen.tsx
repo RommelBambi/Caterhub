@@ -13,7 +13,7 @@ import { COLORS } from '../../constants/colors';
 import { PartnerForm, StepKey, BusinessLocation } from '../../types/admin';
 import { EMPTY_PARTNER_FORM } from '../../constants/storage';
 import { loadForm, saveForm, clearForm, sendApplicationToRecruitment } from '../../utils/storage';
-import { COUNTRIES, PROVINCES_PH, CITIES_BY_PROVINCE } from '../../constants/locations';
+import { COUNTRIES, PROVINCES_PH, getCitiesByProvince } from '../../constants/locations';
 import InteractiveMapPicker from '../../components/InteractiveMapPicker';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../store/auth';
@@ -205,7 +205,7 @@ function Step1({
   };
 
   const getAvailableCities = (province: string) => {
-    return CITIES_BY_PROVINCE[province] || [];
+    return getCitiesByProvince(province);
   };
 
   const handleLocationSelect = (location: { latitude: number; longitude: number; address: string }) => {
