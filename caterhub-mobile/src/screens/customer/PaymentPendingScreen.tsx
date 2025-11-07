@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getPaymentIntent } from '../../services/paymongo';
+import { getPaymentIntent, getSource } from '../../services/paymongo';
 import { supabase } from '../../services/supabase';
 
 const COLORS = {
@@ -26,7 +26,7 @@ const COLORS = {
 
 export default function PaymentPendingScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { bookingId, paymentIntentId } = route.params;
+  const { bookingId, paymentIntentId, paymentSourceId } = route.params;
 
   const [checking, setChecking] = useState(true);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'success' | 'failed'>('pending');
@@ -58,37 +58,72 @@ export default function PaymentPendingScreen({ route, navigation }: any) {
 
   const checkPaymentStatus = async () => {
     try {
-      // Check payment intent status from PayMongo
-      const paymentIntent = await getPaymentIntent(paymentIntentId);
-      
-      console.log('Payment Intent Status:', paymentIntent.attributes.status);
+      // For GCash payments, check the payment source status
+      if (paymentSourceId) {
+        const source = await getSource(paymentSourceId);
+        
+        console.log('Payment Source Status:', source.attributes.status);
 
-      if (paymentIntent.attributes.status === 'succeeded') {
-        // Update booking status
-        const { error } = await supabase
-          .from('bookings')
-          .update({
-            payment_status: 'COMPLETED',
-            paid_at: new Date().toISOString(),
-            status: 'CONFIRMED',
-          })
-          .eq('id', bookingId);
+        if (source.attributes.status === 'chargeable' || source.attributes.status === 'paid') {
+          // Update booking status - mark deposit as paid
+          const { error } = await supabase
+            .from('bookings')
+            .update({
+              payment_status: 'PENDING', // Still pending remaining payment
+              deposit_paid: true,
+              paid_at: new Date().toISOString(),
+              status: 'CONFIRMED',
+            })
+            .eq('id', bookingId);
 
-        if (error) {
-          console.error('Error updating booking:', error);
+          if (error) {
+            console.error('Error updating booking:', error);
+          }
+
+          setPaymentStatus('success');
+          setMessage('Deposit payment successful! Your booking is confirmed.');
+          setChecking(false);
+        } else if (source.attributes.status === 'failed' || source.attributes.status === 'cancelled') {
+          setPaymentStatus('failed');
+          setMessage('Payment failed. Please try again.');
+          setChecking(false);
+        } else if (source.attributes.status === 'pending') {
+          setMessage('Waiting for payment confirmation...');
         }
+      } else if (paymentIntentId) {
+        // Fallback to payment intent for other payment methods
+        const paymentIntent = await getPaymentIntent(paymentIntentId);
+        
+        console.log('Payment Intent Status:', paymentIntent.attributes.status);
 
-        setPaymentStatus('success');
-        setMessage('Payment successful! Your booking is confirmed.');
-        setChecking(false);
-      } else if (paymentIntent.attributes.status === 'failed') {
-        setPaymentStatus('failed');
-        setMessage('Payment failed. Please try again.');
-        setChecking(false);
-      } else if (paymentIntent.attributes.status === 'processing') {
-        setMessage('Processing your payment...');
-      } else {
-        setMessage('Waiting for payment confirmation...');
+        if (paymentIntent.attributes.status === 'succeeded') {
+          // Update booking status - mark deposit as paid
+          const { error } = await supabase
+            .from('bookings')
+            .update({
+              payment_status: 'PENDING', // Still pending remaining payment
+              deposit_paid: true,
+              paid_at: new Date().toISOString(),
+              status: 'CONFIRMED',
+            })
+            .eq('id', bookingId);
+
+          if (error) {
+            console.error('Error updating booking:', error);
+          }
+
+          setPaymentStatus('success');
+          setMessage('Deposit payment successful! Your booking is confirmed.');
+          setChecking(false);
+        } else if (paymentIntent.attributes.status === 'failed') {
+          setPaymentStatus('failed');
+          setMessage('Payment failed. Please try again.');
+          setChecking(false);
+        } else if (paymentIntent.attributes.status === 'processing') {
+          setMessage('Processing your payment...');
+        } else {
+          setMessage('Waiting for payment confirmation...');
+        }
       }
     } catch (error: any) {
       console.error('Error checking payment status:', error);
@@ -148,7 +183,7 @@ export default function PaymentPendingScreen({ route, navigation }: any) {
           <View style={[styles.infoBox, { backgroundColor: COLORS.success + '15' }]}>
             <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
             <Text style={[styles.infoText, { color: COLORS.success }]}>
-              Your booking has been confirmed. You can view the details in your bookings.
+              Your 50% deposit has been paid successfully! Your booking is now confirmed. The remaining 50% can be paid during the event.
             </Text>
           </View>
         )}

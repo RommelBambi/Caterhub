@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Image, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Image, StyleSheet, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
@@ -38,16 +38,25 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.topSection}>
-        <Image
-          source={require('../../../assets/blacklogo.png')}
-          style={styles.heroImage}
-          resizeMode="contain"
-        />
-      </View>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.topSection}>
+          <Image
+            source={require('../../../assets/blacklogo.png')}
+            style={styles.heroImage}
+            resizeMode="contain"
+          />
+        </View>
 
-      <View style={styles.bottomCard}>
+        <View style={styles.bottomCard}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>Log in or Sign up</Text>
           <View style={styles.segmentedControl}>
@@ -137,13 +146,15 @@ export default function LoginScreen() {
         >
           create account
         </Button>
-      </View>
-    </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FF8000' },
+  scrollContent: { flexGrow: 1 },
   topSection: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   heroImage: { width: 550, height: 550 },
   bottomCard: {

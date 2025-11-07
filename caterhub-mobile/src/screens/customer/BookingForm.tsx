@@ -15,13 +15,12 @@ type FormVals = {
   date: string;
   guests: string;
   address: string;
-  paymentMethod: 'cash' | 'gcash' | 'bank';
   notes: string;
 };
 
 export default function BookingForm({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { user, token } = useAuth();
+  const { user, token, logout } = useAuth();
   const { service, pkg, picks, notes: initialNotes } = route.params || {};
 
   // Check authentication
@@ -40,21 +39,20 @@ export default function BookingForm({ route, navigation }: any) {
           {
             text: 'Login',
             onPress: () => {
-              // Navigate to login screen
-              navigation.getParent()?.navigate('Auth', { screen: 'Login' });
+              // Logout to show login screen
+              logout();
             },
           },
         ]
       );
     }
-  }, [token, user, navigation]);
+  }, [token, user, navigation, logout]);
 
   const { control, handleSubmit, watch } = useForm<FormVals>({
     defaultValues: {
       date: '',
       guests: '50',
       address: '',
-      paymentMethod: undefined as any, // force selection
       notes: initialNotes ?? '',
     },
   });
@@ -66,7 +64,6 @@ export default function BookingForm({ route, navigation }: any) {
   const date = watch('date')?.trim() ?? '';
   const guestsStr = watch('guests')?.trim() ?? '';
   const address = watch('address')?.trim() ?? '';
-  const paymentMethod = watch('paymentMethod');
 
   const guests = Number(guestsStr || 0);
   
@@ -92,11 +89,9 @@ export default function BookingForm({ route, navigation }: any) {
 
   const valid =
     date.length > 0 &&
-    guestsStr.length > 0 &&
     !Number.isNaN(guests) &&
     guests > 0 &&
-    address.length > 0 &&
-    !!paymentMethod;
+    address.length > 0;
 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -121,7 +116,8 @@ export default function BookingForm({ route, navigation }: any) {
           {
             text: 'Login',
             onPress: () => {
-              navigation.getParent()?.navigate('Auth', { screen: 'Login' });
+              // Logout to show login screen
+              logout();
             },
           },
         ]
@@ -133,13 +129,15 @@ export default function BookingForm({ route, navigation }: any) {
     setError(null);
     
     try {
-      // If the backend doesn't have dedicated fields yet for address/paymentMethod,
-      // we include them inside notes as well so nothing is lost.
+      // Calculate deposit (50%) and remaining (50%)
+      const depositAmount = Math.round(total / 2);
+      const remainingAmount = total - depositAmount;
+      
+      // Pack additional info into notes (including address for backward compatibility)
       const packedNotes = JSON.stringify({
         packageId: pkg?.id,
         picks,
-        paymentMethod: d.paymentMethod,
-        address: d.address,
+        address: d.address, // Store in notes until migration is run
         extra: d.notes,
       });
 
@@ -148,6 +146,9 @@ export default function BookingForm({ route, navigation }: any) {
         eventDate: d.date,
         guests: Number(d.guests),
         packageId: pkg?.id,
+        address: d.address,
+        depositAmount,
+        remainingAmount,
       });
 
       const bookingData = await createBooking({
@@ -155,18 +156,20 @@ export default function BookingForm({ route, navigation }: any) {
         eventDate: d.date,
         guests: Number(d.guests),
         notes: packedNotes,
-        packageId: pkg?.id, // Include package ID in booking
-        // Optionally, if your backend already supports these fields, include them too:
-        // address: d.address,
-        // paymentMethod: d.paymentMethod,
+        packageId: pkg?.id,
+        address: d.address,
+        depositAmount,
+        remainingAmount,
       });
 
       console.log('[BookingForm] Booking created successfully, navigating to payment...');
       
-      // Navigate to payment screen
+      // Navigate to payment screen with deposit info
       navigation.navigate('Payment', {
         bookingId: bookingData.id,
         amount: total,
+        depositAmount,
+        remainingAmount,
         description: `${service?.name || 'Catering Service'}${pkg ? ` - ${pkg.name}` : ''}`,
         serviceId: service.id,
         packageId: pkg?.id,
@@ -189,7 +192,8 @@ export default function BookingForm({ route, navigation }: any) {
                 {
                   text: 'OK',
                   onPress: () => {
-                    navigation.getParent()?.navigate('Auth', { screen: 'Login' });
+                    // Logout to show login screen
+                    logout();
                   },
                 },
               ]
@@ -228,7 +232,8 @@ export default function BookingForm({ route, navigation }: any) {
               mode="contained"
               style={{ backgroundColor: '#FF8000' }}
               onPress={() => {
-                navigation.getParent()?.navigate('Auth', { screen: 'Login' });
+                // Logout to show login screen
+                logout();
               }}
             >
               Go to Login
@@ -418,20 +423,19 @@ export default function BookingForm({ route, navigation }: any) {
           )}
         />
 
-        {/* Payment method */}
-        <Text style={[styles.label, { marginTop: 14 }]}>Payment Method</Text>
-        <Controller
-          control={control}
-          name="paymentMethod"
-          rules={{ required: true }}
-          render={({ field: { onChange, value } }) => (
-            <RadioButton.Group onValueChange={onChange} value={value}>
-              <RadioButton.Item label="Cash" value="cash" position="leading" color="#FF8000" />
-              <RadioButton.Item label="GCash" value="gcash" position="leading" color="#FF8000" />
-              <RadioButton.Item label="Bank Transfer" value="bank" position="leading" color="#FF8000" />
-            </RadioButton.Group>
-          )}
-        />
+        {/* Payment Info */}
+        <View style={[styles.input, { backgroundColor: '#FFF5E6', padding: 16, borderRadius: 8 }]}>
+          <Text style={[styles.label, { marginBottom: 8 }]}>💳 Payment Information</Text>
+          <Text style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+            • 50% deposit required to confirm booking
+          </Text>
+          <Text style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+            • Remaining 50% payable during event
+          </Text>
+          <Text style={{ fontSize: 13, color: '#666' }}>
+            • Payment methods: GCash or PayMaya
+          </Text>
+        </View>
 
         {/* Additional notes (editable, prefilled from CustomizePackage if provided) */}
         <Controller

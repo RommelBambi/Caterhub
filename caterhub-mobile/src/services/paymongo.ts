@@ -9,10 +9,12 @@ const SECRET_KEY = process.env.PAYMONGO_SECRET_KEY || '';
 /**
  * Helper function to create base64 encoded auth header
  * React Native compatible (uses global btoa)
+ * PayMongo requires the key to be encoded with a trailing colon
  */
 function createAuthHeader(key: string): string {
-  // Use global btoa which is available in React Native
-  return `Basic ${global.btoa(key)}`;
+  // PayMongo expects: Basic base64(key:)
+  // The colon at the end is required by PayMongo's API
+  return `Basic ${global.btoa(key + ':')}`;
 }
 
 /**
@@ -206,12 +208,12 @@ export async function getPaymentIntent(paymentIntentId: string): Promise<PayMong
 }
 
 /**
- * Create a Payment Source (for GCash, GrabPay)
+ * Create a Payment Source (for GCash, GrabPay, PayMaya)
  * Alternative to Payment Intent flow
  */
 export async function createSource(
   amount: number,
-  type: 'gcash' | 'grab_pay',
+  type: 'gcash' | 'grab_pay' | 'paymaya',
   description: string,
   redirectUrl: { success: string; failed: string },
   metadata?: any
@@ -259,4 +261,26 @@ export function toPayMongoAmount(phpAmount: number): number {
  */
 export function fromPayMongoAmount(centavos: number): number {
   return centavos / 100;
+}
+
+/**
+ * Retrieve Payment Source status
+ */
+export async function getSource(sourceId: string) {
+  try {
+    const response = await axios.get(
+      `${PAYMONGO_BASE_URL}/sources/${sourceId}`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: createAuthHeader(PUBLIC_KEY),
+        },
+      }
+    );
+
+    return response.data.data;
+  } catch (error: any) {
+    console.error('PayMongo getSource error:', error.response?.data || error.message);
+    throw new Error(error.response?.data?.errors?.[0]?.detail || 'Failed to retrieve payment source');
+  }
 }
