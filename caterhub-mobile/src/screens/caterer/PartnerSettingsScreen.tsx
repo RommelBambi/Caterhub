@@ -187,6 +187,11 @@ export default function PartnerSettingsScreen() {
     confirmPassword?: string;
   }>({});
   const [updatingPassword, setUpdatingPassword] = useState(false);
+  // Password visibility toggles
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showEmailVerificationPassword, setShowEmailVerificationPassword] = useState(false);
 
   // Delete account state
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
@@ -223,11 +228,11 @@ export default function PartnerSettingsScreen() {
         // Load profile from Supabase
         const prof = await loadProfileFromSupabase(user.id);
         if (prof) {
-          setContactNumber(prof.contactNumber ?? "");
+      setContactNumber(prof.contactNumber ?? "");
           setEmail(prof.email ?? user.email ?? "");
           setWebsite(prof.website ?? "");
-          setAddress(prof.address ?? "");
-          setAbout(prof.about ?? "");
+      setAddress(prof.address ?? "");
+      setAbout(prof.about ?? "");
           setFacebook(prof.facebook ?? "");
           setInstagram(prof.instagram ?? "");
         } else {
@@ -702,11 +707,11 @@ export default function PartnerSettingsScreen() {
     setSaving(true);
     try {
       // Save profile data to Supabase
-      const newProfile: CatererProfile = {
-        contactNumber: contactNumber.trim(),
+    const newProfile: CatererProfile = {
+      contactNumber: contactNumber.trim(),
         email: email.trim() || undefined,
         website: website.trim() || undefined,
-        address: address.trim(),
+      address: address.trim(),
         about: about.trim(),
         facebook: facebook.trim() || undefined,
         instagram: instagram.trim() || undefined
@@ -781,25 +786,64 @@ export default function PartnerSettingsScreen() {
 
     setUpdatingEmail(true);
     try {
-      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
-      if (error) {
-        throw error;
+      // Call Supabase Edge Function to update email
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session. Please log in again.');
       }
+
+      const { data, error } = await supabase.functions.invoke('update-email', {
+        body: {
+          newEmail: newEmail.trim(),
+          password: emailVerificationPassword,
+        },
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'Failed to update email. Please try again.');
+      }
+
+      if (data?.error) {
+        console.error('Email update error:', data.error);
+        let errorMessage = data.error || 'Failed to update email. Please try again.';
+        
+        // Handle specific error cases
+        if (data.error.includes('already registered') || 
+            data.error.includes('already exists') ||
+            data.error.includes('already been registered')) {
+          errorMessage = 'This email address is already in use. Please use a different email.';
+        } else if (data.error.includes('Invalid password')) {
+          errorMessage = 'Incorrect password. Please try again.';
+        } else if (data.error.includes('Invalid email')) {
+          errorMessage = `Invalid email address: ${newEmail.trim()}. Please enter a valid email address.`;
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      // Refresh user data
+      refreshUser();
+
       Alert.alert(
-        "Email Update Requested",
-        "A confirmation email has been sent to your new email address. Please check your inbox and click the confirmation link to complete the email change.",
+        "Email Updated",
+        "Your email address has been updated successfully.",
         [
           {
             text: "OK",
             onPress: () => {
               setNewEmail("");
               setShowChangeEmail(false);
-              refreshUser();
+              setEmailVerificationPassword("");
+              setEmailPasswordError("");
+              setEmailPasswordVerified(false);
+              setShowEmailVerificationPassword(false);
             }
           }
         ]
       );
     } catch (error: any) {
+      console.error('Email change error:', error);
       Alert.alert("Error", error?.message || "Failed to update email. Please try again.");
     } finally {
       setUpdatingEmail(false);
@@ -865,6 +909,9 @@ export default function PartnerSettingsScreen() {
     setConfirmPassword("");
     setPasswordErrors({});
     setCurrentPasswordVerified(false);
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
   };
 
   const handleChangePassword = async () => {
@@ -1454,13 +1501,13 @@ export default function PartnerSettingsScreen() {
               </View>
 
               {/* Preview Card */}
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Preview for Customers</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Preview for Customers</Text>
                 <Text style={styles.cardSubtitle}>
                   This is how your business will appear to customers.
                 </Text>
                 <View style={styles.previewCard}>
-                  <View style={styles.previewHeaderRow}>
+            <View style={styles.previewHeaderRow}>
                     {profileImage ? (
                       <Image
                         source={{ uri: profileImage }}
@@ -1468,18 +1515,18 @@ export default function PartnerSettingsScreen() {
                         resizeMode="cover"
                       />
                     ) : (
-                      <View style={styles.previewAvatar}>
-                        <Text style={styles.previewAvatarText}>
-                          {businessName
-                            ? businessName.charAt(0).toUpperCase()
-                            : "?"}
-                        </Text>
-                      </View>
+              <View style={styles.previewAvatar}>
+                <Text style={styles.previewAvatarText}>
+                  {businessName
+                    ? businessName.charAt(0).toUpperCase()
+                    : "?"}
+                </Text>
+              </View>
                     )}
                     <View style={styles.previewHeaderInfo}>
-                      <Text style={styles.previewNameText}>
-                        {businessName || "Your Catering"}
-                      </Text>
+                <Text style={styles.previewNameText}>
+                  {businessName || "Your Catering"}
+                </Text>
                       {contactNumber && (
                         <Text style={styles.previewMetaText}>📞 {contactNumber}</Text>
                       )}
@@ -1654,7 +1701,7 @@ export default function PartnerSettingsScreen() {
                 >
                   <Text style={styles.saveBtnText}>
                     {savingLocations ? "Saving..." : "Save Locations"}
-                  </Text>
+            </Text>
                 </Pressable>
           </View>
             </>
@@ -1838,6 +1885,7 @@ export default function PartnerSettingsScreen() {
                       setEmailVerificationPassword("");
                       setEmailPasswordError("");
                       setEmailPasswordVerified(false);
+                      setShowEmailVerificationPassword(false);
                     }}
                     style={styles.changeButton}
                   >
@@ -1857,19 +1905,31 @@ export default function PartnerSettingsScreen() {
                           <Text style={styles.labelSubtext}>
                             Please enter your current password to verify your identity
                           </Text>
-                          <TextInput
-                            style={[styles.input, emailPasswordError && styles.inputError]}
-                            placeholder="Enter your current password"
-                            placeholderTextColor="#9ca3af"
-                            value={emailVerificationPassword}
-                            onChangeText={(text) => {
-                              setEmailVerificationPassword(text);
-                              setEmailPasswordError("");
-                            }}
-                            secureTextEntry
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                          />
+                          <View style={styles.passwordInputContainer}>
+                            <TextInput
+                              style={[styles.passwordInput, emailPasswordError && styles.inputError]}
+                              placeholder="Enter your current password"
+                              placeholderTextColor="#9ca3af"
+                              value={emailVerificationPassword}
+                              onChangeText={(text) => {
+                                setEmailVerificationPassword(text);
+                                setEmailPasswordError("");
+                              }}
+                              secureTextEntry={!showEmailVerificationPassword}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Pressable
+                              style={styles.passwordToggle}
+                              onPress={() => setShowEmailVerificationPassword(!showEmailVerificationPassword)}
+                            >
+                              <Ionicons
+                                name={showEmailVerificationPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color={COLORS.textLight}
+                              />
+                            </Pressable>
+                          </View>
                           {emailPasswordError ? (
                             <Text style={styles.errorText}>{emailPasswordError}</Text>
                           ) : null}
@@ -1948,19 +2008,31 @@ export default function PartnerSettingsScreen() {
                           <Text style={styles.labelSubtext}>
                             Please enter your current password to verify your identity
                           </Text>
-                          <TextInput
-                            style={[styles.input, passwordErrors.currentPassword && styles.inputError]}
-                            placeholder="Enter current password"
-                            placeholderTextColor="#9ca3af"
-                            value={currentPassword}
-                            onChangeText={(text) => {
-                              setCurrentPassword(text);
-                              setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
-                            }}
-                            secureTextEntry
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                          />
+                          <View style={styles.passwordInputContainer}>
+                            <TextInput
+                              style={[styles.passwordInput, passwordErrors.currentPassword && styles.inputError]}
+                              placeholder="Enter current password"
+                              placeholderTextColor="#9ca3af"
+                              value={currentPassword}
+                              onChangeText={(text) => {
+                                setCurrentPassword(text);
+                                setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
+                              }}
+                              secureTextEntry={!showCurrentPassword}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Pressable
+                              style={styles.passwordToggle}
+                              onPress={() => setShowCurrentPassword(!showCurrentPassword)}
+                            >
+                              <Ionicons
+                                name={showCurrentPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color={COLORS.textLight}
+                              />
+                            </Pressable>
+                          </View>
                           {passwordErrors.currentPassword ? (
                             <Text style={styles.errorText}>{passwordErrors.currentPassword}</Text>
                           ) : null}
@@ -1984,19 +2056,31 @@ export default function PartnerSettingsScreen() {
 
                         <View style={styles.formGroup}>
                           <Text style={styles.label}>New Password *</Text>
-                          <TextInput
-                            style={[styles.input, passwordErrors.newPassword && styles.inputError]}
-                            placeholder="Enter new password (min. 8 characters)"
-                            placeholderTextColor="#9ca3af"
-                            value={newPassword}
-                            onChangeText={(text) => {
-                              setNewPassword(text);
-                              setPasswordErrors({ ...passwordErrors, newPassword: undefined });
-                            }}
-                            secureTextEntry
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                          />
+                          <View style={styles.passwordInputContainer}>
+                            <TextInput
+                              style={[styles.passwordInput, passwordErrors.newPassword && styles.inputError]}
+                              placeholder="Enter new password (min. 8 characters)"
+                              placeholderTextColor="#9ca3af"
+                              value={newPassword}
+                              onChangeText={(text) => {
+                                setNewPassword(text);
+                                setPasswordErrors({ ...passwordErrors, newPassword: undefined });
+                              }}
+                              secureTextEntry={!showNewPassword}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Pressable
+                              style={styles.passwordToggle}
+                              onPress={() => setShowNewPassword(!showNewPassword)}
+                            >
+                              <Ionicons
+                                name={showNewPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color={COLORS.textLight}
+                              />
+                            </Pressable>
+                          </View>
                           {passwordErrors.newPassword ? (
                             <Text style={styles.errorText}>{passwordErrors.newPassword}</Text>
                           ) : null}
@@ -2004,19 +2088,31 @@ export default function PartnerSettingsScreen() {
 
                         <View style={styles.formGroup}>
                           <Text style={styles.label}>Confirm New Password *</Text>
-                          <TextInput
-                            style={[styles.input, passwordErrors.confirmPassword && styles.inputError]}
-                            placeholder="Confirm new password"
-                            placeholderTextColor="#9ca3af"
-                            value={confirmPassword}
-                            onChangeText={(text) => {
-                              setConfirmPassword(text);
-                              setPasswordErrors({ ...passwordErrors, confirmPassword: undefined });
-                            }}
-                            secureTextEntry
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                          />
+                          <View style={styles.passwordInputContainer}>
+                            <TextInput
+                              style={[styles.passwordInput, passwordErrors.confirmPassword && styles.inputError]}
+                              placeholder="Confirm new password"
+                              placeholderTextColor="#9ca3af"
+                              value={confirmPassword}
+                              onChangeText={(text) => {
+                                setConfirmPassword(text);
+                                setPasswordErrors({ ...passwordErrors, confirmPassword: undefined });
+                              }}
+                              secureTextEntry={!showConfirmPassword}
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Pressable
+                              style={styles.passwordToggle}
+                              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                            >
+                              <Ionicons
+                                name={showConfirmPassword ? 'eye' : 'eye-off'}
+                                size={20}
+                                color={COLORS.textLight}
+                              />
+                            </Pressable>
+                          </View>
                           {passwordErrors.confirmPassword ? (
                             <Text style={styles.errorText}>{passwordErrors.confirmPassword}</Text>
                           ) : null}
@@ -2510,6 +2606,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: Platform.OS === 'web' ? 12 : 14,
     fontSize: Platform.OS === 'web' ? 14 : 15,
     color: "#111827"
+  },
+  passwordInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#ffffff",
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingRight: Platform.OS === 'web' ? 12 : 14,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 12 : 14,
+    fontSize: Platform.OS === 'web' ? 14 : 15,
+    color: "#111827"
+  },
+  passwordToggle: {
+    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   aboutInput: {
     minHeight: Platform.OS === 'web' ? 100 : 120,

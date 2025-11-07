@@ -12,7 +12,8 @@ export type User = {
   email: string;
   username: string;
   role: Role;
-  location?: string | null;   // optional location field
+  location?: string | null;   // optional location field (legacy)
+  profile_image_url?: string | null; // profile image URL from users table
 };
 
 type AuthContext = {
@@ -22,7 +23,7 @@ type AuthContext = {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
-  updateMe: (patch: { location?: string | null; username?: string }) => Promise<void>;
+  updateMe: (patch: { location?: string | null; username?: string; profile_image_url?: string | null }) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
 };

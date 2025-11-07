@@ -35,6 +35,7 @@ export type Service = {
   bookingsCount?: number;
   latitude?: number | null;
   longitude?: number | null;
+  user_id?: string | null; // Internal: used for fetching packages
 };
 
 
@@ -48,11 +49,21 @@ export async function fetchServices(): Promise<Service[]> {
     
   if (error) throw error;
   
-  // Optionally fetch packages for each service (this might be heavy, so we'll do it on-demand)
-  // For now, return services without packages to keep the list fast
-  // Packages will be fetched when viewing ServiceDetails
+  // Map database snake_case to camelCase
   return (data || []).map((svc: any) => ({
-    ...svc,
+    id: svc.id,
+    name: svc.name,
+    description: svc.description,
+    imageUrl: svc.image_url,
+    logoUrl: svc.logo_url,
+    rating: svc.rating,
+    reviewsCount: svc.reviews_count,
+    pricePerHead: svc.price_per_head,
+    favoritesCount: svc.favorites_count,
+    bookingsCount: svc.bookings_count,
+    latitude: svc.latitude,
+    longitude: svc.longitude,
+    user_id: svc.user_id, // Keep for package fetching
     packages: undefined, // Will be fetched in fetchService()
   }));
 }
@@ -67,7 +78,24 @@ export async function fetchTopServices(by: 'likes' | 'bookings', limit = 8): Pro
     .limit(limit);
     
   if (error) throw error;
-  return data || [];
+  
+  // Map database snake_case to camelCase
+  return (data || []).map((svc: any) => ({
+    id: svc.id,
+    name: svc.name,
+    description: svc.description,
+    imageUrl: svc.image_url,
+    logoUrl: svc.logo_url,
+    rating: svc.rating,
+    reviewsCount: svc.reviews_count,
+    pricePerHead: svc.price_per_head,
+    favoritesCount: svc.favorites_count,
+    bookingsCount: svc.bookings_count,
+    latitude: svc.latitude,
+    longitude: svc.longitude,
+    user_id: svc.user_id, // Keep for package fetching
+    packages: undefined, // Will be fetched in fetchService()
+  }));
 }
 
 
@@ -178,8 +206,21 @@ export async function fetchService(id: number): Promise<Service> {
     // Continue without packages if fetch fails
   }
   
+  // Map database snake_case to camelCase
   return {
-    ...data,
+    id: data.id,
+    name: data.name,
+    description: data.description,
+    imageUrl: data.image_url,
+    logoUrl: data.logo_url,
+    rating: data.rating,
+    reviewsCount: data.reviews_count,
+    pricePerHead: data.price_per_head,
+    favoritesCount: data.favorites_count,
+    bookingsCount: data.bookings_count,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    user_id: data.user_id, // Keep for package fetching
     packages: packages.length > 0 ? packages : undefined,
   };
 }
