@@ -24,6 +24,7 @@ type AuthContext = {
   refreshUser: () => Promise<void>;
   updateMe: (patch: { location?: string | null; username?: string }) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
 };
 
 const Ctx = createContext<AuthContext>(null as any);
@@ -38,6 +39,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const setAxiosAuthHeader = (tok?: string | null) => {
     // Note: We're using Supabase client directly, so no need for axios headers
     // This function is kept for compatibility but doesn't do anything
+  };
+
+  const deleteAccount = async (password: string) => {
+    if (!user?.email || !user?.id) throw new Error('Missing user context');
+
+    // Re-authenticate to verify password
+    const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password,
+    });
+    if (loginError || !loginData.session) {
+      throw new Error('Incorrect password');
+    }
+
+    // Invoke secured Edge Function to delete auth user (requires service role on server)
+    const { error: fnError } = await supabase.functions.invoke('delete-user', {
+      body: { userId: user.id },
+    });
+    if (fnError) {
+      throw new Error(fnError.message || 'Failed to delete account');
+    }
+
+    // Local sign-out and cleanup
+    await logout();
   };
 
   // Bootstrap: restore session and fetch user profile
@@ -152,7 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <Ctx.Provider value={{ user, token, loading, login: loginUser, logout, refreshUser, updateMe, changePassword }}>
+    <Ctx.Provider value={{ user, token, loading, login: loginUser, logout, refreshUser, updateMe, changePassword, deleteAccount }}>
       {children}
     </Ctx.Provider>
   );

@@ -901,59 +901,8 @@ export default function PartnerSettingsScreen() {
 
     setDeletingAccount(true);
     try {
-      // Re-authenticate to verify password
-      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-        email: user?.email || '',
-        password: deleteAccountPassword,
-      });
-
-      if (loginError || !loginData.session) {
-        setDeleteAccountPasswordError("Incorrect password. Please try again.");
-        setDeletingAccount(false);
-        return;
-      }
-
-      // Delete user from users table
-      const { error: deleteError } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', user?.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      // Delete user's storage files (documents, profile image, etc.)
-      try {
-        if (user?.id) {
-          // Delete profile image
-          if (profileImage) {
-            try {
-              const oldPath = profileImage.replace(/^.*\/profiles\//, 'profiles/');
-              await supabase.storage.from('avatars').remove([oldPath]);
-            } catch (error) {
-              console.warn('Error deleting profile image:', error);
-            }
-          }
-          // Delete documents
-          try {
-            const { data: files } = await supabase.storage
-              .from('partner-documents')
-              .list(user.id);
-            if (files && files.length > 0) {
-              const filePaths = files.map(f => `${user.id}/${f.name}`);
-              await supabase.storage.from('partner-documents').remove(filePaths);
-            }
-          } catch (error) {
-            console.warn('Error deleting documents:', error);
-          }
-        }
-      } catch (storageError) {
-        console.warn('Error deleting storage files:', storageError);
-      }
-
-      // Sign out and clear local data
-      await logout();
+      // Use centralized auth delete to remove Supabase auth user and sign out
+      await deleteAccount(deleteAccountPassword);
       
       Alert.alert(
         "Account Deleted",
