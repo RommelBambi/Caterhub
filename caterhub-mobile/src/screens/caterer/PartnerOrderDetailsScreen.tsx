@@ -743,7 +743,7 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   confirmBtn: {
-    backgroundColor: "#9333ea"
+    backgroundColor: "#FF8000"
   },
   completeBtn: {
     backgroundColor: "#10b981"
@@ -848,7 +848,7 @@ const styles = StyleSheet.create({
     fontSize: 14
   },
   reasonConfirm: {
-    backgroundColor: "#9333ea",
+    backgroundColor: "#FF8000",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.15,

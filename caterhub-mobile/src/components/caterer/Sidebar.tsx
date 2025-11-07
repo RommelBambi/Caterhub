@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#7c3aed",
+    color: "#FF8000",
     marginBottom: 16
   },
   navList: {

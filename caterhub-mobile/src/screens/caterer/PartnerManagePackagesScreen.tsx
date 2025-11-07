@@ -1026,7 +1026,7 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   editBtn: {
-    backgroundColor: "#9333ea"
+    backgroundColor: "#FF8000"
   },
   editBtnText: {
     color: "#fff",
@@ -1124,7 +1124,7 @@ const styles = StyleSheet.create({
   },
 
   addSectionMainBtn: {
-    backgroundColor: "#9333ea",
+    backgroundColor: "#FF8000",
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -1203,7 +1203,7 @@ const styles = StyleSheet.create({
     marginRight: 8
   },
   addBtn: {
-    backgroundColor: "#9333ea",
+    backgroundColor: "#FF8000",
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -1274,7 +1274,7 @@ const styles = StyleSheet.create({
   },
 
   addInclusionBtn: {
-    backgroundColor: "#9333ea",
+    backgroundColor: "#FF8000",
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,

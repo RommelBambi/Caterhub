@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
   },
 
   saveBtn: {
-    backgroundColor: "#9333ea",
+    backgroundColor: "#FF8000",
     borderRadius: 8,
     alignSelf: "flex-start",
     paddingVertical: 12,
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 9999,
-    backgroundColor: "#9333ea",
+    backgroundColor: "#FF8000",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,

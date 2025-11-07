@@ -803,17 +803,6 @@ const styles = StyleSheet.create({
   cell: {
     paddingRight: 8
   },
-  packageNameText: {
-    fontSize: 14,
-    color: "#111827",
-    fontWeight: "600"
-  },
-  packagePriceText: {
-    fontSize: 12,
-    color: "#10b981",
-    fontWeight: "700",
-    marginTop: 2
-  },
   statusChip: {
     fontSize: 12,
     fontWeight: "600",
@@ -844,7 +833,7 @@ const styles = StyleSheet.create({
     color: "#991B1B"
   },
   detailsBtn: {
-    backgroundColor: "#9333ea",
+    backgroundColor: "#FF8000",
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 10,
@@ -875,8 +864,8 @@ const styles = StyleSheet.create({
     borderColor: "#d1d5db"
   },
   filterChipActive: {
-    backgroundColor: "#9333ea",
-    borderColor: "#9333ea"
+    backgroundColor: "#FF8000",
+    borderColor: "#FF8000"
   },
   filterChipText: {
     fontSize: 12,
