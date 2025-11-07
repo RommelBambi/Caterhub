@@ -150,7 +150,7 @@ export default function BookingForm({ route, navigation }: any) {
         packageId: pkg?.id,
       });
 
-      await createBooking({
+      const bookingData = await createBooking({
         serviceId: service.id,
         eventDate: d.date,
         guests: Number(d.guests),
@@ -161,10 +161,16 @@ export default function BookingForm({ route, navigation }: any) {
         // paymentMethod: d.paymentMethod,
       });
 
-      console.log('[BookingForm] Booking created successfully, navigating...');
+      console.log('[BookingForm] Booking created successfully, navigating to payment...');
       
-      // Navigate to bookings screen
-      navigation.navigate('Bookings', { flash: 'Booking created successfully!' });
+      // Navigate to payment screen
+      navigation.navigate('Payment', {
+        bookingId: bookingData.id,
+        amount: total,
+        description: `${service?.name || 'Catering Service'}${pkg ? ` - ${pkg.name}` : ''}`,
+        serviceId: service.id,
+        packageId: pkg?.id,
+      });
     } catch (err: any) {
       console.error('[BookingForm] Error creating booking:', err);
       

@@ -45,7 +45,7 @@ export default function PaymentsPage() {
 
   const fetchPayments = async () => {
     try {
-      // Since we don't have a payments table yet, we'll simulate with bookings data
+      // Fetch bookings with payment data from PayMongo integration
       const { data: bookings, error } = await supabase
         .from('bookings')
         .select(`
@@ -74,7 +74,7 @@ export default function PaymentsPage() {
         return;
       }
 
-      // Transform bookings into payment records
+      // Transform bookings into payment records with real PayMongo data
       const transformedPayments: Payment[] = (bookings || []).map((booking: any) => {
         let amount = 0;
         if (booking.packages?.price) {
@@ -87,19 +87,28 @@ export default function PaymentsPage() {
           amount = pricePerHead * booking.guests;
         }
 
-        let paymentStatus: 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED' = 'PENDING';
-        if (booking.status === 'COMPLETED') paymentStatus = 'COMPLETED';
-        else if (booking.status === 'CANCELLED' || booking.status === 'DECLINED') paymentStatus = 'FAILED';
-        else if (booking.status === 'CONFIRMED') paymentStatus = 'PENDING';
+        // Use actual payment_status from database (set by PayMongo integration)
+        let paymentStatus: 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED' = 
+          booking.payment_status || 'PENDING';
+
+        // Get payment method from database (gcash, grab_pay, cash, etc.)
+        const paymentMethod = booking.payment_method 
+          ? booking.payment_method.toUpperCase() 
+          : 'Cash';
+
+        // Use actual transaction_id or payment_intent_id
+        const transactionId = booking.transaction_id 
+          || booking.payment_intent_id 
+          || `TXN-${booking.id}`;
 
         return {
           id: booking.id,
           booking_id: booking.id,
           amount,
-          payment_method: 'Cash', // Default for now
+          payment_method: paymentMethod,
           payment_status: paymentStatus,
-          transaction_id: `TXN-${booking.id}-${Date.now()}`,
-          created_at: booking.created_at,
+          transaction_id: transactionId,
+          created_at: booking.paid_at || booking.created_at,
           booking: {
             id: booking.id,
             users: booking.users,

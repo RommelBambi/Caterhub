@@ -13,6 +13,8 @@ import BookingsList from '../../screens/customer/BookingsList';
 import BookingDetails from '../../screens/customer/BookingDetails';
 import AccountScreen from '../../screens/customer/AccountScreen';
 import FavoritesScreen from '../../screens/customer/FavoritesScreen';
+import PaymentScreen from '../../screens/customer/PaymentScreen';
+import PaymentPendingScreen from '../../screens/customer/PaymentPendingScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -24,6 +26,8 @@ function HomeStack() {
       <Stack.Screen name="ServiceDetails" component={ServiceDetails} />
       <Stack.Screen name="CustomizePackage" component={CustomizePackage} />
       <Stack.Screen name="BookingForm" component={BookingForm} />
+      <Stack.Screen name="Payment" component={PaymentScreen} />
+      <Stack.Screen name="PaymentPending" component={PaymentPendingScreen} />
       <Stack.Screen name="Favorites" component={FavoritesScreen} />
     </Stack.Navigator>
   );
@@ -36,6 +40,7 @@ function FavoritesStack() {
       <Stack.Screen name="ServiceDetails" component={ServiceDetails} />
       <Stack.Screen name="CustomizePackage" component={CustomizePackage} />
       <Stack.Screen name="BookingForm" component={BookingForm} />
+      <Stack.Screen name="Payment" component={PaymentScreen} />
     </Stack.Navigator>
   );
 }
@@ -46,6 +51,7 @@ function BookingsStack() {
       <Stack.Screen name="BookingsList" component={BookingsList} />
       <Stack.Screen name="BookingDetails" component={BookingDetails} />
       <Stack.Screen name="ServiceDetails" component={ServiceDetails} />
+      <Stack.Screen name="Payment" component={PaymentScreen} />
     </Stack.Navigator>
   );
 }
