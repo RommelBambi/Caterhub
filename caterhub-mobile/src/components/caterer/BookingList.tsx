@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, FlatList, Pressable } from "react-native";
+import { View, Text, StyleSheet, FlatList, Pressable, Platform } from "react-native";
+import { isWeb } from "../../utils/platform";
 
 export type Booking = {
   id: string;
@@ -15,66 +16,121 @@ type Props = {
 };
 
 export default function BookingList({ data }: Props) {
-  return (
-    <View style={styles.tableWrapper}>
-      {/* Header row */}
-      <View style={[styles.row, styles.headerRow]}>
-        <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>
-          Booking Ref
-        </Text>
-        <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>
-          Client
-        </Text>
-        <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>
-          Date / Guests
-        </Text>
-        <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>
-          Status
-        </Text>
-        <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>
-          Actions
-        </Text>
-      </View>
+  if (isWeb) {
+    // Web: Table layout
+    return (
+      <View style={styles.tableWrapper}>
+        {/* Header row */}
+        <View style={[styles.row, styles.headerRow]}>
+          <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>
+            Booking Ref
+          </Text>
+          <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>
+            Client
+          </Text>
+          <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>
+            Date / Guests
+          </Text>
+          <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>
+            Status
+          </Text>
+          <Text style={[styles.cell, styles.headerText, { flex: 1 }]}>
+            Actions
+          </Text>
+        </View>
 
+        <FlatList
+          data={data}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item, index }) => (
+            <View
+              style={[
+                styles.row,
+                index === data.length - 1 ? styles.lastRow : styles.bodyRow
+              ]}
+            >
+              <Text style={[styles.cell, { flex: 2 }]}>
+                {item.id}
+              </Text>
+
+              <Text style={[styles.cell, { flex: 2 }]}>
+                {item.client}
+              </Text>
+
+              <Text style={[styles.cell, { flex: 2 }]}>
+                {item.date}{"\n"}
+                {item.headcount} guests
+              </Text>
+
+              <View style={[styles.cell, { flex: 1 }]}>
+                <StatusChip status={item.status} />
+              </View>
+
+              <View style={[styles.cell, { flex: 1 }]}>
+                <Pressable
+                  style={styles.detailsBtn}
+                  onPress={() => {
+                    // hook this up later (open booking details)
+                  }}
+                >
+                  <Text style={styles.detailsText}>Details</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        />
+      </View>
+    );
+  }
+
+  // Mobile: Card layout
+  return (
+    <View style={styles.mobileWrapper}>
       <FlatList
         data={data}
         keyExtractor={(item) => item.id}
         renderItem={({ item, index }) => (
-          <View
-            style={[
-              styles.row,
-              index === data.length - 1 ? styles.lastRow : styles.bodyRow
-            ]}
-          >
-            <Text style={[styles.cell, { flex: 2 }]}>
-              {item.id}
-            </Text>
-
-            <Text style={[styles.cell, { flex: 2 }]}>
-              {item.client}
-            </Text>
-
-            <Text style={[styles.cell, { flex: 2 }]}>
-              {item.date}{"\n"}
-              {item.headcount} guests
-            </Text>
-
-            <View style={[styles.cell, { flex: 1 }]}>
+          <View style={styles.mobileCard}>
+            <View style={styles.mobileCardHeader}>
+              <Text style={styles.mobileBookingId}>{item.id}</Text>
               <StatusChip status={item.status} />
             </View>
 
-            <View style={[styles.cell, { flex: 1 }]}>
-              <Pressable
-                style={styles.detailsBtn}
-                onPress={() => {
-                  // hook this up later (open booking details)
-                }}
-              >
-                <Text style={styles.detailsText}>Details</Text>
-              </Pressable>
+            <View style={styles.mobileCardBody}>
+              <View style={styles.mobileInfoRow}>
+                <Text style={styles.mobileInfoLabel}>Client:</Text>
+                <Text style={styles.mobileInfoValue}>{item.client}</Text>
+              </View>
+
+              <View style={styles.mobileInfoRow}>
+                <Text style={styles.mobileInfoLabel}>Date:</Text>
+                <Text style={styles.mobileInfoValue}>{item.date}</Text>
+              </View>
+
+              <View style={styles.mobileInfoRow}>
+                <Text style={styles.mobileInfoLabel}>Guests:</Text>
+                <Text style={styles.mobileInfoValue}>{item.headcount}</Text>
+              </View>
+
+              {item.total && item.total !== "₱0" && (
+                <View style={styles.mobileInfoRow}>
+                  <Text style={styles.mobileInfoLabel}>Total:</Text>
+                  <Text style={styles.mobileInfoValue}>{item.total}</Text>
+                </View>
+              )}
             </View>
+
+            <Pressable
+              style={styles.mobileDetailsBtn}
+              onPress={() => {
+                // hook this up later (open booking details)
+              }}
+            >
+              <Text style={styles.mobileDetailsText}>View Details</Text>
+            </Pressable>
           </View>
         )}
+        ItemSeparatorComponent={() => <View style={styles.mobileSeparator} />}
       />
     </View>
   );
@@ -188,6 +244,78 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 13,
     fontWeight: "600"
+  },
+  // Mobile styles
+  mobileWrapper: {
+    width: "100%"
+  },
+  mobileCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  mobileCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6"
+  },
+  mobileBookingId: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827"
+  },
+  mobileCardBody: {
+    marginBottom: 16
+  },
+  mobileInfoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10
+  },
+  mobileInfoLabel: {
+    fontSize: 13,
+    color: "#6b7280",
+    fontWeight: "500"
+  },
+  mobileInfoValue: {
+    fontSize: 14,
+    color: "#111827",
+    fontWeight: "600",
+    flex: 1,
+    textAlign: "right"
+  },
+  mobileDetailsBtn: {
+    backgroundColor: "#9333ea",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  mobileDetailsText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600"
+  },
+  mobileSeparator: {
+    height: 12
   }
 });
 

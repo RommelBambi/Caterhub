@@ -1,13 +1,15 @@
 import React from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
+import { isWeb } from "../../utils/platform";
 
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
+import BottomNav from "../../components/caterer/BottomNav";
 import KPIBlock from "../../components/caterer/KPIBlock";
 import BookingList, { Booking } from "../../components/caterer/BookingList";
 
@@ -60,7 +62,7 @@ export default function PartnerDashboardScreen() {
 
   return (
     <View style={styles.screen}>
-      <Sidebar />
+      {isWeb && <Sidebar />}
 
       <View style={styles.mainArea}>
         <TopBar title="Dashboard" />
@@ -70,21 +72,23 @@ export default function PartnerDashboardScreen() {
           contentContainerStyle={styles.scrollContent}
         >
           <View style={styles.pageHeaderRow}>
-            <View>
+            <View style={styles.pageHeaderLeft}>
               <Text style={styles.pageTitle}>Overview</Text>
               <Text style={styles.pageSubTitle}>
                 Welcome back, {user.username}
               </Text>
             </View>
 
-            <View style={styles.metaRight}>
-              <Text style={styles.metaText}>
-                Status:{" "}
-                <Text style={styles.statusBadge}>
-                  {user.role === "CATER" ? "Verified" : "Pending"}
+            {isWeb && (
+              <View style={styles.metaRight}>
+                <Text style={styles.metaText}>
+                  Status:{" "}
+                  <Text style={styles.statusBadge}>
+                    {user.role === "CATER" ? "Verified" : "Pending"}
+                  </Text>
                 </Text>
-              </Text>
-            </View>
+              </View>
+            )}
           </View>
 
           {/* KPI cards */}
@@ -109,11 +113,14 @@ export default function PartnerDashboardScreen() {
           </View>
 
           {/* Footer */}
-          <View style={styles.footerArea}>
-            <Text style={styles.footerText}>© 2025 CaterHub • Partner</Text>
-          </View>
+          {isWeb && (
+            <View style={styles.footerArea}>
+              <Text style={styles.footerText}>© 2025 CaterHub • Partner</Text>
+            </View>
+          )}
         </ScrollView>
       </View>
+      {!isWeb && <BottomNav />}
     </View>
   );
 }
@@ -121,7 +128,7 @@ export default function PartnerDashboardScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    flexDirection: "row",
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
     backgroundColor: "#f9fafb"
   },
   mainArea: {
@@ -132,22 +139,27 @@ const styles = StyleSheet.create({
     flex: 1
   },
   scrollContent: {
-    padding: 16
+    padding: Platform.OS === 'web' ? 16 : 12,
+    paddingBottom: Platform.OS === 'web' ? 16 : 100 // Space for bottom nav on mobile
   },
   pageHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 16
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    justifyContent: Platform.OS === 'web' ? "space-between" : "flex-start",
+    alignItems: Platform.OS === 'web' ? "flex-start" : "flex-start",
+    marginBottom: 16,
+    gap: Platform.OS === 'web' ? 0 : 12
+  },
+  pageHeaderLeft: {
+    flex: 1
   },
   pageTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'web' ? 18 : 20,
     fontWeight: "700",
     color: "#111827"
   },
   pageSubTitle: {
     color: "#6b7280",
-    fontSize: 13,
+    fontSize: Platform.OS === 'web' ? 13 : 14,
     marginTop: 4
   },
   metaRight: {},
@@ -167,30 +179,32 @@ const styles = StyleSheet.create({
     fontSize: 12
   },
   kpiRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 24
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    flexWrap: Platform.OS === 'web' ? "wrap" : "nowrap",
+    marginBottom: 24,
+    gap: Platform.OS === 'web' ? 0 : 12
   },
   sectionCard: {
     backgroundColor: "#fff",
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    borderRadius: 8,
-    padding: 16,
+    borderRadius: Platform.OS === 'web' ? 8 : 12,
+    padding: Platform.OS === 'web' ? 16 : 12,
     marginBottom: 24,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 10 : 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 20,
+    shadowRadius: Platform.OS === 'web' ? 20 : 4,
     elevation: 2
   },
   sectionHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 12
+    marginBottom: 12,
+    alignItems: "center"
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'web' ? 16 : 18,
     fontWeight: "700",
     color: "#111827"
   },

@@ -18,8 +18,11 @@ import { useAuth } from "../../store/auth";
 
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
+import BottomNav from "../../components/caterer/BottomNav";
 
 import { supabase } from "../../services/supabase";
+import { isWeb } from "../../utils/platform";
+import { Platform } from "react-native";
 
 type CategoryKey = "pork" | "beef" | "chicken" | "vegetable" | "beverages";
 
@@ -823,7 +826,7 @@ export default function PartnerManagePackagesScreen() {
 
   return (
     <View style={styles.screen}>
-      <Sidebar />
+      {isWeb && <Sidebar />}
 
       <View style={styles.mainArea}>
         <TopBar title="Manage Packages" />
@@ -858,6 +861,7 @@ export default function PartnerManagePackagesScreen() {
           </View>
         </ScrollView>
       </View>
+      {!isWeb && <BottomNav />}
     </View>
   );
 }
@@ -867,7 +871,7 @@ export default function PartnerManagePackagesScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    flexDirection: "row",
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
     backgroundColor: "#f9fafb"
   },
   mainArea: {
@@ -878,8 +882,8 @@ const styles = StyleSheet.create({
     flex: 1
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 80
+    padding: Platform.OS === 'web' ? 16 : 12,
+    paddingBottom: Platform.OS === 'web' ? 80 : 100
   },
 
   stackContainer: {

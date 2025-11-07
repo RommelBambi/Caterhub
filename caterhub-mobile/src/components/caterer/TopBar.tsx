@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
+import { isWeb } from "../../utils/platform";
 
 type TopBarProps = {
   title?: string;
@@ -38,22 +39,32 @@ export default function TopBar({ title }: TopBarProps) {
           </View>
         </Pressable>
 
-        <Pressable style={styles.profileBtn} onPress={handleProfilePress}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>
-              {businessName.charAt(0).toUpperCase()}
-            </Text>
-          </View>
+        {isWeb ? (
+          <Pressable style={styles.profileBtn} onPress={handleProfilePress}>
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>
+                {businessName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
 
-          <View style={styles.profileTextCol}>
-            <Text style={styles.profileNameText}>
-              {businessName}
-            </Text>
-            <Text style={styles.profileSubText}>
-              View / Edit Profile
-            </Text>
-          </View>
-        </Pressable>
+            <View style={styles.profileTextCol}>
+              <Text style={styles.profileNameText}>
+                {businessName}
+              </Text>
+              <Text style={styles.profileSubText}>
+                View / Edit Profile
+              </Text>
+            </View>
+          </Pressable>
+        ) : (
+          <Pressable style={styles.profileBtnMobile} onPress={handleProfilePress}>
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>
+                {businessName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -65,40 +76,42 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: Platform.OS === 'web' ? 12 : 10,
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 12,
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start"
+    alignItems: "center"
   },
   leftCol: {
     flexShrink: 1,
-    paddingRight: 12
+    paddingRight: 12,
+    flex: 1
   },
   screenTitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'web' ? 18 : 20,
     fontWeight: "700",
     color: "#111827"
   },
   rightCol: {
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
+    gap: Platform.OS === 'web' ? 0 : 8
   },
   iconBtn: {
-    marginRight: 12
+    marginRight: Platform.OS === 'web' ? 12 : 0
   },
   iconCircle: {
     backgroundColor: "#f3f4f6",
     borderWidth: 1,
     borderColor: "#d1d5db",
     borderRadius: 999,
-    width: 36,
-    height: 36,
+    width: Platform.OS === 'web' ? 36 : 40,
+    height: Platform.OS === 'web' ? 36 : 40,
     alignItems: "center",
     justifyContent: "center"
   },
   iconEmoji: {
-    fontSize: 16
+    fontSize: Platform.OS === 'web' ? 16 : 18
   },
   profileBtn: {
     flexDirection: "row",
@@ -116,14 +129,18 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 2
   },
+  profileBtnMobile: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
   avatarCircle: {
-    width: 36,
-    height: 36,
+    width: Platform.OS === 'web' ? 36 : 40,
+    height: Platform.OS === 'web' ? 36 : 40,
     borderRadius: 9999,
     backgroundColor: "#FF8000",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
+    marginRight: Platform.OS === 'web' ? 10 : 0,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
@@ -133,7 +150,7 @@ const styles = StyleSheet.create({
   avatarText: {
     color: "#fff",
     fontWeight: "700",
-    fontSize: 14
+    fontSize: Platform.OS === 'web' ? 14 : 16
   },
   profileTextCol: {
     flexShrink: 1

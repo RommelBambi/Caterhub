@@ -14,9 +14,12 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
+import BottomNav from "../../components/caterer/BottomNav";
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
 import { supabase } from "../../services/supabase";
+import { isWeb } from "../../utils/platform";
+import { Platform } from "react-native";
 
 type Order = {
   id: number;
@@ -570,7 +573,7 @@ export default function PartnerOrdersScreen() {
 
   return (
     <View style={styles.screen}>
-      <Sidebar />
+      {isWeb && <Sidebar />}
       <View style={styles.mainArea}>
         <TopBar title="Orders" />
         <ScrollView
@@ -633,7 +636,8 @@ export default function PartnerOrdersScreen() {
                 Orders from customers will appear here.
               </Text>
             </View>
-          ) : (
+          ) : isWeb ? (
+            // Web: Table layout
             <View style={styles.tableWrapper}>
               <View style={[styles.row, styles.headerRow]}>
                 <Text style={[styles.cell, styles.headerText, { flex: 2 }]}>Customer</Text>
@@ -702,9 +706,84 @@ export default function PartnerOrdersScreen() {
                 </View>
               ))}
             </View>
+          ) : (
+            // Mobile: Card layout
+            <View style={styles.mobileWrapper}>
+              {filteredOrders.map((order, idx) => (
+                <View key={order.id} style={styles.mobileCard}>
+                  <View style={styles.mobileCardHeader}>
+                    <View style={styles.mobileCardHeaderLeft}>
+                      <Text style={styles.mobileOrderId}>Order #{order.bookingId || order.id}</Text>
+                      <Text style={styles.mobileEventDate}>{order.eventDate}</Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.mobileStatusChip,
+                        order.status === "PENDING" && styles.statusPending,
+                        order.status === "CONFIRMED" && styles.statusConfirmed,
+                        order.status === "COMPLETED" && styles.statusCompleted,
+                        order.status === "DECLINED" && styles.statusDeclined,
+                        order.status === "CANCELLED" && styles.statusCancelled
+                      ]}
+                    >
+                      {order.status}
+                    </Text>
+                  </View>
+
+                  <View style={styles.mobileCardBody}>
+                    <View style={styles.mobileInfoRow}>
+                      <Text style={styles.mobileInfoLabel}>Customer:</Text>
+                      <View style={styles.mobileInfoValueContainer}>
+                        <Text style={styles.mobileInfoValue}>{order.customerName}</Text>
+                        {order.customerEmail && (
+                          <Text style={styles.mobileInfoSubValue}>{order.customerEmail}</Text>
+                        )}
+                      </View>
+                    </View>
+
+                    <View style={styles.mobileInfoRow}>
+                      <Text style={styles.mobileInfoLabel}>Service:</Text>
+                      <View style={styles.mobileInfoValueContainer}>
+                        <Text style={styles.mobileInfoValue}>{order.serviceName}</Text>
+                        {order.packageName && (
+                          <Text style={styles.mobileInfoSubValue}>
+                            📦 {order.packageName}
+                            {order.packagePrice && ` • ${order.packagePrice}`}
+                          </Text>
+                        )}
+                        <Text style={styles.mobileTotalPrice}>{order.totalPrice}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.mobileInfoRow}>
+                      <Text style={styles.mobileInfoLabel}>Venue:</Text>
+                      <Text style={styles.mobileInfoValue}>{order.venue}</Text>
+                    </View>
+
+                    {order.guests && (
+                      <View style={styles.mobileInfoRow}>
+                        <Text style={styles.mobileInfoLabel}>Guests:</Text>
+                        <Text style={styles.mobileInfoValue}>{order.guests}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.mobileDetailsBtn}
+                    onPress={() =>
+                      navigation.navigate("PartnerOrderDetails", { order } as any)
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.mobileDetailsBtnText}>View Details</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
           )}
         </ScrollView>
       </View>
+      {!isWeb && <BottomNav />}
     </View>
   );
 }
@@ -712,7 +791,7 @@ export default function PartnerOrdersScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    flexDirection: "row",
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
     backgroundColor: "#f9fafb"
   },
   mainArea: {
@@ -723,8 +802,8 @@ const styles = StyleSheet.create({
     flex: 1
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40
+    padding: Platform.OS === 'web' ? 16 : 12,
+    paddingBottom: Platform.OS === 'web' ? 40 : 100
   },
   loadingWrap: {
     flex: 1,
@@ -903,6 +982,107 @@ const styles = StyleSheet.create({
   emptySubText: {
     fontSize: 14,
     color: "#6b7280"
+  },
+  // Mobile styles
+  mobileWrapper: {
+    width: "100%",
+    gap: 12
+  },
+  mobileCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  mobileCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6"
+  },
+  mobileCardHeaderLeft: {
+    flex: 1
+  },
+  mobileOrderId: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 4
+  },
+  mobileEventDate: {
+    fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "500"
+  },
+  mobileStatusChip: {
+    fontSize: 11,
+    fontWeight: "600",
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    overflow: "hidden"
+  },
+  mobileCardBody: {
+    marginBottom: 16
+  },
+  mobileInfoRow: {
+    flexDirection: "row",
+    marginBottom: 12,
+    alignItems: "flex-start"
+  },
+  mobileInfoLabel: {
+    fontSize: 13,
+    color: "#6b7280",
+    fontWeight: "500",
+    width: 80,
+    flexShrink: 0
+  },
+  mobileInfoValueContainer: {
+    flex: 1
+  },
+  mobileInfoValue: {
+    fontSize: 14,
+    color: "#111827",
+    fontWeight: "600",
+    marginBottom: 2
+  },
+  mobileInfoSubValue: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2
+  },
+  mobileTotalPrice: {
+    fontSize: 14,
+    color: "#059669",
+    fontWeight: "700",
+    marginTop: 4
+  },
+  mobileDetailsBtn: {
+    backgroundColor: "#FF8000",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  mobileDetailsBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14
   },
   customerNameText: {
     fontSize: 14,

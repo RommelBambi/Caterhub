@@ -13,9 +13,12 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
+import BottomNav from "../../components/caterer/BottomNav";
 
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
+import { isWeb } from "../../utils/platform";
+import { Platform } from "react-native";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -137,7 +140,7 @@ export default function PartnerSettingsScreen() {
 
   return (
     <View style={styles.screen}>
-      <Sidebar />
+      {isWeb && <Sidebar />}
 
       <View style={styles.mainArea}>
         <TopBar title="Catering Profile" />
@@ -248,6 +251,7 @@ export default function PartnerSettingsScreen() {
           </View>
         </ScrollView>
       </View>
+      {!isWeb && <BottomNav />}
     </View>
   );
 }
@@ -257,7 +261,7 @@ export default function PartnerSettingsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    flexDirection: "row",
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
     backgroundColor: "#f9fafb"
   },
   mainArea: {
@@ -269,8 +273,8 @@ const styles = StyleSheet.create({
     flex: 1
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 80
+    padding: Platform.OS === 'web' ? 16 : 12,
+    paddingBottom: Platform.OS === 'web' ? 80 : 100
   },
 
   loadingWrap: {
