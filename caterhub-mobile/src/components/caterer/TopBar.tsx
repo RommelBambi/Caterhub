@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
@@ -15,6 +16,7 @@ export default function TopBar({ title }: TopBarProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   function handleProfilePress() {
     navigation.navigate("PartnerSettings" as any);
@@ -27,7 +29,7 @@ export default function TopBar({ title }: TopBarProps) {
   const businessName = user?.username || "Your Catering";
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, !isWeb && { paddingTop: insets.top + 10 }]}>
       <View style={styles.leftCol}>
         <Text style={styles.screenTitle}>{title ?? ""}</Text>
       </View>

@@ -179,10 +179,12 @@ const styles = StyleSheet.create({
     fontSize: 12
   },
   kpiRow: {
-    flexDirection: Platform.OS === 'web' ? "row" : "column",
-    flexWrap: Platform.OS === 'web' ? "wrap" : "nowrap",
+    flexDirection: "row",
+    flexWrap: "nowrap",
     marginBottom: 24,
-    gap: Platform.OS === 'web' ? 0 : 12
+    gap: Platform.OS === 'web' ? 0 : 4,
+    width: "100%",
+    justifyContent: Platform.OS === 'web' ? "flex-start" : "space-between"
   },
   sectionCard: {
     backgroundColor: "#fff",

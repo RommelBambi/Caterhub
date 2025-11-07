@@ -18,6 +18,8 @@ import { supabase } from "../../services/supabase";
 
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
+import BottomNav from "../../components/caterer/BottomNav";
+import { isWeb } from "../../utils/platform";
 
 type OrderDetailsRouteParams = {
   order: {
@@ -255,7 +257,7 @@ export default function PartnerOrderDetailsScreen() {
 
   return (
     <View style={styles.screen}>
-      <Sidebar />
+      {isWeb && <Sidebar />}
 
       <View style={styles.mainArea}>
         <TopBar title="Order Details" />
@@ -264,15 +266,8 @@ export default function PartnerOrderDetailsScreen() {
           style={styles.scrollRegion}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Back + header */}
+          {/* Header */}
           <View style={styles.headerRow}>
-            <Pressable
-              style={styles.backBtn}
-              onPress={() => navigation.goBack()}
-            >
-              <Text style={styles.backBtnText}>← Back</Text>
-            </Pressable>
-
             <View style={{ flex: 1 }}>
               <Text style={styles.pageTitle}>
                 {order.customerName}'s Order
@@ -360,51 +355,62 @@ export default function PartnerOrderDetailsScreen() {
               Selected Dishes
             </Text>
 
-            <View style={styles.tableWrapper}>
-              <View style={[styles.tableRow, styles.tableHeaderRow]}>
-                <Text
-                  style={[
-                    styles.tableCell,
-                    styles.tableHeaderCell,
-                    { flex: 2 }
-                  ]}
-                >
-                  Category
-                </Text>
-                <Text
-                  style={[
-                    styles.tableCell,
-                    styles.tableHeaderCell,
-                    { flex: 3 }
-                  ]}
-                >
-                  Chosen Dish
-                </Text>
-              </View>
-
-              {order.selectedDishes.map((dishChoice, idx) => (
-                <View
-                  key={
-                    idx +
-                    dishChoice.sectionLabel +
-                    dishChoice.chosenDish
-                  }
-                  style={[
-                    styles.tableRow,
-                    idx === order.selectedDishes.length - 1
-                      ? styles.tableLastRow
-                      : styles.tableBodyRow
-                  ]}
-                >
-                  <Text style={[styles.tableCell, { flex: 2 }]}>
-                    {dishChoice.sectionLabel}
+            {isWeb ? (
+              <View style={styles.tableWrapper}>
+                <View style={[styles.tableRow, styles.tableHeaderRow]}>
+                  <Text
+                    style={[
+                      styles.tableCell,
+                      styles.tableHeaderCell,
+                      { flex: 2 }
+                    ]}
+                  >
+                    Category
                   </Text>
-                  <Text style={[styles.tableCell, { flex: 3 }]}>
-                    {dishChoice.chosenDish}
+                  <Text
+                    style={[
+                      styles.tableCell,
+                      styles.tableHeaderCell,
+                      { flex: 3 }
+                    ]}
+                  >
+                    Chosen Dish
                   </Text>
                 </View>
-              ))}
-            </View>
+
+                {order.selectedDishes.map((dishChoice, idx) => (
+                  <View
+                    key={
+                      idx +
+                      dishChoice.sectionLabel +
+                      dishChoice.chosenDish
+                    }
+                    style={[
+                      styles.tableRow,
+                      idx === order.selectedDishes.length - 1
+                        ? styles.tableLastRow
+                        : styles.tableBodyRow
+                    ]}
+                  >
+                    <Text style={[styles.tableCell, { flex: 2 }]}>
+                      {dishChoice.sectionLabel}
+                    </Text>
+                    <Text style={[styles.tableCell, { flex: 3 }]}>
+                      {dishChoice.chosenDish}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.mobileDishList}>
+                {order.selectedDishes.map((dishChoice, idx) => (
+                  <View key={idx + dishChoice.sectionLabel + dishChoice.chosenDish} style={styles.mobileDishItem}>
+                    <Text style={styles.mobileDishCategory}>{dishChoice.sectionLabel}</Text>
+                    <Text style={styles.mobileDishName}>{dishChoice.chosenDish}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Inclusions card (READ-ONLY NOW) */}
@@ -490,6 +496,7 @@ export default function PartnerOrderDetailsScreen() {
           </View>
         </ScrollView>
       </View>
+      {!isWeb && <BottomNav />}
 
       {/* Cancel / Refund Reason Modal */}
       {showReasonModal && (
@@ -542,7 +549,7 @@ export default function PartnerOrderDetailsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    flexDirection: "row",
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
     backgroundColor: "#f9fafb"
   },
   mainArea: {
@@ -553,28 +560,14 @@ const styles = StyleSheet.create({
     flex: 1
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 80
+    padding: Platform.OS === 'web' ? 16 : 12,
+    paddingBottom: Platform.OS === 'web' ? 80 : 100
   },
 
   headerRow: {
-    flexDirection: "row",
+    flexDirection: "column",
     alignItems: "flex-start",
     marginBottom: 16
-  },
-  backBtn: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    marginRight: 12
-  },
-  backBtnText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#374151"
   },
 
   pageTitle: {
@@ -620,35 +613,39 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 24,
+    borderRadius: Platform.OS === 'web' ? 8 : 12,
+    padding: Platform.OS === 'web' ? 16 : 12,
+    marginBottom: Platform.OS === 'web' ? 24 : 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 10 : 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 20,
+    shadowRadius: Platform.OS === 'web' ? 20 : 4,
     elevation: 2
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: Platform.OS === 'web' ? 16 : 18,
     fontWeight: "700",
     color: "#111827",
-    marginBottom: 12
+    marginBottom: Platform.OS === 'web' ? 12 : 14
   },
 
   rowLine: {
-    marginBottom: 10
+    marginBottom: Platform.OS === 'web' ? 10 : 12,
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    alignItems: Platform.OS === 'web' ? "center" : "flex-start"
   },
   labelText: {
-    fontSize: 12,
+    fontSize: Platform.OS === 'web' ? 12 : 13,
     fontWeight: "600",
     color: "#6b7280",
-    marginBottom: 2
+    marginBottom: Platform.OS === 'web' ? 2 : 4,
+    width: Platform.OS === 'web' ? 'auto' : '100%'
   },
   valueText: {
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 14 : 15,
     color: "#111827",
-    fontWeight: "500"
+    fontWeight: "500",
+    marginTop: Platform.OS === 'web' ? 0 : 2
   },
   priceText: {
     color: "#10b981",
@@ -725,21 +722,22 @@ const styles = StyleSheet.create({
   },
 
   actionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginBottom: 40
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    flexWrap: Platform.OS === 'web' ? "wrap" : "nowrap",
+    gap: Platform.OS === 'web' ? 12 : 10,
+    marginBottom: Platform.OS === 'web' ? 40 : 20
   },
   actionBtn: {
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    minWidth: 150,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 14 : 16,
+    minWidth: Platform.OS === 'web' ? 150 : undefined,
+    width: Platform.OS === 'web' ? 'auto' : '100%',
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 8 : 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowRadius: Platform.OS === 'web' ? 12 : 4,
     elevation: 2
   },
   confirmBtn: {
@@ -787,16 +785,16 @@ const styles = StyleSheet.create({
   },
   reasonCard: {
     width: "100%",
-    maxWidth: 400,
+    maxWidth: Platform.OS === 'web' ? 400 : '90%',
     backgroundColor: "#fff",
-    borderRadius: 12,
+    borderRadius: Platform.OS === 'web' ? 12 : 16,
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    padding: 20,
+    padding: Platform.OS === 'web' ? 20 : 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 20 },
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 20 : 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 30,
+    shadowRadius: Platform.OS === 'web' ? 30 : 8,
     elevation: 6
   },
   reasonTitle: {
@@ -824,18 +822,20 @@ const styles = StyleSheet.create({
     color: "#111827"
   },
   reasonBtnRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    flexWrap: "wrap",
-    marginTop: 20
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    justifyContent: Platform.OS === 'web' ? "flex-end" : "stretch",
+    flexWrap: Platform.OS === 'web' ? "wrap" : "nowrap",
+    marginTop: Platform.OS === 'web' ? 20 : 16,
+    gap: Platform.OS === 'web' ? 0 : 10
   },
   reasonBtn: {
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    minWidth: 100,
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
+    paddingVertical: Platform.OS === 'web' ? 10 : 12,
+    paddingHorizontal: Platform.OS === 'web' ? 14 : 16,
+    minWidth: Platform.OS === 'web' ? 100 : undefined,
+    width: Platform.OS === 'web' ? 'auto' : '100%',
     alignItems: "center",
-    marginLeft: 8
+    marginLeft: Platform.OS === 'web' ? 8 : 0
   },
   reasonCancel: {
     backgroundColor: "#fff",
@@ -859,6 +859,30 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 14
+  },
+  // Mobile dish list styles
+  mobileDishList: {
+    gap: 10
+  },
+  mobileDishItem: {
+    backgroundColor: "#f9fafb",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8
+  },
+  mobileDishCategory: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#6b7280",
+    marginBottom: 4,
+    textTransform: "uppercase"
+  },
+  mobileDishName: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#111827"
   }
 });
 
