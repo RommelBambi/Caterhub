@@ -301,10 +301,12 @@ export default function PartnerOrderDetailsScreen() {
 
             <View style={styles.rowLine}>
               <Text style={styles.labelText}>Customer</Text>
-              <Text style={styles.valueText}>{order.customerName}</Text>
-              <Text style={[styles.valueText, { fontSize: 12, color: '#6b7280' }]}>
-                {order.customerEmail}
-              </Text>
+              <View style={styles.valueColumn}>
+                <Text style={styles.valueText}>{order.customerName}</Text>
+                <Text style={[styles.valueText, { fontSize: 12, color: '#6b7280' }]}>
+                  {order.customerEmail}
+                </Text>
+              </View>
             </View>
 
             <View style={styles.rowLine}>
@@ -631,21 +633,30 @@ const styles = StyleSheet.create({
 
   rowLine: {
     marginBottom: Platform.OS === 'web' ? 10 : 12,
+    paddingTop: Platform.OS === 'web' ? 6 : 8,
+    paddingBottom: Platform.OS === 'web' ? 8 : 10,
     flexDirection: Platform.OS === 'web' ? "row" : "column",
-    alignItems: Platform.OS === 'web' ? "center" : "flex-start"
+    alignItems: Platform.OS === 'web' ? "center" : "flex-start",
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6'
   },
   labelText: {
     fontSize: Platform.OS === 'web' ? 12 : 13,
     fontWeight: "600",
     color: "#6b7280",
     marginBottom: Platform.OS === 'web' ? 2 : 4,
-    width: Platform.OS === 'web' ? 'auto' : '100%'
+    width: Platform.OS === 'web' ? 220 : '100%',
+    marginRight: Platform.OS === 'web' ? 12 : 0
   },
   valueText: {
     fontSize: Platform.OS === 'web' ? 14 : 15,
     color: "#111827",
     fontWeight: "500",
     marginTop: Platform.OS === 'web' ? 0 : 2
+  },
+  valueColumn: {
+    flex: 1,
+    ...(Platform.OS === 'web' ? { gap: 2 } : {}) as any
   },
   priceText: {
     color: "#10b981",
