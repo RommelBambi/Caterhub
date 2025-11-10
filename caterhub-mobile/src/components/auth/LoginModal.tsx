@@ -27,7 +27,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLogin, onClose, visibl
     >
       <Pressable style={styles.overlay} onPress={onClose}>
         <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.title}>Professional Login</Text>
+          <Text style={styles.title}>Login</Text>
 
           <View style={styles.form}>
             <Field

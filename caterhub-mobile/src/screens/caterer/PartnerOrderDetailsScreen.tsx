@@ -50,6 +50,7 @@ type OrderDetailsRouteParams = {
     remaining_paid_method?: string;
     payment_method?: string;
     payment_status?: string;
+    delivery_fee?: number;
   };
 };
 
@@ -94,18 +95,16 @@ export default function PartnerOrderDetailsScreen() {
     setReasonText("");
   }
 
-  const updateBookingStatus = async (newStatus: string, reason?: string) => {
+  async function updateBookingStatus(newStatus: string, reason?: string, stayOnPage: boolean = false) {
+    console.log('[PartnerOrderDetailsScreen] updateBookingStatus called with:', newStatus, reason);
     setUpdating(true);
     try {
-      console.log('[PartnerOrderDetailsScreen] Updating booking:', {
-        bookingId: order.id,
-        newStatus,
-        hasReason: !!reason
-      });
+      const updateData: any = {
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      };
 
-      const updateData: any = { status: newStatus };
-      
-      // Add reason to notes if provided
+      // If there's a reason (for cancel/decline), update notes
       if (reason) {
         const { data: booking, error: fetchError } = await supabase
           .from('bookings')
@@ -147,24 +146,34 @@ export default function PartnerOrderDetailsScreen() {
       setCurrentStatus(newStatus as any);
       closeReasonModal();
       
-      if (Platform.OS === 'web') {
-        // Use window.alert for web
-        window.alert(`Order ${newStatus.toLowerCase()} successfully.`);
-        // Small delay to let the alert show, then navigate back
-        setTimeout(() => {
-          navigation.goBack();
-        }, 100);
+      // Only navigate back if not staying on page
+      if (!stayOnPage) {
+        if (Platform.OS === 'web') {
+          // Use window.alert for web
+          window.alert(`Order ${newStatus.toLowerCase()} successfully.`);
+          // Small delay to let the alert show, then navigate back
+          setTimeout(() => {
+            navigation.goBack();
+          }, 100);
+        } else {
+          Alert.alert(
+            'Success',
+            `Order ${newStatus.toLowerCase()} successfully.`,
+            [
+              {
+                text: 'OK',
+                onPress: () => navigation.goBack()
+              }
+            ]
+          );
+        }
       } else {
-        Alert.alert(
-          'Success',
-          `Order ${newStatus.toLowerCase()} successfully.`,
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.goBack()
-            }
-          ]
-        );
+        // Just show success message without navigating
+        if (Platform.OS === 'web') {
+          window.alert(`Order ${newStatus.toLowerCase()} successfully.`);
+        } else {
+          Alert.alert('Success', `Order ${newStatus.toLowerCase()} successfully.`);
+        }
       }
     } catch (error: any) {
       console.error('[PartnerOrderDetailsScreen] Error updating booking status:', error);
@@ -249,8 +258,8 @@ export default function PartnerOrderDetailsScreen() {
 
   async function handleOnTheWay() {
     console.log('[PartnerOrderDetailsScreen] handleOnTheWay called');
-    // Update status immediately without confirmation
-    updateBookingStatus('ON_THE_WAY');
+    // Update status immediately without confirmation, stay on page
+    updateBookingStatus('ON_THE_WAY', undefined, true);
   }
 
   async function handleComplete() {
@@ -437,12 +446,31 @@ export default function PartnerOrderDetailsScreen() {
               <Text style={styles.valueText}>{order.venue}</Text>
             </View>
 
+            {/* Show ON THE WAY status */}
+            {currentStatus === 'ON_THE_WAY' && (
+              <View style={[styles.rowLine, { backgroundColor: '#fef3c7', padding: 12, borderRadius: 8, marginTop: 8 }]}>
+                <Text style={{ color: '#f59e0b', fontWeight: '600', fontSize: 14 }}>
+                  🚗 Order is on the way!
+                </Text>
+              </View>
+            )}
+
             <View style={styles.rowLine}>
               <Text style={styles.labelText}>Total Price</Text>
               <Text style={[styles.valueText, styles.priceText]}>
                 {order.totalPrice}
               </Text>
             </View>
+
+            {/* Show delivery fee if set */}
+            {order.delivery_fee && order.delivery_fee > 0 && (
+              <View style={styles.rowLine}>
+                <Text style={styles.labelText}>Delivery Fee</Text>
+                <Text style={[styles.valueText, styles.priceText]}>
+                  ₱{order.delivery_fee.toLocaleString()}
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Payment Information card */}
@@ -664,6 +692,22 @@ export default function PartnerOrderDetailsScreen() {
 
             {currentStatus === "ON_THE_WAY" && (
               <>
+                {/* Show Mark Remaining Paid button if not paid yet */}
+                {depositPaid && !remainingPaid && (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.markPaidBtn]}
+                    onPress={handleMarkRemainingPaid}
+                    disabled={updating}
+                    activeOpacity={0.7}
+                  >
+                    {updating ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.actionBtnText}>Mark Remaining Paid (Cash)</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+                
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.completeBtn]}
                   onPress={handleComplete}
@@ -987,6 +1031,9 @@ const styles = StyleSheet.create({
   },
   completeBtn: {
     backgroundColor: "#10b981"
+  },
+  markPaidBtn: {
+    backgroundColor: "#22c55e"
   },
   onTheWayBtn: {
     backgroundColor: "#f59e0b"

@@ -34,7 +34,7 @@ const COLORS = {
   danger: '#dc2626',
 };
 
-type PaymentMethod = 'gcash';
+type PaymentMethod = 'gcash' | 'paymaya';
 
 export default function PaymentScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -51,6 +51,7 @@ export default function PaymentScreen({ route, navigation }: any) {
 
   const paymentMethods = [
     { id: 'gcash', name: 'GCash', icon: 'wallet', color: '#007DFF', description: 'Pay via GCash e-wallet' },
+    { id: 'paymaya', name: 'PayMaya', icon: 'card', color: '#00D632', description: 'Pay via PayMaya e-wallet' },
   ];
 
   const handlePayment = async () => {
@@ -100,8 +101,8 @@ export default function PaymentScreen({ route, navigation }: any) {
 
       console.log('Payment Intent created:', paymentIntent.id);
 
-      // Step 2: Create Payment Source (for GCash only)
-      if (selectedMethod === 'gcash') {
+      // Step 2: Create Payment Source (for GCash or PayMaya)
+      if (selectedMethod === 'gcash' || selectedMethod === 'paymaya') {
         // Use a simple redirect approach - PayMongo provides a generic success page
         // The app will poll for payment status instead of relying on redirects
         const source = await createSource(

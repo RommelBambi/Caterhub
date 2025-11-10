@@ -1,4 +1,4 @@
-﻿// src/screens/customer/BookingDetails.tsx
+// src/screens/customer/BookingDetails.tsx
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -11,6 +11,7 @@ import { Text, ActivityIndicator, Card, Button, Chip, Divider } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { fetchBookingDetails, cancelBooking } from '../../services/api';
 import { useAuth } from '../../store/auth';
+import { hasUserReviewed } from '../../services/reviews';
 
 const BookingDetails = ({ route, navigation }: any) => {
   const { bookingId } = route.params;
@@ -20,6 +21,7 @@ const BookingDetails = ({ route, navigation }: any) => {
   const [booking, setBooking] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [canceling, setCanceling] = useState(false);
+  const [hasReviewed, setHasReviewed] = useState(false);
 
   // Fetch booking details
   const loadDetails = async () => {
@@ -27,6 +29,12 @@ const BookingDetails = ({ route, navigation }: any) => {
       setLoading(true);
       const data = await fetchBookingDetails(bookingId);
       setBooking(data);
+      
+      // Check if user already reviewed this booking
+      if (data.status === 'COMPLETED') {
+        const reviewed = await hasUserReviewed(bookingId);
+        setHasReviewed(reviewed);
+      }
     } catch (e) {
       console.error('Failed to fetch booking details:', e);
       setError('Failed to load booking details');
@@ -133,17 +141,17 @@ const BookingDetails = ({ route, navigation }: any) => {
       meta.price ??
       0
   );
-  const transportFee = toNumber(
-    meta.transportFee ??
-      meta.transport_fee ??
-      meta.deliveryFee ??
-      meta.delivery_fee ??
-      b.transportFee ??
-      b.transport_fee ??
-      0
-  );
+  // Get delivery fee from database field (set by caterer)
+  const deliveryFee = toNumber(b.delivery_fee ?? 0);
   const packageSubtotal = guestsCount * pricePerHead;
-  const totalCost = packageSubtotal + transportFee;
+  const totalCost = packageSubtotal + deliveryFee;
+  
+  // Payment amounts
+  const depositAmount = toNumber(b.deposit_amount ?? 0);
+  const remainingAmount = toNumber(b.remaining_amount ?? 0);
+  const depositPaid = b.deposit_paid ?? false;
+  const remainingPaid = b.remaining_paid ?? false;
+  const paymentMethod = b.payment_method ?? meta.paymentMethod ?? null;
 
   const formatCurrency = (amount: number) =>
     `PHP ${toNumber(amount).toLocaleString(undefined, {
@@ -211,8 +219,26 @@ const BookingDetails = ({ route, navigation }: any) => {
 
               <View style={styles.row}>
                 <Ionicons name="cash-outline" size={18} color="#6b7280" />
-                <Text style={styles.label}>{formatCurrency(totalCost)}</Text>
+                <Text style={styles.label}>Total: {formatCurrency(totalCost)}</Text>
               </View>
+
+              {/* Show delivery fee if set */}
+              {deliveryFee > 0 && (
+                <View style={styles.row}>
+                  <Ionicons name="car-outline" size={18} color="#6b7280" />
+                  <Text style={styles.label}>Delivery Fee: {formatCurrency(deliveryFee)}</Text>
+                </View>
+              )}
+
+              {/* Show ON THE WAY status */}
+              {b.status === 'ON_THE_WAY' && (
+                <View style={[styles.row, { backgroundColor: '#fef3c7', padding: 8, borderRadius: 6, marginTop: 4 }]}>
+                  <Ionicons name="car" size={18} color="#f59e0b" />
+                  <Text style={[styles.label, { color: '#f59e0b', fontWeight: '600' }]}>
+                    Caterer is on the way!
+                  </Text>
+                </View>
+              )}
 
               {meta.address && (
                 <View style={styles.row}>
@@ -223,13 +249,41 @@ const BookingDetails = ({ route, navigation }: any) => {
                 </View>
               )}
 
-              {meta.paymentMethod && (
-                <View style={styles.row}>
-                  <Ionicons name="card-outline" size={18} color="#6b7280" />
-                  <Text style={styles.label}>
-                    {meta.paymentMethod.toUpperCase()}
-                  </Text>
-                </View>
+              {/* Payment Information */}
+              {(depositAmount > 0 || remainingAmount > 0) && (
+                <>
+                  <Divider style={{ marginVertical: 12 }} />
+                  <Text style={styles.sectionTitle}>Payment Information</Text>
+                  
+                  {depositAmount > 0 && (
+                    <View style={styles.row}>
+                      <Ionicons 
+                        name={depositPaid ? "checkmark-circle" : "time-outline"} 
+                        size={18} 
+                        color={depositPaid ? "#22c55e" : "#f59e0b"} 
+                      />
+                      <Text style={styles.label}>
+                        Deposit (50%): {formatCurrency(depositAmount)}
+                        {depositPaid && paymentMethod && ` - Paid (${paymentMethod.toUpperCase()})`}
+                        {!depositPaid && ' - Pending'}
+                      </Text>
+                    </View>
+                  )}
+                  
+                  {remainingAmount > 0 && (
+                    <View style={styles.row}>
+                      <Ionicons 
+                        name={remainingPaid ? "checkmark-circle" : "time-outline"} 
+                        size={18} 
+                        color={remainingPaid ? "#22c55e" : "#f59e0b"} 
+                      />
+                      <Text style={styles.label}>
+                        Remaining (50%): {formatCurrency(remainingAmount)}
+                        {remainingPaid ? ` - Paid (${b.remaining_paid_method || 'cash'})` : ' - Pay during event'}
+                      </Text>
+                    </View>
+                  )}
+                </>
               )}
             </View>
 
@@ -276,9 +330,9 @@ const BookingDetails = ({ route, navigation }: any) => {
             </View>
 
             <View style={styles.receiptRow}>
-              <Text style={styles.receiptLabel}>Transport fee</Text>
+              <Text style={styles.receiptLabel}>Delivery fee</Text>
               <Text style={styles.receiptAmount}>
-                {formatCurrency(transportFee)}
+                {formatCurrency(deliveryFee)}
               </Text>
             </View>
 
@@ -294,6 +348,53 @@ const BookingDetails = ({ route, navigation }: any) => {
             </View>
           </Card.Content>
         </Card>
+
+        {/* Leave Review Button (if completed and not reviewed yet) */}
+        {b.status === 'COMPLETED' && !hasReviewed && (
+          <Card style={{ marginTop: 16, borderRadius: 12, backgroundColor: '#f0fdf4' }}>
+            <Card.Content>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Ionicons name="star" size={32} color="#FF8000" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 4 }}>
+                    How was your experience?
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#6b7280' }}>
+                    Share your feedback to help others
+                  </Text>
+                </View>
+              </View>
+              <Button
+                mode="contained"
+                buttonColor="#FF8000"
+                textColor="#fff"
+                style={{ marginTop: 12 }}
+                onPress={() => navigation.navigate('Review', { bookingId: b.id })}
+              >
+                Leave a Review
+              </Button>
+            </Card.Content>
+          </Card>
+        )}
+
+        {/* Show "Thank You" message if already reviewed */}
+        {b.status === 'COMPLETED' && hasReviewed && (
+          <Card style={{ marginTop: 16, borderRadius: 12, backgroundColor: '#f0fdf4' }}>
+            <Card.Content>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Ionicons name="checkmark-circle" size={32} color="#22c55e" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 4 }}>
+                    Thank you for your review!
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#6b7280' }}>
+                    Your feedback helps others make better decisions
+                  </Text>
+                </View>
+              </View>
+            </Card.Content>
+          </Card>
+        )}
 
         {/* Cancel Button */}
         {b.status !== 'CANCELLED' &&

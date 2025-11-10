@@ -61,14 +61,14 @@ export default function AdminDashboardScreen() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const menuItems: MenuItem[] = [
-    { id: "dashboard", label: "Dashboard", icon: "📊" },
-    { id: "recruitment", label: "Recruitment", icon: "👥" },
-    { id: "bookings", label: "Bookings", icon: "📅" },
-    { id: "users", label: "Users", icon: "👤" },
-    { id: "payments", label: "Payments", icon: "💳" },
-    { id: "analytics", label: "Analytics", icon: "📈" },
-    { id: "settings", label: "Settings", icon: "⚙️" },
-    { id: "refunds", label: "Refunds", icon: "🔄" },
+    { id: "dashboard", label: "Dashboard", icon: "grid-outline" },
+    { id: "recruitment", label: "Recruitment", icon: "people-outline" },
+    { id: "bookings", label: "Bookings", icon: "calendar-outline" },
+    { id: "users", label: "Users", icon: "person-outline" },
+    { id: "payments", label: "Payments", icon: "card-outline" },
+    { id: "analytics", label: "Analytics", icon: "stats-chart-outline" },
+    { id: "settings", label: "Settings", icon: "settings-outline" },
+    { id: "refunds", label: "Refunds", icon: "refresh-outline" },
   ];
 
   const handleApproveApplication = async (applicationId: string) => {
@@ -209,9 +209,11 @@ export default function AdminDashboardScreen() {
                 currentPage === item.id && styles.menuItemActive,
               ]}
             >
-              <Text style={styles.menuIcon}>
-                {item.icon}
-              </Text>
+              <Ionicons
+                name={item.icon as any}
+                size={20}
+                color={currentPage === item.id ? COLORS.primary : "#6b7280"}
+              />
               <Text
                 style={[
                   styles.menuLabel,
@@ -229,6 +231,7 @@ export default function AdminDashboardScreen() {
             onPress={logout}
             style={styles.logoutButton}
           >
+            <Ionicons name="log-out-outline" size={20} color="#ef4444" />
             <Text style={styles.logoutButtonText}>Logout</Text>
           </Pressable>
         </View>
@@ -326,6 +329,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   logoutButton: {
+    flexDirection: 'row',
     width: '100%',
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -334,6 +338,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.danger,
     backgroundColor: 'transparent',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   logoutButtonText: {
     color: COLORS.danger,

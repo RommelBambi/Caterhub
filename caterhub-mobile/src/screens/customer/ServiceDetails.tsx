@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Image, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Text, Button, Card, ActivityIndicator } from 'react-native-paper';
+import { Text, Button, Card, ActivityIndicator, Divider } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,6 +13,8 @@ import {
   removeFavorite,
 } from '../../services/services';
 import { useAuth } from '../../store/auth';
+import { fetchCatererReviews, getCatererRating, ReviewWithUser } from '../../services/reviews';
+import RatingStars from '../../components/common/RatingStars';
 
 export default function ServiceDetails({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -27,6 +29,9 @@ export default function ServiceDetails({ route, navigation }: any) {
   const [loading, setLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
   const [favIds, setFavIds] = React.useState<number[]>([]);
+  const [reviews, setReviews] = React.useState<ReviewWithUser[]>([]);
+  const [rating, setRating] = React.useState({ averageRating: 0, totalReviews: 0 });
+  const [loadingReviews, setLoadingReviews] = React.useState(false);
 
   React.useEffect(() => {
     if (!id) {
@@ -48,6 +53,24 @@ export default function ServiceDetails({ route, navigation }: any) {
           userId: (data as any)?.user_id,
         });
         setService(data ?? null);
+        
+        // Fetch reviews for this caterer
+        if (data && (data as any)?.user_id) {
+          setLoadingReviews(true);
+          try {
+            const catererId = (data as any).user_id;
+            const [reviewsData, ratingData] = await Promise.all([
+              fetchCatererReviews(catererId),
+              getCatererRating(catererId)
+            ]);
+            setReviews(reviewsData);
+            setRating(ratingData);
+          } catch (reviewError) {
+            console.error('[ServiceDetails] Error fetching reviews:', reviewError);
+          } finally {
+            setLoadingReviews(false);
+          }
+        }
       } catch (e: any) {
         console.error('[ServiceDetails] fetchService error:', e?.message || e);
         setError('Failed to load service.');
@@ -117,12 +140,19 @@ export default function ServiceDetails({ route, navigation }: any) {
             <View style={styles.titleRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{service.name}</Text>
-                <View style={styles.ratingRow}>
+                <TouchableOpacity 
+                  style={styles.ratingRow}
+                  onPress={() => navigation.navigate('AllReviews', {
+                    catererId: (service as any)?.user_id,
+                    catererName: service?.name
+                  })}
+                  activeOpacity={0.7}
+                >
                   <Ionicons name="star" size={16} color="#f59e0b" />
-                  <Text style={styles.muted}>
-                    {(service.rating ?? 4.8).toFixed(1)} • {service.reviewsCount ?? 120} reviews
+                  <Text style={[styles.muted, { textDecorationLine: 'underline' }]}>
+                    {rating.averageRating > 0 ? rating.averageRating.toFixed(1) : '0.0'} • {rating.totalReviews} {rating.totalReviews === 1 ? 'review' : 'reviews'}
                   </Text>
-                </View>
+                </TouchableOpacity>
               </View>
 
               <TouchableOpacity onPress={() => toggleFav(Number(service.id))} style={styles.heartTap}>

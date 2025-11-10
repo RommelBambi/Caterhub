@@ -1,5 +1,6 @@
-import React from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, Pressable, TouchableOpacity } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
@@ -8,12 +9,21 @@ import { COLORS } from "../../constants/colors";
 
 type NavKey = "PartnerDashboard" | "PartnerOrders" | "PartnerManagePackages" | "PartnerSettings" | "PartnerWallet";
 
+const NAV_ITEMS = [
+  { key: "PartnerDashboard" as NavKey, label: "Dashboard", icon: "grid-outline" },
+  { key: "PartnerOrders" as NavKey, label: "Orders", icon: "receipt-outline" },
+  { key: "PartnerManagePackages" as NavKey, label: "Manage Packages", icon: "cube-outline" },
+  { key: "PartnerSettings" as NavKey, label: "Settings", icon: "settings-outline" },
+  { key: "PartnerWallet" as NavKey, label: "Wallet", icon: "wallet-outline" },
+];
+
 export default function Sidebar() {
   const navigation =
     useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
   const route = useRoute();
   const current = route.name as NavKey | string;
   const { logout } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
 
   function go(screen: NavKey) {
     if (screen !== current) {
@@ -26,39 +36,38 @@ export default function Sidebar() {
   }
 
   return (
-    <View style={styles.sidebar}>
-      <Text style={styles.logoText}>CaterHub</Text>
+    <View style={[styles.sidebar, collapsed && styles.sidebarCollapsed]}>
+      {/* Header with Logo and Toggle */}
+      <View style={styles.header}>
+        {!collapsed && <Text style={styles.logoText}>CaterHub</Text>}
+        <TouchableOpacity 
+          onPress={() => setCollapsed(!collapsed)} 
+          style={styles.toggleButton}
+        >
+          <Ionicons 
+            name={collapsed ? "chevron-forward" : "chevron-back"} 
+            size={20} 
+            color="#6b7280" 
+          />
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.navList}>
-        <SidebarItem
-          label="Dashboard"
-          active={current === "PartnerDashboard"}
-          onPress={() => go("PartnerDashboard")}
-        />
-        <SidebarItem
-          label="Orders"
-          active={current === "PartnerOrders"}
-          onPress={() => go("PartnerOrders")}
-        />
-        <SidebarItem
-          label="Manage Packages"
-          active={current === "PartnerManagePackages"}
-          onPress={() => go("PartnerManagePackages")}
-        />
-        <SidebarItem
-          label="Settings"
-          active={current === "PartnerSettings"}
-          onPress={() => go("PartnerSettings")}
-        />
-        <SidebarItem
-          label="Wallet"
-          active={current === "PartnerWallet"}
-          onPress={() => go("PartnerWallet")}
-        />
+        {NAV_ITEMS.map((item) => (
+          <SidebarItem
+            key={item.key}
+            label={item.label}
+            icon={item.icon}
+            active={current === item.key}
+            collapsed={collapsed}
+            onPress={() => go(item.key)}
+          />
+        ))}
       </View>
 
       <Pressable style={styles.logoutRow} onPress={handleLogout}>
-        <Text style={styles.logoutText}>⏻ Logout</Text>
+        <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+        {!collapsed && <Text style={styles.logoutText}>Logout</Text>}
       </Pressable>
     </View>
   );
@@ -66,11 +75,15 @@ export default function Sidebar() {
 
 function SidebarItem({
   label,
+  icon,
   active,
+  collapsed,
   onPress
 }: {
   label: string;
+  icon: string;
   active: boolean;
+  collapsed: boolean;
   onPress: () => void;
 }) {
   return (
@@ -78,18 +91,25 @@ function SidebarItem({
       onPress={onPress}
       style={[
         styles.sidebarItem,
-        active ? styles.sidebarItemActive : null
+        active ? styles.sidebarItemActive : null,
+        collapsed && styles.sidebarItemCollapsed
       ]}
     >
-      <View style={styles.sidebarBullet} />
-      <Text
-        style={[
-          styles.sidebarItemText,
-          active ? styles.sidebarItemTextActive : null
-        ]}
-      >
-        {label}
-      </Text>
+      <Ionicons 
+        name={icon as any} 
+        size={20} 
+        color={active ? COLORS.primary : "#6b7280"} 
+      />
+      {!collapsed && (
+        <Text
+          style={[
+            styles.sidebarItemText,
+            active ? styles.sidebarItemTextActive : null
+          ]}
+        >
+          {label}
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -104,11 +124,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     justifyContent: "space-between"
   },
+  sidebarCollapsed: {
+    width: 70,
+    paddingHorizontal: 8
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16
+  },
   logoText: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#FF8000",
-    marginBottom: 16
+    color: "#FF8000"
+  },
+  toggleButton: {
+    padding: 4,
+    borderRadius: 4,
+    backgroundColor: "#f3f4f6"
   },
   navList: {
     flexGrow: 1
@@ -119,7 +153,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 6,
-    marginBottom: 4
+    marginBottom: 4,
+    gap: 12
+  },
+  sidebarItemCollapsed: {
+    justifyContent: "center",
+    paddingHorizontal: 12
   },
   sidebarItemActive: {
     backgroundColor: "#fff5e6"
@@ -132,14 +171,10 @@ const styles = StyleSheet.create({
   sidebarItemTextActive: {
     color: COLORS.primary
   },
-  sidebarBullet: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.primary,
-    marginRight: 8
-  },
   logoutRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     borderTopWidth: 1,
     borderTopColor: "#e5e7eb",
     paddingVertical: 12,
