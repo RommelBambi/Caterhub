@@ -10,6 +10,7 @@ import PaymentsPage from '../../components/admin/PaymentsPage';
 import AnalyticsPage from '../../components/admin/AnalyticsPage';
 import SettingsPage from '../../components/admin/SettingsPage';
 import RefundsPage from '../../components/admin/RefundsPage';
+import { supabase } from '../../services/supabase';
 
 const COLORS = {
   primary: "#FF8000",
@@ -71,7 +72,6 @@ export default function AdminDashboardScreen() {
   ];
 
   const handleApproveApplication = async (applicationId: string) => {
-    const { supabase } = await import('../../services/supabase');
     try {
       const { error } = await supabase
         .from('partner_applications')
@@ -89,7 +89,6 @@ export default function AdminDashboardScreen() {
   };
 
   const handleRejectApplication = async (applicationId: string) => {
-    const { supabase } = await import('../../services/supabase');
     try {
       const { error } = await supabase
         .from('partner_applications')
