@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Image, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, Image, StyleSheet, TouchableOpacity, Alert, Platform, KeyboardAvoidingView, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput, Button, Card, Checkbox } from 'react-native-paper';
 import { useForm, Controller } from 'react-hook-form';
@@ -248,25 +248,35 @@ export default function RegisterScreen() {
 
   // Mobile layout (original design)
   return (
-    <View style={styles.container}>
-      {/* Top section with background and image */}
-      <View style={styles.topSection}>
-        <TouchableOpacity 
-          style={[styles.closeButton, { top: insets.top + 10 }]} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="close" size={28} color="#fff" />
-        </TouchableOpacity>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {/* Top section with background and image */}
+        <View style={styles.topSection}>
+          <TouchableOpacity 
+            style={[styles.closeButton, { top: insets.top + 10 }]} 
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
 
-        <Image
-          source={require('../../../assets/blacklogo.png')}
-          style={styles.heroImage}
-          resizeMode="contain"
-        />
-      </View>
+          <Image
+            source={require('../../../assets/blacklogo.png')}
+            style={styles.heroImage}
+            resizeMode="contain"
+          />
+        </View>
 
-      {/* Bottom card section */}
-      <View style={styles.bottomCard}>
+        {/* Bottom card section */}
+        <View style={styles.bottomCard}>
         <Text style={styles.title}>Sign up</Text>
         <Controller
           control={control}
@@ -411,13 +421,15 @@ export default function RegisterScreen() {
           already have an account? log in
         </Button>
       </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FF8000', position: 'relative' },
-  topSection: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: '#FF8000' },
+  scrollContent: { flexGrow: 1 },
+  topSection: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 300 },
   closeButton: { position: 'absolute', top: 50, left: 20 },
   heroImage: { width: 450, height: 450 },
   bottomCard: {

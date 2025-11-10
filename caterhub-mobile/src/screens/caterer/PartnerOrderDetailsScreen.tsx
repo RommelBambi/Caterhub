@@ -42,6 +42,14 @@ type OrderDetailsRouteParams = {
     guests: number;
     totalPrice: string;
     notes?: string;
+    // Payment fields
+    deposit_amount?: number;
+    remaining_amount?: number;
+    deposit_paid?: boolean;
+    remaining_paid?: boolean;
+    remaining_paid_method?: string;
+    payment_method?: string;
+    payment_status?: string;
   };
 };
 
@@ -60,6 +68,8 @@ export default function PartnerOrderDetailsScreen() {
 
   const [updating, setUpdating] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(order.status);
+  const [depositPaid, setDepositPaid] = useState(order.deposit_paid || false);
+  const [remainingPaid, setRemainingPaid] = useState(order.remaining_paid || false);
   
   // ----- MODAL STATE (cancel / decline w/ reason) -----
   const [showReasonModal, setShowReasonModal] = useState(false);
@@ -67,6 +77,10 @@ export default function PartnerOrderDetailsScreen() {
     null
   );
   const [reasonText, setReasonText] = useState("");
+  
+  // ----- DELIVERY FEE MODAL STATE -----
+  const [showDeliveryFeeModal, setShowDeliveryFeeModal] = useState(false);
+  const [deliveryFee, setDeliveryFee] = useState("");
 
   function openReasonModal(mode: "cancel" | "decline") {
     setModalMode(mode);
@@ -172,32 +186,60 @@ export default function PartnerOrderDetailsScreen() {
 
   async function handleAccept() {
     console.log('[PartnerOrderDetailsScreen] handleAccept called');
+    // Show delivery fee modal first
+    setDeliveryFee("");
+    setShowDeliveryFeeModal(true);
+  }
+
+  async function confirmAcceptWithDeliveryFee() {
+    const fee = parseFloat(deliveryFee);
     
-    if (Platform.OS === 'web') {
-      // Use window.confirm for web since Alert.alert doesn't work reliably
-      const confirmed = window.confirm('Are you sure you want to accept this booking?');
-      if (confirmed) {
-        console.log('[PartnerOrderDetailsScreen] User confirmed, updating status...');
-        updateBookingStatus('CONFIRMED');
+    if (isNaN(fee) || fee < 0) {
+      if (Platform.OS === 'web') {
+        alert('Please enter a valid delivery fee (0 or greater)');
       } else {
-        console.log('[PartnerOrderDetailsScreen] User cancelled');
+        Alert.alert('Invalid Fee', 'Please enter a valid delivery fee (0 or greater)');
       }
-    } else {
-      // Use native Alert for mobile
-      Alert.alert(
-        'Confirm Booking',
-        'Are you sure you want to accept this booking?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Accept',
-            onPress: () => {
-              console.log('[PartnerOrderDetailsScreen] User confirmed, updating status...');
-              updateBookingStatus('CONFIRMED');
-            }
-          }
-        ]
-      );
+      return;
+    }
+
+    setShowDeliveryFeeModal(false);
+    setUpdating(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .update({
+          status: 'CONFIRMED',
+          delivery_fee: fee,
+          delivery_fee_set_by_caterer: true
+        })
+        .eq('id', order.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[PartnerOrderDetailsScreen] Error accepting booking:', error);
+        throw error;
+      }
+
+      console.log('[PartnerOrderDetailsScreen] Booking accepted with delivery fee:', data);
+      setCurrentStatus('CONFIRMED');
+      
+      if (Platform.OS === 'web') {
+        alert('Booking accepted successfully!');
+      } else {
+        Alert.alert('Success', 'Booking accepted successfully!');
+      }
+    } catch (error: any) {
+      console.error('[PartnerOrderDetailsScreen] Error:', error);
+      if (Platform.OS === 'web') {
+        alert(`Error: ${error.message}`);
+      } else {
+        Alert.alert('Error', error.message || 'Failed to accept booking');
+      }
+    } finally {
+      setUpdating(false);
     }
   }
 
@@ -236,6 +278,72 @@ export default function PartnerOrderDetailsScreen() {
 
   async function handleCancel() {
     openReasonModal('cancel');
+  }
+
+  async function handleMarkRemainingPaid() {
+    console.log('[PartnerOrderDetailsScreen] handleMarkRemainingPaid called');
+    
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Mark remaining amount as paid with cash?');
+      if (!confirmed) return;
+    } else {
+      Alert.alert(
+        'Mark Remaining Paid',
+        'Confirm that the remaining amount has been paid with cash?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Confirm',
+            onPress: async () => {
+              await markRemainingPaidWithCash();
+            }
+          }
+        ]
+      );
+      return; // Exit here for mobile, the alert will handle the call
+    }
+    
+    // For web, continue here
+    await markRemainingPaidWithCash();
+  }
+
+  async function markRemainingPaidWithCash() {
+    setUpdating(true);
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .update({
+          remaining_paid: true,
+          remaining_paid_method: 'cash',
+          remaining_paid_at: new Date().toISOString()
+        })
+        .eq('id', order.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[PartnerOrderDetailsScreen] Error marking remaining paid:', error);
+        throw error;
+      }
+
+      console.log('[PartnerOrderDetailsScreen] Remaining marked as paid:', data);
+      setRemainingPaid(true);
+      
+      if (Platform.OS === 'web') {
+        alert('Remaining amount marked as paid with cash!');
+      } else {
+        Alert.alert('Success', 'Remaining amount marked as paid with cash!');
+      }
+    } catch (error: any) {
+      console.error('[PartnerOrderDetailsScreen] Error:', error);
+      if (Platform.OS === 'web') {
+        alert(`Error: ${error.message}`);
+      } else {
+        Alert.alert('Error', error.message || 'Failed to update payment status');
+      }
+    } finally {
+      setUpdating(false);
+    }
   }
 
   function confirmReasonSubmit() {
@@ -336,6 +444,67 @@ export default function PartnerOrderDetailsScreen() {
               </Text>
             </View>
           </View>
+
+          {/* Payment Information card */}
+          {(order.deposit_amount || order.remaining_amount) && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Payment Information</Text>
+
+              {order.deposit_amount && (
+                <View style={styles.rowLine}>
+                  <Text style={styles.labelText}>Deposit (50%)</Text>
+                  <View>
+                    <Text style={[styles.valueText, styles.priceText]}>
+                      ₱{order.deposit_amount.toLocaleString()}
+                    </Text>
+                    <Text style={[
+                      styles.valueText,
+                      { fontSize: 12, marginTop: 2 },
+                      depositPaid ? { color: '#22c55e', fontWeight: '600' } : { color: '#f59e0b' }
+                    ]}>
+                      {depositPaid ? '✓ Paid' : 'Pending'}
+                      {order.payment_method && depositPaid && ` (${order.payment_method.toUpperCase()})`}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {order.remaining_amount && (
+                <View style={styles.rowLine}>
+                  <Text style={styles.labelText}>Remaining (50%)</Text>
+                  <View>
+                    <Text style={[styles.valueText, styles.priceText]}>
+                      ₱{order.remaining_amount.toLocaleString()}
+                    </Text>
+                    <Text style={[
+                      styles.valueText,
+                      { fontSize: 12, marginTop: 2 },
+                      remainingPaid ? { color: '#22c55e', fontWeight: '600' } : { color: '#f59e0b' }
+                    ]}>
+                      {remainingPaid ? `✓ Paid (${order.remaining_paid_method || 'cash'})` : 'Pending'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Mark Remaining Paid Button */}
+              {depositPaid && !remainingPaid && currentStatus === 'CONFIRMED' && (
+                <TouchableOpacity
+                  style={styles.markPaidButton}
+                  onPress={handleMarkRemainingPaid}
+                  disabled={updating}
+                >
+                  {updating ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.markPaidButtonText}>
+                      Mark Remaining Paid (Cash)
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           {/* Package card */}
           <View style={styles.card}>
@@ -557,6 +726,51 @@ export default function PartnerOrderDetailsScreen() {
                 ) : (
                   <Text style={styles.reasonConfirmText}>
                     Submit
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Delivery Fee Modal */}
+      {showDeliveryFeeModal && (
+        <View style={styles.reasonOverlay}>
+          <View style={styles.reasonCard}>
+            <Text style={styles.reasonTitle}>Set Delivery Fee</Text>
+            <Text style={styles.reasonPrompt}>
+              Enter the delivery fee for this booking. You can set it to 0 if there's no delivery fee.
+            </Text>
+
+            <TextInput
+              style={styles.reasonInput}
+              placeholder="Enter delivery fee (e.g., 500)"
+              placeholderTextColor="#9ca3af"
+              keyboardType="numeric"
+              value={deliveryFee}
+              onChangeText={setDeliveryFee}
+            />
+
+            <View style={styles.reasonBtnRow}>
+              <Pressable
+                style={[styles.reasonBtn, styles.reasonCancel]}
+                onPress={() => setShowDeliveryFeeModal(false)}
+              >
+                <Text style={styles.reasonCancelText}>Cancel</Text>
+              </Pressable>
+
+              <TouchableOpacity
+                style={[styles.reasonBtn, styles.reasonConfirm]}
+                onPress={confirmAcceptWithDeliveryFee}
+                disabled={updating}
+                activeOpacity={0.7}
+              >
+                {updating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.reasonConfirmText}>
+                    Accept Booking
                   </Text>
                 )}
               </TouchableOpacity>
@@ -914,6 +1128,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     color: "#111827"
+  },
+  markPaidButton: {
+    backgroundColor: "#22c55e",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 16,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  markPaidButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600"
   }
 });
 
