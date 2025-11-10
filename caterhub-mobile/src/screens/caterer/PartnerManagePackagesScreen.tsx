@@ -575,6 +575,10 @@ export default function PartnerManagePackagesScreen() {
             }`}
             placeholderTextColor="#9ca3af"
             value={currentDishDraft}
+            blurOnSubmit={false}
+            autoCorrect={false}
+            autoCapitalize="none"
+            editable={true}
             onChangeText={(txt) =>
               updateNewDishInput(sectionIndex, txt)
             }
@@ -613,6 +617,10 @@ export default function PartnerManagePackagesScreen() {
           placeholder="e.g. Birthday Set A"
           placeholderTextColor="#9ca3af"
           value={pkgName}
+          blurOnSubmit={false}
+          autoCorrect={false}
+          autoCapitalize="none"
+          editable={true}
           onChangeText={setPkgName}
         />
 
@@ -623,6 +631,10 @@ export default function PartnerManagePackagesScreen() {
           placeholder="e.g. ₱250/head or ₱12,500"
           placeholderTextColor="#9ca3af"
           value={pkgPrice}
+          blurOnSubmit={false}
+          autoCorrect={false}
+          autoCapitalize="none"
+          editable={true}
           onChangeText={setPkgPrice}
         />
 
@@ -784,6 +796,10 @@ export default function PartnerManagePackagesScreen() {
           placeholder='e.g. "Wait Staff (3)"'
           placeholderTextColor="#9ca3af"
           value={newInclusionName}
+          blurOnSubmit={false}
+          autoCorrect={false}
+          autoCapitalize="none"
+          editable={true}
           onChangeText={setNewInclusionName}
         />
 
@@ -793,6 +809,10 @@ export default function PartnerManagePackagesScreen() {
           placeholder="e.g. ₱1,500"
           placeholderTextColor="#9ca3af"
           value={newInclusionPrice}
+          blurOnSubmit={false}
+          autoCorrect={false}
+          autoCapitalize="none"
+          editable={true}
           onChangeText={setNewInclusionPrice}
         />
 
@@ -834,6 +854,7 @@ export default function PartnerManagePackagesScreen() {
         <ScrollView
           style={styles.scrollRegion}
           contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="always"
         >
           {/* Page header */}
           <View style={styles.pageHeaderRow}>
