@@ -11,13 +11,18 @@ import { useAuth } from '../../store/auth';
 
 type Booking = {
   id: number;
-  serviceId: number;
-  service?: { id: number; name: string };
-  eventDate: string;
+  service_id?: number | null;
+  package_id?: string | null;
+  packages?: { id: string; name: string; price: string; caterer_id: string } | null;
+  event_date: string;
   guests: number;
   notes?: string;
   status?: 'PENDING' | 'CONFIRMED' | 'ON_THE_WAY' | 'DECLINED' | 'COMPLETED' | 'CANCELLED';
   pricePerHead?: number;
+  // Legacy fields for backward compatibility
+  serviceId?: number;
+  eventDate?: string;
+  service?: { id: number; name: string };
 };
 
 export default function BookingsList({ navigation }: any) {
@@ -94,7 +99,9 @@ export default function BookingsList({ navigation }: any) {
               <Card key={b.id} style={styles.card}>
                 <Card.Content>
                   <View style={styles.rowBetween}>
-                    <Text style={styles.serviceName}>{b.service?.name ?? 'Catering Service'}</Text>
+                    <Text style={styles.serviceName}>
+                      {b.packages?.name ?? b.service?.name ?? 'Catering Service'}
+                    </Text>
                     <Chip compact style={{ backgroundColor: statusColor(b.status) }} textStyle={{ color: '#fff' }}>
                       {b.status ?? 'PENDING'}
                     </Chip>
@@ -103,7 +110,7 @@ export default function BookingsList({ navigation }: any) {
                   <View style={styles.row}>
                     <Ionicons name="calendar" size={16} color="#6b7280" />
                     <Text style={styles.muted}>
-                      {b.eventDate?.slice(0, 10)} • {b.guests} guests
+                      {(b.event_date || b.eventDate)?.slice(0, 10)} • {b.guests} guests
                     </Text>
                   </View>
 

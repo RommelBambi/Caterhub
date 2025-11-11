@@ -62,32 +62,8 @@ export default function PartnerOrdersScreen() {
     console.log('[PartnerOrdersScreen] Fetching orders for caterer:', user.id);
 
     try {
-      // First, get all services belonging to this caterer
-      const { data: services, error: servicesError } = await supabase
-        .from('services')
-        .select('id, name, user_id')
-        .eq('user_id', user.id);
-
-      console.log('[PartnerOrdersScreen] Found services:', services?.length || 0, services);
-
-      if (servicesError) {
-        console.error('[PartnerOrdersScreen] Error fetching services:', servicesError);
-        // Try fetching by packages instead
-        await fetchOrdersByPackages();
-        return;
-      }
-
-      if (!services || services.length === 0) {
-        console.warn('[PartnerOrdersScreen] No services found for caterer, trying packages...');
-        // Try fetching by packages instead (since packages are linked to caterers)
-        await fetchOrdersByPackages();
-        return;
-      }
-
-      const serviceIds = services.map(s => s.id);
-      console.log('[PartnerOrdersScreen] Service IDs:', serviceIds);
-
-      // Also get packages for this caterer (to include bookings by package_id too)
+      // Services table no longer exists - only use packages
+      // Get packages for this caterer
       const { data: packages, error: packagesError } = await supabase
         .from('packages')
         .select('id')
@@ -97,17 +73,19 @@ export default function PartnerOrdersScreen() {
       const packageIds = packages?.map(p => p.id) || [];
       console.log('[PartnerOrdersScreen] Package IDs for this caterer:', packageIds);
 
-      // Fetch bookings for services OR packages (cover both cases)
+      if (packageIds.length === 0) {
+        console.warn('[PartnerOrdersScreen] No packages found for caterer');
+        setOrders([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      // Fetch bookings for packages (services table no longer exists)
       let bookingsQuery = supabase
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head,
-            user_id
-          ),
           packages:package_id (
             id,
             name,
@@ -122,22 +100,9 @@ export default function PartnerOrdersScreen() {
         `)
         .order('created_at', { ascending: false });
 
-      // Filter by service_id OR package_id
-      // Try to use package_id first since we know bookings have package_id
-      if (packageIds.length > 0) {
-        bookingsQuery = bookingsQuery.in('package_id', packageIds);
-        console.log('[PartnerOrdersScreen] Querying bookings by package_id:', packageIds);
-      } else if (serviceIds.length > 0) {
-        bookingsQuery = bookingsQuery.in('service_id', serviceIds);
-        console.log('[PartnerOrdersScreen] Querying bookings by service_id:', serviceIds);
-      } else {
-        // No services or packages, set empty
-        console.warn('[PartnerOrdersScreen] No services or packages found for caterer');
-        setOrders([]);
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
+      // Filter by package_id only
+      bookingsQuery = bookingsQuery.in('package_id', packageIds);
+      console.log('[PartnerOrdersScreen] Querying bookings by package_id:', packageIds);
 
       const { data: bookings, error } = await bookingsQuery;
 
@@ -203,9 +168,9 @@ export default function PartnerOrdersScreen() {
           console.warn('[PartnerOrdersScreen] Booking missing customer after fetch:', booking.id);
           return false;
         }
-        // Service is optional if we're fetching by package
-        if (!booking.services && !booking.packages) {
-          console.warn('[PartnerOrdersScreen] Booking missing both service and package:', booking.id);
+        // Package is required (services table no longer exists)
+        if (!booking.packages) {
+          console.warn('[PartnerOrdersScreen] Booking missing package:', booking.id);
           return false;
         }
         return true;
@@ -248,7 +213,8 @@ export default function PartnerOrdersScreen() {
             }
           } else {
             // Fallback to service price_per_head * guests
-            const pricePerHead = booking.services?.price_per_head || 0;
+            // Services table no longer exists - removed fallback
+            const pricePerHead = 0;
             total = pricePerHead * booking.guests;
           }
 
@@ -258,7 +224,7 @@ export default function PartnerOrdersScreen() {
             customerName: booking.customer.username || 'Unknown',
             customerEmail: booking.customer.email || '',
             customerId: booking.customer.id,
-            serviceName: booking.services?.name || booking.packages?.name || 'Unknown Service',
+            serviceName: booking.packages?.name || 'Unknown Service',
             packageName: packageName,
             packagePrice: packageInfo?.price,
             venue: notesData.address || 'Not specified',
@@ -323,12 +289,6 @@ export default function PartnerOrdersScreen() {
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head,
-            user_id
-          ),
           packages:package_id (
             id,
             name,
@@ -392,7 +352,8 @@ export default function PartnerOrdersScreen() {
             }
           } else {
             // Fallback to service price_per_head * guests
-            const pricePerHead = booking.services?.price_per_head || 0;
+            // Services table no longer exists - removed fallback
+            const pricePerHead = 0;
             total = pricePerHead * booking.guests;
           }
 
@@ -402,7 +363,7 @@ export default function PartnerOrdersScreen() {
             customerName: booking.customer.username || 'Unknown',
             customerEmail: booking.customer.email || '',
             customerId: booking.customer.id,
-            serviceName: booking.services?.name || booking.packages?.name || 'Unknown Service',
+            serviceName: booking.packages?.name || 'Unknown Service',
             packageName: packageName,
             packagePrice: packageInfo?.price,
             venue: notesData.address || 'Not specified',
@@ -432,21 +393,17 @@ export default function PartnerOrdersScreen() {
     if (!user) return;
 
     try {
-      // Query all bookings and filter by checking if service belongs to caterer
-      // This assumes services might be linked differently
+      // Query all bookings and filter by checking if package belongs to caterer
+      // Services table no longer exists, so we only check packages
       const { data: allBookings, error } = await supabase
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head
-          ),
           packages:package_id (
             id,
             name,
-            price
+            price,
+            caterer_id
           ),
           customer:user_id (
             id,
@@ -458,11 +415,9 @@ export default function PartnerOrdersScreen() {
 
       if (error) throw error;
 
-      // Filter bookings where service owner matches caterer
-      // Note: This requires services to have a user_id field
-      // If services don't have user_id, we may need to join through packages
+      // Filter bookings where package belongs to this caterer
       const filteredBookings = (allBookings || []).filter(
-        (booking: any) => booking.services
+        (booking: any) => booking.packages && booking.packages.caterer_id === user.id
       );
 
       // Transform similar to above
@@ -485,21 +440,16 @@ export default function PartnerOrdersScreen() {
         const packageInfo = booking.packages || null;
         const packageName = packageInfo?.name || (notesData.packageId ? `Package ${notesData.packageId}` : undefined);
         
-        // Calculate total price - use package price if available, otherwise use service price_per_head
+        // Calculate total price - use package price (multiply by guests)
         let total = 0;
         if (packageInfo?.price) {
           // Parse package price string (e.g., "12,500" or "₱12,500")
           const priceMatch = packageInfo.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
           if (priceMatch) {
             const packagePrice = parseFloat(priceMatch[1].replace(/,/g, ''));
-            // Package price might be total or per head - check if we need to multiply by guests
-            // For now, assume it's a total package price (not per head)
-            total = packagePrice;
+            // Package price is per head, multiply by guests
+            total = packagePrice * (booking.guests || 0);
           }
-        } else {
-          // Fallback to service price_per_head * guests
-          const pricePerHead = booking.services?.price_per_head || 0;
-          total = pricePerHead * booking.guests;
         }
 
         return {
@@ -508,7 +458,7 @@ export default function PartnerOrdersScreen() {
           customerName: booking.customer?.username || 'Unknown',
           customerEmail: booking.customer?.email || '',
           customerId: booking.customer?.id || '',
-          serviceName: booking.services?.name || 'Unknown Service',
+          serviceName: booking.packages?.name || 'Unknown Service',
           packageName: packageName,
           packagePrice: packageInfo?.price,
           venue: notesData.address || 'Not specified',

@@ -43,15 +43,8 @@ export default function PartnerDashboardScreen() {
 
       const packageIds = packages?.map(p => p.id) || [];
 
-      // Get services for this caterer (fallback)
-      const { data: services, error: servicesError } = await supabase
-        .from('services')
-        .select('id')
-        .eq('user_id', user.id);
-
-      const serviceIds = services?.map(s => s.id) || [];
-
-      if (packageIds.length === 0 && serviceIds.length === 0) {
+      // Services table no longer exists - only use packages
+      if (packageIds.length === 0) {
         setBookings([]);
         setKpis([
           { label: "New Orders (7d)", value: "0", sub: "Last 7 days" },
@@ -62,17 +55,11 @@ export default function PartnerDashboardScreen() {
         return;
       }
 
-      // Fetch all bookings for this caterer
+      // Fetch all bookings for this caterer (services table no longer exists)
       let bookingsQuery = supabase
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head,
-            user_id
-          ),
           packages:package_id (
             id,
             name,
@@ -87,11 +74,9 @@ export default function PartnerDashboardScreen() {
         `)
         .order('created_at', { ascending: false });
 
-      // Filter by package_id or service_id
+      // Filter by package_id only (services table deleted)
       if (packageIds.length > 0) {
         bookingsQuery = bookingsQuery.in('package_id', packageIds);
-      } else if (serviceIds.length > 0) {
-        bookingsQuery = bookingsQuery.in('service_id', serviceIds);
       }
 
       const { data: allBookings, error } = await bookingsQuery;
@@ -148,9 +133,9 @@ export default function PartnerDashboardScreen() {
         if (bookingDate >= thirtyDaysAgo && (booking.status === 'CONFIRMED' || booking.status === 'COMPLETED')) {
           let amount = 0;
           if (booking.packages && booking.packages.price) {
-            amount = parseFloat(booking.packages.price) || 0;
-          } else if (booking.services && booking.services.price_per_head) {
-            amount = (parseFloat(booking.services.price_per_head) || 0) * (booking.guests || 0);
+            // Parse price (may contain commas) and multiply by guests
+            const priceStr = booking.packages.price.toString().replace(/,/g, '');
+            amount = (parseFloat(priceStr) || 0) * (booking.guests || 0);
           }
           revenue30d += amount;
         }
@@ -174,9 +159,9 @@ export default function PartnerDashboardScreen() {
 
           let total = "₱0";
           if (booking.packages && booking.packages.price) {
-            total = `₱${parseFloat(booking.packages.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-          } else if (booking.services && booking.services.price_per_head) {
-            const amount = (parseFloat(booking.services.price_per_head) || 0) * (booking.guests || 0);
+            // Parse price (may contain commas) and multiply by guests
+            const priceStr = booking.packages.price.toString().replace(/,/g, '');
+            const amount = (parseFloat(priceStr) || 0) * (booking.guests || 0);
             total = `₱${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
           }
 
@@ -316,12 +301,6 @@ export default function PartnerDashboardScreen() {
                         .from('bookings')
                         .select(`
                           *,
-                          services:service_id (
-                            id,
-                            name,
-                            price_per_head,
-                            user_id
-                          ),
                           packages:package_id (
                             id,
                             name,
@@ -349,17 +328,24 @@ export default function PartnerDashboardScreen() {
                         customerName: bookingData.customer?.username || 'Unknown Customer',
                         customerEmail: bookingData.customer?.email || '',
                         customerId: bookingData.user_id || '',
-                        serviceName: bookingData.services?.name || bookingData.packages?.name || 'N/A',
+                        serviceName: bookingData.packages?.name || 'N/A',
                         packageName: bookingData.packages?.name,
-                        packagePrice: bookingData.packages?.price ? `₱${parseFloat(bookingData.packages.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : undefined,
+                        packagePrice: bookingData.packages?.price ? (() => {
+                          const priceStr = bookingData.packages.price.toString().replace(/,/g, '');
+                          const amount = (parseFloat(priceStr) || 0) * (bookingData.guests || 0);
+                          return `₱${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                        })() : undefined,
                         selectedDishes: [], // Will be populated from booking data if available
                         venue: '', // Will be populated from booking data if available
                         inclusions: [], // Will be populated from booking data if available
                         status: bookingData.status as "PENDING" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED",
                         eventDate: bookingData.event_date,
                         guests: bookingData.guests || 0,
-                        totalPrice: bookingData.packages?.price ? `₱${parseFloat(bookingData.packages.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 
-                          (bookingData.services?.price_per_head ? `₱${((parseFloat(bookingData.services.price_per_head) || 0) * (bookingData.guests || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₱0'),
+                        totalPrice: bookingData.packages?.price ? (() => {
+                          const priceStr = bookingData.packages.price.toString().replace(/,/g, '');
+                          const amount = (parseFloat(priceStr) || 0) * (bookingData.guests || 0);
+                          return `₱${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                        })() : '₱0',
                         notes: bookingData.notes || undefined
                       };
 

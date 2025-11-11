@@ -74,7 +74,7 @@ export default function CustomizePackage({ route, navigation }: any) {
             <Card key={cat.id} style={styles.catCard}>
               <Card.Content>
                 <Text style={styles.catTitle}>
-                  {cat.name} {cat.required !== false ? '(required)' : '(optional)'}
+                  {`Choice of ${String(cat.name).replace(/^\w/, (c) => c.toUpperCase())}`} {cat.required !== false ? '(required)' : '(optional)'}
                 </Text>
 
                 <RadioButton.Group

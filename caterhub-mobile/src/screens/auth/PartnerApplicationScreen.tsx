@@ -1341,12 +1341,31 @@ export default function PartnerApplicationScreen() {
       
       // Check if user is already logged in
       const { data: { user } } = await supabase.auth.getUser();
-      if (user?.email && !formData.ownerEmail) {
-        // User is logged in but form doesn't have email, update it
-        setForm((prev) => ({
-          ...prev,
-          ownerEmail: user.email || '',
-        }));
+      if (user?.email) {
+        // User is logged in, verify their role is CATER (not ADMIN)
+        const { data: userProfile } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        
+        if (userProfile?.role === 'ADMIN') {
+          console.error('SECURITY WARNING: User has ADMIN role but is on partner application screen!');
+          Alert.alert(
+            'Access Denied',
+            'Admin accounts cannot create partner applications. Please use a different account or contact support.'
+          );
+          // Don't proceed with form
+          return;
+        }
+        
+        // Update form email if not set
+        if (!formData.ownerEmail) {
+          setForm((prev) => ({
+            ...prev,
+            ownerEmail: user.email || '',
+          }));
+        }
       }
     };
     
@@ -1401,13 +1420,30 @@ export default function PartnerApplicationScreen() {
         return;
       }
 
-      // User is not logged in, create the account
+      // User is not logged in, try to create account first
+      // If account exists, Supabase will return an error and we'll handle it
       try {
         const { register } = await import('../../services/api');
         const userProfile = await register(email, password, form.ownerName || 'Partner', 'CATER');
         
         if (!userProfile?.id) {
           throw new Error('Failed to get user ID after registration');
+        }
+        
+        // Verify role is CATER, not ADMIN
+        if (userProfile.role === 'ADMIN') {
+          console.error('ERROR: User was created with ADMIN role instead of CATER!');
+          // Fix the role
+          const { error: fixError } = await supabase
+            .from('users')
+            .update({ role: 'CATER' })
+            .eq('id', userProfile.id);
+          
+          if (fixError) {
+            console.error('Failed to fix role:', fixError);
+          } else {
+            userProfile.role = 'CATER';
+          }
         }
 
         // Update form with email (saveForm will be called automatically by useEffect)
@@ -1423,8 +1459,22 @@ export default function PartnerApplicationScreen() {
         // Proceed to next step (Business Profile)
         next();
       } catch (regError: any) {
-        // If account already exists, try to sign in instead
-        if (regError?.message?.includes('already registered') || regError?.message?.includes('User already registered')) {
+        // Check if account already exists
+        const errorMessage = regError?.message || '';
+        const isAlreadyRegistered = 
+          errorMessage.includes('already registered') || 
+          errorMessage.includes('User already registered') ||
+          errorMessage.includes('already exists') ||
+          errorMessage.includes('email address is already registered') ||
+          errorMessage.includes('An account with this email already exists');
+        
+        if (isAlreadyRegistered) {
+          // Show alert that email already exists
+          Alert.alert(
+            "Email Already Exists",
+            "An account with this email address already exists. Please sign in with your password to continue your application, or use a different email address."
+          );
+          // Account exists, try to sign in with provided password
           try {
             const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
               email,
@@ -1432,10 +1482,46 @@ export default function PartnerApplicationScreen() {
             });
             
             if (loginError || !loginData.user) {
-              throw new Error('Account exists but password is incorrect. Please use the correct password or reset it.');
+              // Password is incorrect
+              Alert.alert(
+                "Account Exists",
+                "An account with this email already exists, but the password is incorrect. Please use the correct password or reset it."
+              );
+              throw new Error('Account exists but password is incorrect');
             }
             
-            // User successfully logged in, update form
+            // Successfully signed in, get user role
+            const { data: userProfile } = await supabase
+              .from('users')
+              .select('role')
+              .eq('id', loginData.user.id)
+              .single();
+            
+            const existingUserRole = userProfile?.role || null;
+            
+            // Check user role
+            if (existingUserRole === 'ADMIN') {
+              Alert.alert(
+                "Account Exists",
+                "This email is already registered as an Admin account. Please use a different email address for partner registration."
+              );
+              throw new Error('Account is already an Admin account');
+            } else if (existingUserRole === 'CUSTOMER') {
+              // Upgrade CUSTOMER to CATER
+              const { error: updateError } = await supabase
+                .from('users')
+                .update({ role: 'CATER' })
+                .eq('id', loginData.user.id);
+              
+              if (updateError) {
+                console.error('Error updating role:', updateError);
+                Alert.alert("Error", "Failed to update account type. Please contact support.");
+                throw updateError;
+              }
+            }
+            // If already CATER, no need to update
+            
+            // Update form and continue
             const formWithEmail = {
               ...form,
               ownerEmail: email,
@@ -1448,6 +1534,11 @@ export default function PartnerApplicationScreen() {
             // Proceed to next step
             next();
           } catch (loginErr: any) {
+            // If we already showed an alert, re-throw
+            if (loginErr?.message?.includes('password is incorrect') || loginErr?.message?.includes('Admin account')) {
+              throw loginErr;
+            }
+            // Otherwise show generic error
             console.error('Login error:', loginErr);
             Alert.alert(
               "Account Exists",
@@ -1456,6 +1547,12 @@ export default function PartnerApplicationScreen() {
             throw loginErr;
           }
         } else {
+          // Different error, show it
+          console.error('Registration error:', regError);
+          Alert.alert(
+            "Registration Failed",
+            regError?.message || 'Failed to create account. Please try again.'
+          );
           throw regError;
         }
       }
