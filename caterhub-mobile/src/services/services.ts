@@ -1,5 +1,9 @@
 
 import { supabase } from './supabase';
+import { geocodeAddress } from './geocoding';
+
+// Cache for geocoded addresses to avoid repeated API calls
+const geocodeCache = new Map<string, { latitude: number; longitude: number }>();
 
 
 
@@ -118,20 +122,65 @@ export async function fetchServices(): Promise<Service[]> {
         : app.locations;
       
       if (Array.isArray(locs) && locs.length > 0) {
-        locations = locs.map((loc: any) => ({
-          id: loc.id,
-          city: loc.city,
-          address: loc.address,
-          country: loc.country,
-          province: loc.province,
-          postalCode: loc.postalCode,
-          latitude: loc.latitude ? parseFloat(loc.latitude) : undefined,
-          longitude: loc.longitude ? parseFloat(loc.longitude) : undefined,
-          serviceRadiusKm: loc.serviceRadiusKm ? parseFloat(loc.serviceRadiusKm) : undefined,
-        }));
+        // Process locations sequentially to respect geocoding rate limits (1 req/sec)
+        locations = [];
+        for (let i = 0; i < locs.length; i++) {
+          const loc = locs[i];
+          let lat = loc.latitude ? parseFloat(loc.latitude) : undefined;
+          let lng = loc.longitude ? parseFloat(loc.longitude) : undefined;
+          
+          // If coordinates are missing, try to geocode the address
+          if ((!lat || !lng) && loc.address) {
+            // Create cache key from address components
+            const cacheKey = `${loc.address}, ${loc.city || ''}, ${loc.province || ''}, ${loc.country || 'Philippines'}`.toLowerCase();
+            
+            // Check cache first
+            const cached = geocodeCache.get(cacheKey);
+            if (cached) {
+              lat = cached.latitude;
+              lng = cached.longitude;
+              console.log(`[fetchServices] ✅ Using cached coordinates for: ${loc.address}`);
+            } else {
+              console.log(`[fetchServices] Missing coordinates for location, geocoding: ${loc.address}`);
+              const geocodeResult = await geocodeAddress(
+                loc.address,
+                loc.city,
+                loc.province,
+                loc.country || 'Philippines'
+              );
+              
+              if (geocodeResult) {
+                lat = geocodeResult.latitude;
+                lng = geocodeResult.longitude;
+                // Cache the result
+                geocodeCache.set(cacheKey, { latitude: lat, longitude: lng });
+                console.log(`[fetchServices] ✅ Geocoded location: ${lat}, ${lng}`);
+              } else {
+                console.warn(`[fetchServices] ⚠️ Failed to geocode location: ${loc.address}`);
+              }
+              
+              // Add delay between geocoding requests (1.1 seconds to respect rate limits)
+              if (i < locs.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 1100));
+              }
+            }
+          }
+          
+          locations.push({
+            id: loc.id,
+            city: loc.city,
+            address: loc.address,
+            country: loc.country,
+            province: loc.province,
+            postalCode: loc.postalCode,
+            latitude: lat,
+            longitude: lng,
+            serviceRadiusKm: loc.serviceRadiusKm ? parseFloat(loc.serviceRadiusKm) : undefined,
+          });
+        }
         
         // Use first location for service coordinates
-        if (locations[0].latitude && locations[0].longitude) {
+        if (locations[0]?.latitude && locations[0]?.longitude) {
           latitude = locations[0].latitude;
           longitude = locations[0].longitude;
         }

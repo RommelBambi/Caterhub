@@ -25,7 +25,7 @@ import {
   Service,
 } from '../../services/services';
 import InteractiveMapPicker from '../../components/InteractiveMapPicker';
-import { filterServicesByDistance, getServiceDistance, formatDistance } from '../../services/location';
+import { filterServicesByDistance, getServiceDistance, formatDistance, calculateDistance } from '../../services/location';
 import { getPrimaryLocation } from '../../services/userLocations';
 
 export default function HomeScreen({ navigation }: any) {
@@ -210,6 +210,83 @@ export default function HomeScreen({ navigation }: any) {
 
   // Use search results if query exists, otherwise use all services
   const filtered = query.trim() ? searchResults : all;
+  
+  // Filter and sort nearby services by distance when location is set
+  const nearbyServices = React.useMemo(() => {
+    if (!userLocation) return [];
+    
+    console.log(`[HomeScreen] Filtering nearby services for location:`, {
+      lat: userLocation.latitude,
+      lng: userLocation.longitude,
+      address: userLocation.address
+    });
+    console.log(`[HomeScreen] Total services to filter: ${filtered.length}`);
+    
+    // Filter services that have coordinates and are within service radius
+    const servicesWithDistance = filtered
+      .map(svc => {
+        // Check if service has coordinates
+        if (!svc.latitude || !svc.longitude) {
+          console.log(`[HomeScreen] Service ${svc.name} has no coordinates`);
+          return null;
+        }
+        
+        // Check if service is within any of its service areas (from locations)
+        let isWithinRange = false;
+        let minDistance = Infinity;
+        
+        if (svc.locations && Array.isArray(svc.locations) && svc.locations.length > 0) {
+          // Check if user is within any service location's radius
+          for (const loc of svc.locations) {
+            if (loc.latitude && loc.longitude) {
+              const serviceDistance = calculateDistance(
+                userLocation.latitude,
+                userLocation.longitude,
+                loc.latitude,
+                loc.longitude
+              );
+              
+              // Use service radius if available, otherwise default to 50km
+              const maxRadius = loc.serviceRadiusKm || 50;
+              
+              console.log(`[HomeScreen] Service ${svc.name} location check:`, {
+                serviceLocation: { lat: loc.latitude, lng: loc.longitude },
+                distance: serviceDistance.toFixed(2),
+                maxRadius: maxRadius,
+                withinRange: serviceDistance <= maxRadius
+              });
+              
+              if (serviceDistance <= maxRadius) {
+                isWithinRange = true;
+                minDistance = Math.min(minDistance, serviceDistance);
+              }
+            }
+          }
+        } else {
+          // If no locations defined, use service's main coordinates with default 50km radius
+          const distance = getServiceDistance(svc, userLocation);
+          if (distance !== null) {
+            isWithinRange = distance <= 50;
+            minDistance = distance;
+            console.log(`[HomeScreen] Service ${svc.name} (no locations): distance=${distance.toFixed(2)}km, withinRange=${isWithinRange}`);
+          }
+        }
+        
+        return isWithinRange ? { ...svc, _distance: minDistance } : null;
+      })
+      .filter((svc): svc is Service & { _distance: number } => svc !== null)
+      .sort((a, b) => a._distance - b._distance); // Sort by distance (closest first)
+    
+    console.log(`[HomeScreen] Found ${servicesWithDistance.length} nearby services within range`);
+    if (servicesWithDistance.length > 0) {
+      console.log(`[HomeScreen] Nearby services:`, servicesWithDistance.map(s => ({
+        name: s.name,
+        distance: s._distance.toFixed(2) + 'km'
+      })));
+    }
+    
+    return servicesWithDistance;
+  }, [filtered, userLocation]);
 
   return (
     <View style={styles.container}>
@@ -459,14 +536,24 @@ export default function HomeScreen({ navigation }: any) {
              {userLocation && (
                <>
                  <Text style={styles.sectionTitle}>
-                   Nearby Services
+                   Nearby Services {nearbyServices.length > 0 && `(${nearbyServices.length})`}
                  </Text>
-                 <ScrollView
-                   horizontal
-                   showsHorizontalScrollIndicator={false}
-                   contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
-                 >
-                   {filtered.slice(0, 3).map((svc) => (
+                 {nearbyServices.length === 0 ? (
+                   <View style={{ paddingHorizontal: 16, paddingVertical: 20 }}>
+                     <Text style={{ color: '#6b7280', textAlign: 'center' }}>
+                       No caterers found within service range of your location.
+                     </Text>
+                     <Text style={{ color: '#6b7280', textAlign: 'center', fontSize: 12, marginTop: 4 }}>
+                       Try selecting a different location or check back later.
+                     </Text>
+                   </View>
+                 ) : (
+                   <ScrollView
+                     horizontal
+                     showsHorizontalScrollIndicator={false}
+                     contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
+                   >
+                     {nearbyServices.slice(0, 3).map((svc) => (
                      <TouchableOpacity
                        key={svc.id}
                        onPress={() => goToDetails(svc)}
@@ -528,20 +615,23 @@ export default function HomeScreen({ navigation }: any) {
                          </View>
                        </Card>
                      </TouchableOpacity>
-                   ))}
-                 </ScrollView>
+                     ))}
+                   </ScrollView>
+                 )}
                  
                  {/* View All Services Button */}
-                 <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
-                   <TouchableOpacity
-                     onPress={() => setShowAllServicesModal(true)}
-                     style={styles.viewAllButton}
-                     activeOpacity={0.8}
-                   >
-                     <Text style={styles.viewAllButtonText}>View All Services</Text>
-                     <Ionicons name="arrow-forward" size={20} color="#FF8000" />
-                   </TouchableOpacity>
-                 </View>
+                 {nearbyServices.length > 0 && (
+                   <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
+                     <TouchableOpacity
+                       onPress={() => setShowAllServicesModal(true)}
+                       style={styles.viewAllButton}
+                       activeOpacity={0.8}
+                     >
+                       <Text style={styles.viewAllButtonText}>View All Services</Text>
+                       <Ionicons name="arrow-forward" size={20} color="#FF8000" />
+                     </TouchableOpacity>
+                   </View>
+                 )}
                </>
              )}
 
@@ -665,7 +755,7 @@ export default function HomeScreen({ navigation }: any) {
             contentContainerStyle={{ paddingBottom: 24 }}
             showsVerticalScrollIndicator={false}
           >
-            {filtered.map((svc) => (
+            {(userLocation ? nearbyServices : filtered).map((svc) => (
               <TouchableOpacity
                 key={svc.id}
                 onPress={() => {
