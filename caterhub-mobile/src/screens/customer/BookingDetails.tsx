@@ -132,15 +132,28 @@ const BookingDetails = ({ route, navigation }: any) => {
   const guestsCount = toNumber(
     b.guests ?? meta.guests ?? meta.guestCount ?? meta.guestsCount ?? 0
   );
-  const pricePerHead = toNumber(
-    serviceInfo.pricePerHead ??
-      serviceInfo.price_per_head ??
-      meta.pricePerHead ??
-      meta.price_per_head ??
-      meta.packagePrice ??
-      meta.price ??
-      0
-  );
+  // Extract price per head from package price or fallback to other sources
+  let pricePerHead = 0;
+  if (b.packages?.price) {
+    // Extract price from package price string (e.g., "₱250/head" or "250")
+    const priceMatch = b.packages.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+    if (priceMatch) {
+      pricePerHead = parseFloat(priceMatch[1].replace(/,/g, ''));
+    }
+  }
+  
+  // Fallback to other price sources if package price not available
+  if (pricePerHead === 0) {
+    pricePerHead = toNumber(
+      serviceInfo.pricePerHead ??
+        serviceInfo.price_per_head ??
+        meta.pricePerHead ??
+        meta.price_per_head ??
+        meta.packagePrice ??
+        meta.price ??
+        0
+    );
+  }
   // Get delivery fee from database field (set by caterer)
   const deliveryFee = toNumber(b.delivery_fee ?? 0);
   const packageSubtotal = guestsCount * pricePerHead;
@@ -193,7 +206,9 @@ const BookingDetails = ({ route, navigation }: any) => {
         <Card style={styles.card}>
           <Card.Content>
             <View style={styles.rowBetween}>
-              <Text style={styles.title}>{serviceInfo?.name ?? 'Catering Service'}</Text>
+              <Text style={styles.title}>
+                {b.packages?.business_name ?? serviceInfo?.name ?? 'Catering Service'}
+              </Text>
               <Chip
                 compact
                 style={{
@@ -291,7 +306,7 @@ const BookingDetails = ({ route, navigation }: any) => {
             {selectedMenu.length > 0 && (
               <>
                 <Text style={[styles.sectionTitle, { marginTop: 14 }]}>
-                  Selected Menu
+                  Selected Package: {b.packages.name}
                 </Text>
                 <View style={{ marginTop: 6 }}>
                   {selectedMenu.map((item, i) => (

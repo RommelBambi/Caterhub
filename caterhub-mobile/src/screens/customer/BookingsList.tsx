@@ -13,7 +13,13 @@ type Booking = {
   id: number;
   service_id?: number | null;
   package_id?: string | null;
-  packages?: { id: string; name: string; price: string; caterer_id: string } | null;
+  packages?: { 
+    id: string; 
+    name: string; 
+    price: string; 
+    caterer_id: string;
+    business_name?: string;
+  } | null;
   event_date: string;
   guests: number;
   notes?: string;
@@ -100,7 +106,7 @@ export default function BookingsList({ navigation }: any) {
                 <Card.Content>
                   <View style={styles.rowBetween}>
                     <Text style={styles.serviceName}>
-                      {b.packages?.name ?? b.service?.name ?? 'Catering Service'}
+                      {b.packages?.business_name ?? b.service?.name ?? 'Catering Service'}
                     </Text>
                     <Chip compact style={{ backgroundColor: statusColor(b.status) }} textStyle={{ color: '#fff' }}>
                       {b.status ?? 'PENDING'}
