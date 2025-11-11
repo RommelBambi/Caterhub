@@ -107,17 +107,6 @@ export default function CustomizePackage({ route, navigation }: any) {
           </Card>
         )}
 
-        {/* Notes input */}
-        <TextInput
-          label="Special notes (optional)"
-          mode="outlined"
-          value={notes}
-          onChangeText={setNotes}
-          multiline
-          numberOfLines={5}              // shows ~5 lines by default
-          style={{ marginTop: 16, height: 140 }}   // bigger height
-          contentStyle={{ paddingTop: 12 }}        // better spacing inside
-        />
       </ScrollView>
 
       {/* Sticky footer */}
