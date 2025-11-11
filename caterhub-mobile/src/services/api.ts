@@ -281,7 +281,7 @@ export async function register(email: string, password: string, username: string
   
   // CRITICAL FINAL CHECK: Ensure role is NEVER ADMIN for new registrations
   // This catches any case where ADMIN might have been set by a database trigger or default
-  if (profile.role === "ADMIN" && role !== "ADMIN") {
+  if (profile.role === "ADMIN") {
     console.error('🚨🚨🚨 CRITICAL SECURITY ERROR: User was assigned ADMIN role during registration!');
     console.error('🚨 Registration role requested:', role);
     console.error('🚨 Profile role received:', profile.role);
@@ -328,18 +328,36 @@ export async function getCurrentUser() {
 export async function fetchBookingDetails(bookingId: number) {
   const { data, error } = await supabase
     .from('bookings')
-    .select(`
-      *,
-      services:service_id (
-        id,
-        name,
-        price_per_head
-      )
-    `)
+    .select('*')
     .eq('id', bookingId)
     .single();
     
   if (error) throw error;
+  
+  // If we need service details, we'll fetch them separately from partner_applications
+  // since we don't have a services table
+  if (data && data.service_id) {
+    try {
+      const { data: serviceData } = await supabase
+        .from('partner_applications')
+        .select('business_name, user_id')
+        .eq('id', data.service_id)
+        .eq('status', 'Approved')
+        .single();
+      
+      if (serviceData) {
+        data.service = {
+          id: data.service_id,
+          name: serviceData.business_name,
+          caterer_id: serviceData.user_id
+        };
+      }
+    } catch (serviceError) {
+      console.warn('Could not fetch service details:', serviceError);
+      // Continue without service details
+    }
+  }
+  
   return data;
 }
 
