@@ -170,9 +170,15 @@ export default function HomeScreen({ navigation }: any) {
   };
 
   const handleLocationSelect = async (location: { latitude: number; longitude: number; address: string }) => {
+    console.log(`[HomeScreen] Location selected:`, {
+      lat: location.latitude,
+      lng: location.longitude,
+      address: location.address
+    });
     setUserLocation(location);
     // Update user location in database
     await updateMe?.({ location: location.address });
+    console.log(`[HomeScreen] User location updated, nearby services will recalculate`);
   };
 
   const goToDetails = (svc: Service) => {
@@ -213,14 +219,19 @@ export default function HomeScreen({ navigation }: any) {
   
   // Filter and sort nearby services by distance when location is set
   const nearbyServices = React.useMemo(() => {
-    if (!userLocation) return [];
+    if (!userLocation) {
+      console.log(`[HomeScreen] No user location set, returning empty nearby services`);
+      return [];
+    }
     
-    console.log(`[HomeScreen] Filtering nearby services for location:`, {
+    console.log(`[HomeScreen] ========================================`);
+    console.log(`[HomeScreen] RECALCULATING nearby services for location:`, {
       lat: userLocation.latitude,
       lng: userLocation.longitude,
       address: userLocation.address
     });
     console.log(`[HomeScreen] Total services to filter: ${filtered.length}`);
+    console.log(`[HomeScreen] Services with coordinates: ${filtered.filter(s => s.latitude && s.longitude).length}`);
     
     // Filter services that have coordinates and are within service radius
     const servicesWithDistance = filtered
@@ -237,8 +248,10 @@ export default function HomeScreen({ navigation }: any) {
         
         if (svc.locations && Array.isArray(svc.locations) && svc.locations.length > 0) {
           // Check if user is within any service location's radius
+          let hasValidLocation = false;
           for (const loc of svc.locations) {
             if (loc.latitude && loc.longitude) {
+              hasValidLocation = true;
               const serviceDistance = calculateDistance(
                 userLocation.latitude,
                 userLocation.longitude,
@@ -251,8 +264,9 @@ export default function HomeScreen({ navigation }: any) {
               
               console.log(`[HomeScreen] Service ${svc.name} location check:`, {
                 serviceLocation: { lat: loc.latitude, lng: loc.longitude },
-                distance: serviceDistance.toFixed(2),
-                maxRadius: maxRadius,
+                userLocation: { lat: userLocation.latitude, lng: userLocation.longitude },
+                distance: serviceDistance.toFixed(2) + 'km',
+                maxRadius: maxRadius + 'km',
                 withinRange: serviceDistance <= maxRadius
               });
               
@@ -260,7 +274,13 @@ export default function HomeScreen({ navigation }: any) {
                 isWithinRange = true;
                 minDistance = Math.min(minDistance, serviceDistance);
               }
+            } else {
+              console.warn(`[HomeScreen] Service ${svc.name} location missing coordinates:`, loc);
             }
+          }
+          
+          if (!hasValidLocation) {
+            console.warn(`[HomeScreen] Service ${svc.name} has locations array but none have coordinates`);
           }
         } else {
           // If no locations defined, use service's main coordinates with default 50km radius
@@ -269,6 +289,8 @@ export default function HomeScreen({ navigation }: any) {
             isWithinRange = distance <= 50;
             minDistance = distance;
             console.log(`[HomeScreen] Service ${svc.name} (no locations): distance=${distance.toFixed(2)}km, withinRange=${isWithinRange}`);
+          } else {
+            console.warn(`[HomeScreen] Service ${svc.name} has no locations and no main coordinates`);
           }
         }
         
@@ -277,13 +299,23 @@ export default function HomeScreen({ navigation }: any) {
       .filter((svc): svc is Service & { _distance: number } => svc !== null)
       .sort((a, b) => a._distance - b._distance); // Sort by distance (closest first)
     
+    console.log(`[HomeScreen] ========================================`);
     console.log(`[HomeScreen] Found ${servicesWithDistance.length} nearby services within range`);
     if (servicesWithDistance.length > 0) {
-      console.log(`[HomeScreen] Nearby services:`, servicesWithDistance.map(s => ({
+      console.log(`[HomeScreen] Nearby services (sorted by distance):`, servicesWithDistance.map(s => ({
         name: s.name,
-        distance: s._distance.toFixed(2) + 'km'
+        distance: s._distance.toFixed(2) + 'km',
+        hasLocations: s.locations && s.locations.length > 0,
+        locationsCount: s.locations?.length || 0
       })));
+    } else {
+      console.warn(`[HomeScreen] ⚠️ No nearby services found!`);
+      console.warn(`[HomeScreen] This could mean:`);
+      console.warn(`[HomeScreen] 1. No services have coordinates`);
+      console.warn(`[HomeScreen] 2. All services are outside their service radius`);
+      console.warn(`[HomeScreen] 3. Services are still being geocoded`);
     }
+    console.log(`[HomeScreen] ========================================`);
     
     return servicesWithDistance;
   }, [filtered, userLocation]);
@@ -549,13 +581,14 @@ export default function HomeScreen({ navigation }: any) {
                    </View>
                  ) : (
                    <ScrollView
+                     key={`nearby-services-${userLocation.latitude}-${userLocation.longitude}`}
                      horizontal
                      showsHorizontalScrollIndicator={false}
                      contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
                    >
                      {nearbyServices.slice(0, 3).map((svc) => (
                      <TouchableOpacity
-                       key={svc.id}
+                       key={`${svc.id}-${svc._distance || 0}`}
                        onPress={() => goToDetails(svc)}
                        activeOpacity={0.8}
                      >
