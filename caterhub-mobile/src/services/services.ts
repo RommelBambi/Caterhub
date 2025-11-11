@@ -675,7 +675,7 @@ export async function fetchMyBookings() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
   
-  // Fetch bookings with package info (services table no longer exists)
+  // Fetch bookings with package info and caterer name
   const { data, error } = await supabase
     .from('bookings')
     .select(`
@@ -693,6 +693,37 @@ export async function fetchMyBookings() {
   if (error) {
     console.error('[fetchMyBookings] Error fetching bookings:', error);
     throw error;
+  }
+  
+  // Debug: Log the actual data structure
+  console.log('[fetchMyBookings] Raw data returned:', JSON.stringify(data, null, 2));
+  if (data && data.length > 0) {
+    console.log('[fetchMyBookings] First booking packages structure:', JSON.stringify(data[0].packages, null, 2));
+  }
+  
+  // Manually fetch caterer business name from partner_applications (same as home screen)
+  if (data && data.length > 0) {
+    for (const booking of data) {
+      if (booking.packages?.caterer_id) {
+        try {
+          const { data: partnerApp } = await supabase
+            .from('partner_applications')
+            .select('business_name, owner_name')
+            .eq('user_id', booking.packages.caterer_id)
+            .eq('status', 'Approved')
+            .single();
+          
+          if (partnerApp) {
+            booking.packages.business_name = partnerApp.business_name;
+            console.log(`[fetchMyBookings] Found caterer business: ${partnerApp.business_name} for booking ${booking.id}`);
+          } else {
+            console.warn(`[fetchMyBookings] No approved partner application found for caterer_id: ${booking.packages.caterer_id}`);
+          }
+        } catch (catererError) {
+          console.error(`[fetchMyBookings] Error fetching caterer business for booking ${booking.id}:`, catererError);
+        }
+      }
+    }
   }
   
   return data || [];

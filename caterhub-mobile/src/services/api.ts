@@ -328,11 +328,46 @@ export async function getCurrentUser() {
 export async function fetchBookingDetails(bookingId: number) {
   const { data, error } = await supabase
     .from('bookings')
-    .select('*')
+    .select(`
+      *,
+      packages:package_id (
+        id,
+        name,
+        price,
+        caterer_id
+      )
+    `)
     .eq('id', bookingId)
     .single();
     
   if (error) throw error;
+  
+  // Debug: Log the actual data structure
+  console.log('[fetchBookingDetails] Raw booking data:', JSON.stringify(data, null, 2));
+  if (data?.packages) {
+    console.log('[fetchBookingDetails] Packages structure:', JSON.stringify(data.packages, null, 2));
+  }
+  
+  // Manually fetch caterer business name from partner_applications (same as home screen)
+  if (data?.packages?.caterer_id) {
+    try {
+      const { data: partnerApp } = await supabase
+        .from('partner_applications')
+        .select('business_name, owner_name')
+        .eq('user_id', data.packages.caterer_id)
+        .eq('status', 'Approved')
+        .single();
+      
+      if (partnerApp) {
+        data.packages.business_name = partnerApp.business_name;
+        console.log(`[fetchBookingDetails] Found caterer business: ${partnerApp.business_name} for booking ${bookingId}`);
+      } else {
+        console.warn(`[fetchBookingDetails] No approved partner application found for caterer_id: ${data.packages.caterer_id}`);
+      }
+    } catch (catererError) {
+      console.error(`[fetchBookingDetails] Error fetching caterer business for booking ${bookingId}:`, catererError);
+    }
+  }
   
   // If we need service details, we'll fetch them separately from partner_applications
   // since we don't have a services table

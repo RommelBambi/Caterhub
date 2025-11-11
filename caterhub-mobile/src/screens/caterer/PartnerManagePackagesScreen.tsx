@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef, memo } from "react";
 import {
   View,
   Text,
@@ -78,25 +78,22 @@ export default function PartnerManagePackagesScreen() {
   const [newInclusionName, setNewInclusionName] = useState("");
   const [newInclusionPrice, setNewInclusionPrice] = useState("");
 
-  // temporary inputs for "add dish" per section
-  // we'll store a local input string per section index
-  const [newDishInputs, setNewDishInputs] = useState<Record<number, string>>(
-    {}
-  );
+  // removed parent-level dish draft state to avoid re-renders on each keystroke
 
   // UI for adding a NEW section
   const [newSectionCategory, setNewSectionCategory] =
     useState<CategoryKey>("pork");
 
-  // -------- load user + data on mount --------
+  // -------- load user + data on mount (stabilized) --------
+  // Only re-run when the authenticated user id changes to avoid refresh while typing
   useEffect(() => {
-    if (!user) {
-      navigation.replace("PartnerHome" as any);
-      return;
-    }
+    if (!user?.id) return; // wait for auth to initialize
+    // Manual refresh mode: do not auto-load to avoid any background reloads while typing
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
-    loadPackagesFromSupabase();
-  }, [navigation, user]);
+  // prevent re-loading multiple times within the same session
+  const hasLoadedRef = useRef(false);
 
   // -------- Supabase storage helpers --------
   async function loadPackagesFromSupabase() {
@@ -144,7 +141,6 @@ export default function PartnerManagePackagesScreen() {
     setPkgPrice("");
     setSections([]);
     setInclusions([]);
-    setNewDishInputs({});
     setNewSectionCategory("pork");
     setNewInclusionName("");
     setNewInclusionPrice("");
@@ -157,7 +153,6 @@ export default function PartnerManagePackagesScreen() {
     setPkgPrice(pkg.price);
     setSections(pkg.sections || []);
     setInclusions(pkg.inclusions || []);
-    setNewDishInputs({});
     setNewSectionCategory("pork");
     setNewInclusionName("");
     setNewInclusionPrice("");
@@ -211,7 +206,7 @@ export default function PartnerManagePackagesScreen() {
   );
 
   // add a new category section at the bottom
-  function handleAddSection() {
+  const handleAddSection = useCallback(() => {
     // allow duplicates (multiple Pork sections etc.) for flexibility
     const newSec: PackageSection = {
       category: newSectionCategory,
@@ -220,50 +215,32 @@ export default function PartnerManagePackagesScreen() {
 
     setSections((prev) => [...prev, newSec]);
     setNewSectionCategory("pork");
-  }
+  }, [newSectionCategory]);
 
   // remove an entire section (ex: remove the whole "Pork" block)
-  function handleRemoveSection(index: number) {
+  const handleRemoveSection = useCallback((index: number) => {
     setSections((prev) => prev.filter((_, i) => i !== index));
-
-    // also clean temporary dish input for that section index
-    setNewDishInputs((prev) => {
-      const copy = { ...prev };
-      delete copy[index];
-      return copy;
-    });
-  }
+  }, []);
 
   // update the text the caterer is typing for a given section's new dish
-  function updateNewDishInput(sectionIndex: number, text: string) {
-    setNewDishInputs((prev) => ({
-      ...prev,
-      [sectionIndex]: text
-    }));
-  }
+  // no-op: drafts are now local to SectionBlock
+  const updateNewDishInput = useCallback((_sectionIndex: number, _text: string) => {}, []);
 
   // add a dish line into a specific section
-  function handleAddDishToSection(sectionIndex: number) {
-    const dishText = (newDishInputs[sectionIndex] || "").trim();
-    if (!dishText) return;
-
+  const handleAddDishToSection = useCallback((sectionIndex: number, dishText: string) => {
+    const text = (dishText || "").trim();
+    if (!text) return;
     setSections((prev) => {
       const copy = [...prev];
       const sec = { ...copy[sectionIndex] };
-      sec.dishes = [...sec.dishes, dishText];
+      sec.dishes = [...sec.dishes, text];
       copy[sectionIndex] = sec;
       return copy;
     });
-
-    // clear that section's input field after adding
-    setNewDishInputs((prev) => ({
-      ...prev,
-      [sectionIndex]: ""
-    }));
-  }
+  }, []);
 
   // remove a specific dish from a specific section
-  function handleRemoveDish(sectionIndex: number, dishIndex: number) {
+  const handleRemoveDish = useCallback((sectionIndex: number, dishIndex: number) => {
     setSections((prev) => {
       const copy = [...prev];
       const sec = { ...copy[sectionIndex] };
@@ -271,7 +248,7 @@ export default function PartnerManagePackagesScreen() {
       copy[sectionIndex] = sec;
       return copy;
     });
-  }
+  }, []);
 
   // ----- inclusions logic -----
   function handleAddInclusion() {
@@ -397,7 +374,11 @@ export default function PartnerManagePackagesScreen() {
 
   // -------- subcomponents --------
 
-  function SavedPackagesList() {
+  const SavedPackagesList = memo(function SavedPackagesList() {
+    useEffect(() => {
+      console.log('[SavedPackagesList] mounted');
+      return () => console.log('[SavedPackagesList] unmounted');
+    }, []);
     if (loading) {
       return (
         <View style={styles.emptyBox}>
@@ -467,15 +448,17 @@ export default function PartnerManagePackagesScreen() {
         ))}
       </View>
     );
-  }
+  });
 
   // ONE section block (e.g. Pork block)
-  function SectionBlock(props: {
-    section: PackageSection;
-    sectionIndex: number;
-  }) {
-    const { section, sectionIndex } = props;
-    const currentDishDraft = newDishInputs[sectionIndex] || "";
+  const SectionBlock = memo(function SectionBlock(
+    { section, sectionIndex }: { section: PackageSection; sectionIndex: number }
+  ) {
+    useEffect(() => {
+      console.log('[SectionBlock] mounted index=', sectionIndex);
+      return () => console.log('[SectionBlock] unmounted index=', sectionIndex);
+    }, [sectionIndex]);
+    const [draft, setDraft] = useState("");
 
     return (
       <View style={styles.sectionInnerCard}>
@@ -574,29 +557,60 @@ export default function PartnerManagePackagesScreen() {
                 : "Chopsuey"
             }`}
             placeholderTextColor="#9ca3af"
-            value={currentDishDraft}
+            value={draft}
             blurOnSubmit={false}
             autoCorrect={false}
             autoCapitalize="none"
             editable={true}
-            onChangeText={(txt) =>
-              updateNewDishInput(sectionIndex, txt)
-            }
+            onChangeText={setDraft}
           />
 
           <Pressable
             style={styles.addBtn}
-            onPress={() => handleAddDishToSection(sectionIndex)}
+            onPress={() => { handleAddDishToSection(sectionIndex, draft); setDraft(""); }}
           >
             <Text style={styles.addBtnText}>+ Add Dish</Text>
           </Pressable>
         </View>
       </View>
     );
-  }
+  });
 
   // Package editor card on the right / bottom
-  function PackageEditor() {
+  const PackageEditor = memo(function PackageEditor() {
+    const [localName, setLocalName] = useState(pkgName);
+    const [localPrice, setLocalPrice] = useState(pkgPrice);
+    const [localIncName, setLocalIncName] = useState("");
+    const [localIncPrice, setLocalIncPrice] = useState("");
+
+    // When switching edit target, sync local drafts from parent once
+    useEffect(() => {
+      setLocalName(pkgName);
+      setLocalPrice(pkgPrice);
+    }, [editingPackageId, pkgName, pkgPrice]);
+
+    useEffect(() => {
+      console.log('[PackageEditor] mounted');
+      return () => console.log('[PackageEditor] unmounted');
+    }, []);
+
+    const addInclusionLocal = useCallback(() => {
+      const name = localIncName.trim();
+      const price = localIncPrice.trim();
+      if (!name) return;
+      const newInc = { name, price } as PackageInclusion;
+      setInclusions((prev) => [...prev, newInc]);
+      setLocalIncName("");
+      setLocalIncPrice("");
+    }, [localIncName, localIncPrice]);
+
+    const saveWithDrafts = useCallback(() => {
+      // push local drafts to parent, then call existing save
+      setPkgName(localName);
+      setPkgPrice(localPrice);
+      handleSavePackage();
+    }, [localName, localPrice]);
+
     return (
       <View style={styles.sectionCard}>
         {/* Editor header */}
@@ -616,12 +630,12 @@ export default function PartnerManagePackagesScreen() {
           style={styles.input}
           placeholder="e.g. Birthday Set A"
           placeholderTextColor="#9ca3af"
-          value={pkgName}
+          value={localName}
           blurOnSubmit={false}
           autoCorrect={false}
           autoCapitalize="none"
           editable={true}
-          onChangeText={setPkgName}
+          onChangeText={setLocalName}
         />
 
         {/* Package price */}
@@ -630,12 +644,12 @@ export default function PartnerManagePackagesScreen() {
           style={styles.input}
           placeholder="e.g. ₱250/head or ₱12,500"
           placeholderTextColor="#9ca3af"
-          value={pkgPrice}
+          value={localPrice}
           blurOnSubmit={false}
           autoCorrect={false}
           autoCapitalize="none"
           editable={true}
-          onChangeText={setPkgPrice}
+          onChangeText={setLocalPrice}
         />
 
         {/* Sections */}
@@ -795,12 +809,12 @@ export default function PartnerManagePackagesScreen() {
           style={styles.input}
           placeholder='e.g. "Wait Staff (3)"'
           placeholderTextColor="#9ca3af"
-          value={newInclusionName}
+          value={localIncName}
           blurOnSubmit={false}
           autoCorrect={false}
           autoCapitalize="none"
           editable={true}
-          onChangeText={setNewInclusionName}
+          onChangeText={setLocalIncName}
         />
 
         <Text style={styles.label}>Inclusion Price</Text>
@@ -808,17 +822,17 @@ export default function PartnerManagePackagesScreen() {
           style={styles.input}
           placeholder="e.g. ₱1,500"
           placeholderTextColor="#9ca3af"
-          value={newInclusionPrice}
+          value={localIncPrice}
           blurOnSubmit={false}
           autoCorrect={false}
           autoCapitalize="none"
           editable={true}
-          onChangeText={setNewInclusionPrice}
+          onChangeText={setLocalIncPrice}
         />
 
         <Pressable
           style={styles.addInclusionBtn}
-          onPress={handleAddInclusion}
+          onPress={addInclusionLocal}
         >
           <Text style={styles.addInclusionBtnText}>
             + Add Inclusion
@@ -826,24 +840,16 @@ export default function PartnerManagePackagesScreen() {
         </Pressable>
 
         {/* Save final package */}
-        <Pressable style={styles.saveBtn} onPress={handleSavePackage}>
+        <Pressable style={styles.saveBtn} onPress={saveWithDrafts}>
           <Text style={styles.saveBtnText}>
             {editingPackageId ? "Save Changes" : "Save Package"}
           </Text>
         </Pressable>
       </View>
     );
-  }
+  });
 
-  // render whole screen
-  if (!user) {
-    return (
-      <View style={styles.loadingWrap}>
-        <Text style={{ color: "#6b6b6b" }}>Loading…</Text>
-      </View>
-    );
-  }
-
+  // render whole screen (do not unmount on transient !user to avoid input focus loss)
   return (
     <View style={styles.screen}>
       {isWeb && <Sidebar />}
@@ -856,14 +862,37 @@ export default function PartnerManagePackagesScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="always"
         >
+          {!user && (
+            <View style={{ padding: 12, backgroundColor: '#fff7ed', borderColor: '#fdba74', borderWidth: 1, borderRadius: 8, marginBottom: 12 }}>
+              <Text style={{ color: '#9a3412' }}>Please sign in to manage packages.</Text>
+            </View>
+          )}
           {/* Page header */}
           <View style={styles.pageHeaderRow}>
-            <View>
-              <Text style={styles.pageTitle}>Manage Packages</Text>
-              <Text style={styles.pageSubTitle}>
-                Build your package: add Pork / Beef / etc dishes,
-                define inclusions, and set pricing.
-              </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View>
+                <Text style={styles.pageTitle}>Manage Packages</Text>
+                <Text style={styles.pageSubTitle}>
+                  Build your package: add Pork / Beef / etc dishes,
+                  define inclusions, and set pricing.
+                </Text>
+              </View>
+              <Pressable
+                onPress={loadPackagesFromSupabase}
+                disabled={loading || !user?.id}
+                style={{
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: loading ? '#d1d5db' : '#2563eb',
+                  backgroundColor: loading ? '#e5e7eb' : '#eff6ff'
+                }}
+              >
+                <Text style={{ color: loading ? '#6b7280' : '#1d4ed8', fontWeight: '600' }}>
+                  {loading ? 'Refreshing…' : 'Refresh packages'}
+                </Text>
+              </Pressable>
             </View>
           </View>
 
