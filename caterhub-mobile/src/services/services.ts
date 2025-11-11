@@ -84,7 +84,7 @@ export async function fetchServices(): Promise<Service[]> {
     .select('*')
     .eq('status', 'Approved')
     .order('created_at', { ascending: false });
-  
+    
   if (appError) {
     console.error('[fetchServices] Error fetching approved applications:', appError);
     console.error('[fetchServices] Error details:', JSON.stringify(appError, null, 2));
@@ -104,7 +104,14 @@ export async function fetchServices(): Promise<Service[]> {
   const servicesToReturn: any[] = [];
   const processedUserIds = new Set<string>();
   
+  // Store application data for fallback profile creation
+  const applicationDataMap = new Map<string, any>();
+  
   for (const app of approvedApplications) {
+    // Store application data for later use (for fallback profile)
+    if (app.user_id) {
+      applicationDataMap.set(app.user_id, app);
+    }
     if (!app.user_id || processedUserIds.has(app.user_id)) {
       continue; // Skip if no user_id or already processed
     }
@@ -258,13 +265,21 @@ export async function fetchServices(): Promise<Service[]> {
       if (svc.user_id) {
         // Fetch caterer profile
         try {
-          const { data: profile } = await supabase
+          console.log(`[fetchServices] Fetching caterer profile for user_id: ${svc.user_id}`);
+          const { data: profile, error: profileError } = await supabase
             .from('caterer_profiles')
             .select('*')
             .eq('user_id', svc.user_id)
             .maybeSingle();
           
-          if (profile) {
+          if (profileError) {
+            console.error(`[fetchServices] Error fetching profile for ${svc.user_id}:`, profileError);
+            console.error(`[fetchServices] Error code: ${profileError.code}, message: ${profileError.message}`);
+            if (profileError.code === 'PGRST301' || profileError.message?.includes('row-level security')) {
+              console.error(`[fetchServices] ⚠️ RLS POLICY ISSUE: Cannot fetch caterer profile due to RLS policy restrictions!`);
+              console.error(`[fetchServices] ⚠️ Please ensure "Public can view all profiles" policy exists on caterer_profiles table.`);
+            }
+          } else if (profile) {
             catererProfile = {
               contactNumber: profile.contact_number,
               email: profile.email,
@@ -274,16 +289,60 @@ export async function fetchServices(): Promise<Service[]> {
               facebook: profile.facebook,
               instagram: profile.instagram,
             };
+            console.log(`[fetchServices] ✅ Successfully fetched caterer profile for ${svc.user_id}`);
+          } else {
+            console.warn(`[fetchServices] ⚠️ No caterer profile found for user_id: ${svc.user_id} (business: ${svc.name})`);
+            
+            // FALLBACK: Use data from partner_applications if profile doesn't exist
+            const appData = applicationDataMap.get(svc.user_id);
+            if (appData) {
+              console.log(`[fetchServices] Using partner_applications data as fallback for ${svc.user_id}`);
+              catererProfile = {
+                contactNumber: appData.contact_number || appData.owner_phone || undefined,
+                email: appData.owner_email || undefined,
+                website: appData.website || undefined,
+                address: undefined, // Not available in partner_applications
+                about: undefined, // Not available in partner_applications
+                facebook: undefined, // Not available in partner_applications
+                instagram: undefined, // Not available in partner_applications
+              };
+              
+              // Only create fallback profile if we have at least one field
+              if (catererProfile.contactNumber || catererProfile.email || catererProfile.website) {
+                console.log(`[fetchServices] ✅ Created fallback profile from application data`);
+              } else {
+                catererProfile = undefined; // No useful data, don't create empty profile
+              }
+            }
           }
         } catch (e) {
-          console.warn(`[fetchServices] Error fetching profile for ${svc.user_id}:`, e);
+          console.error(`[fetchServices] Exception fetching profile for ${svc.user_id}:`, e);
+          
+          // FALLBACK: Try to use application data even if there was an error
+          const appData = applicationDataMap.get(svc.user_id);
+          if (appData && !catererProfile) {
+            console.log(`[fetchServices] Using partner_applications data as fallback after error`);
+            catererProfile = {
+              contactNumber: appData.contact_number || appData.owner_phone || undefined,
+              email: appData.owner_email || undefined,
+              website: appData.website || undefined,
+              address: undefined,
+              about: undefined,
+              facebook: undefined,
+              instagram: undefined,
+            };
+            
+            if (!catererProfile.contactNumber && !catererProfile.email && !catererProfile.website) {
+              catererProfile = undefined;
+            }
+          }
         }
       }
       
       return {
-        id: svc.id,
-        name: svc.name,
-        description: svc.description,
+    id: svc.id,
+    name: svc.name,
+    description: svc.description,
         imageUrl: svc.image_url || null,
         logoUrl: svc.logo_url || null,
         rating: svc.rating || 0,
@@ -291,12 +350,12 @@ export async function fetchServices(): Promise<Service[]> {
         pricePerHead: svc.price_per_head || null,
         favoritesCount: svc.favorites_count || 0,
         bookingsCount: svc.bookings_count || 0,
-        latitude: svc.latitude,
-        longitude: svc.longitude,
+    latitude: svc.latitude,
+    longitude: svc.longitude,
         user_id: svc.user_id,
         catererProfile: catererProfile,
         locations: svc.locations, // Already extracted from application
-        packages: undefined, // Will be fetched in fetchService()
+    packages: undefined, // Will be fetched in fetchService()
       };
     })
   );
@@ -438,11 +497,87 @@ export async function fetchService(id: number): Promise<Service> {
   }
   
   console.log(`[fetchService] Service found: ${service.name}, user_id: ${service.user_id || 'MISSING'}`);
+  console.log(`[fetchService] Service has catererProfile:`, !!service.catererProfile);
+  if (service.catererProfile) {
+    console.log(`[fetchService] Caterer profile details:`, {
+      hasAbout: !!service.catererProfile.about,
+      hasContact: !!service.catererProfile.contactNumber,
+      hasEmail: !!service.catererProfile.email,
+      hasAddress: !!service.catererProfile.address,
+      hasWebsite: !!service.catererProfile.website,
+      hasFacebook: !!service.catererProfile.facebook,
+      hasInstagram: !!service.catererProfile.instagram,
+    });
+  }
   
   // Fetch packages for this service
   // CRITICAL: Packages are linked via: packages.caterer_id = services.user_id
   let packages: ServicePackage[] = [];
   const serviceUserId = service.user_id;
+  
+  // If catererProfile is missing but we have user_id, try to fetch it directly
+  let catererProfile = service.catererProfile;
+  if (!catererProfile && serviceUserId) {
+    console.log(`[fetchService] Caterer profile missing, fetching directly for user_id: ${serviceUserId}`);
+    try {
+      const { data: profile, error: profileError } = await supabase
+        .from('caterer_profiles')
+        .select('*')
+        .eq('user_id', serviceUserId)
+        .maybeSingle();
+      
+      if (profileError) {
+        console.error(`[fetchService] Error fetching profile directly:`, profileError);
+        console.error(`[fetchService] Error code: ${profileError.code}, message: ${profileError.message}`);
+        if (profileError.code === 'PGRST301' || profileError.message?.includes('row-level security')) {
+          console.error(`[fetchService] ⚠️ RLS POLICY ISSUE: Cannot fetch caterer profile due to RLS policy restrictions!`);
+          console.error(`[fetchService] ⚠️ Please run VERIFY_CATERER_PROFILES_RLS.sql to ensure public SELECT access is enabled.`);
+        }
+      } else if (profile) {
+        catererProfile = {
+          contactNumber: profile.contact_number,
+          email: profile.email,
+          website: profile.website,
+          address: profile.address,
+          about: profile.about,
+          facebook: profile.facebook,
+          instagram: profile.instagram,
+        };
+        console.log(`[fetchService] ✅ Successfully fetched caterer profile directly`);
+    } else {
+        console.warn(`[fetchService] ⚠️ No caterer profile found for user_id: ${serviceUserId}`);
+        console.warn(`[fetchService] This caterer may not have completed their profile setup yet.`);
+        
+        // FALLBACK: Try to get data from partner_applications
+        try {
+          console.log(`[fetchService] Attempting to fetch fallback data from partner_applications...`);
+          const { data: appData } = await supabase
+            .from('partner_applications')
+            .select('contact_number, owner_phone, owner_email, website')
+            .eq('user_id', serviceUserId)
+            .eq('status', 'Approved')
+            .maybeSingle();
+          
+          if (appData && (appData.contact_number || appData.owner_phone || appData.owner_email || appData.website)) {
+            console.log(`[fetchService] ✅ Found fallback data in partner_applications`);
+            catererProfile = {
+              contactNumber: appData.contact_number || appData.owner_phone || undefined,
+              email: appData.owner_email || undefined,
+              website: appData.website || undefined,
+              address: undefined,
+              about: undefined,
+              facebook: undefined,
+              instagram: undefined,
+            };
+          }
+        } catch (fallbackError) {
+          console.warn(`[fetchService] Could not fetch fallback data:`, fallbackError);
+        }
+      }
+    } catch (e) {
+      console.error(`[fetchService] Exception fetching caterer profile directly:`, e);
+    }
+  }
   
   if (!serviceUserId) {
     console.error(`[fetchService] CRITICAL: Service ${id} (${service.name}) does not have user_id set.`);
@@ -452,17 +587,33 @@ export async function fetchService(id: number): Promise<Service> {
       console.log(`[fetchService] Fetching packages for service ${id} with user_id: ${serviceUserId}`);
       packages = await fetchPackagesForService(serviceUserId);
       console.log(`[fetchService] Found ${packages.length} packages for service ${id}`);
-    } catch (e) {
-      console.error('[fetchService] Error fetching packages for service:', e);
-      // Continue without packages if fetch fails
+  } catch (e) {
+    console.error('[fetchService] Error fetching packages for service:', e);
+    // Continue without packages if fetch fails
     }
   }
   
-  // Return service with packages
-  return {
+  // Return service with packages and catererProfile (preserve all service data)
+  const result = {
     ...service,
     packages: packages.length > 0 ? packages : undefined,
+    catererProfile: catererProfile, // Use fetched or existing catererProfile
+    locations: service.locations, // Explicitly preserve locations
   };
+  
+  console.log(`[fetchService] Returning service with catererProfile:`, !!result.catererProfile);
+  if (result.catererProfile) {
+    console.log(`[fetchService] Caterer profile will be displayed with:`, {
+      about: result.catererProfile.about ? 'Yes' : 'No',
+      contact: result.catererProfile.contactNumber ? 'Yes' : 'No',
+      email: result.catererProfile.email ? 'Yes' : 'No',
+      address: result.catererProfile.address ? 'Yes' : 'No',
+      website: result.catererProfile.website ? 'Yes' : 'No',
+      facebook: result.catererProfile.facebook ? 'Yes' : 'No',
+      instagram: result.catererProfile.instagram ? 'Yes' : 'No',
+    });
+  }
+  return result;
 }
 
 
@@ -593,7 +744,7 @@ export async function searchServices(query: string): Promise<Service[]> {
   }
 
   const searchTerm = `%${query.trim()}%`;
-  
+
   const { data, error } = await supabase
     .from('services')
     .select('*')

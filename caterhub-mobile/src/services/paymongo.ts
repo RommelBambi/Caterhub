@@ -6,12 +6,23 @@ const PAYMONGO_BASE_URL = 'https://api.paymongo.com/v1';
 const PUBLIC_KEY = process.env.EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY || '';
 const SECRET_KEY = process.env.PAYMONGO_SECRET_KEY || '';
 
+// Validate that public key is set
+if (!PUBLIC_KEY) {
+  console.error('⚠️ PayMongo Public Key is missing!');
+  console.error('⚠️ Please set EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY in your .env file');
+  console.error('⚠️ Get your keys from: https://dashboard.paymongo.com/settings/api-keys');
+  console.error('⚠️ Example: EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY=pk_test_your_key_here');
+}
+
 /**
  * Helper function to create base64 encoded auth header
  * React Native compatible (uses global btoa)
  * PayMongo requires the key to be encoded with a trailing colon
  */
 function createAuthHeader(key: string): string {
+  if (!key) {
+    throw new Error('PayMongo API key is missing. Please set EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY in your .env file');
+  }
   // PayMongo expects: Basic base64(key:)
   // The colon at the end is required by PayMongo's API
   return `Basic ${global.btoa(key + ':')}`;
@@ -90,6 +101,10 @@ export interface PayMongoPaymentMethod {
  * This is the first step in the payment flow
  */
 export async function createPaymentIntent(data: PaymentIntentData): Promise<PayMongoPaymentIntent> {
+  if (!PUBLIC_KEY) {
+    throw new Error('PayMongo Public Key is not configured. Please set EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY in your .env file. Get your keys from: https://dashboard.paymongo.com/settings/api-keys');
+  }
+  
   try {
     const response = await axios.post(
       `${PAYMONGO_BASE_URL}/payment_intents`,
@@ -153,12 +168,18 @@ export async function createPaymentMethod(data: PaymentMethodData): Promise<PayM
 
 /**
  * Attach Payment Method to Payment Intent
+ * When using public key, client_key is required for security
  */
 export async function attachPaymentIntent(
   paymentIntentId: string,
   paymentMethodId: string,
+  clientKey: string,
   returnUrl?: string
 ): Promise<PayMongoPaymentIntent> {
+  if (!PUBLIC_KEY) {
+    throw new Error('PayMongo Public Key is not configured. Please set EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY in your .env file. Get your keys from: https://dashboard.paymongo.com/settings/api-keys');
+  }
+  
   try {
     const response = await axios.post(
       `${PAYMONGO_BASE_URL}/payment_intents/${paymentIntentId}/attach`,
@@ -166,6 +187,7 @@ export async function attachPaymentIntent(
         data: {
           attributes: {
             payment_method: paymentMethodId,
+            client_key: clientKey, // Required when using public key
             return_url: returnUrl || 'https://your-app.com/payment/success',
           },
         },
@@ -218,6 +240,10 @@ export async function createSource(
   redirectUrl: { success: string; failed: string },
   metadata?: any
 ) {
+  if (!PUBLIC_KEY) {
+    throw new Error('PayMongo Public Key is not configured. Please set EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY in your .env file. Get your keys from: https://dashboard.paymongo.com/settings/api-keys');
+  }
+  
   try {
     const response = await axios.post(
       `${PAYMONGO_BASE_URL}/sources`,

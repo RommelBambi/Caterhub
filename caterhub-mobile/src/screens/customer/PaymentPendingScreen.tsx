@@ -9,8 +9,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getPaymentIntent, getSource } from '../../services/paymongo';
 import { supabase } from '../../services/supabase';
+import { checkPaymentStatusViaEdgeFunction } from '../../services/paymentEdgeFunction';
 
 const COLORS = {
   primary: '#FF8000',
@@ -43,91 +43,142 @@ export default function PaymentPendingScreen({ route, navigation }: any) {
     // Stop polling after 5 minutes
     const timeout = setTimeout(() => {
       clearInterval(interval);
-      if (paymentStatus === 'pending') {
-        setPaymentStatus('failed');
-        setMessage('Payment verification timed out. Please check your booking status.');
-        setChecking(false);
-      }
+      setPaymentStatus(prev => {
+        if (prev === 'pending') {
+          setMessage('Payment verification timed out. Please check your booking status.');
+          setChecking(false);
+          return 'failed';
+        }
+        return prev;
+      });
     }, 300000); // 5 minutes
 
     return () => {
       clearInterval(interval);
       clearTimeout(timeout);
     };
-  }, []);
+  }, [paymentIntentId, paymentSourceId, bookingId]);
 
   const checkPaymentStatus = async () => {
     try {
-      // For GCash payments, check the payment source status
-      if (paymentSourceId) {
-        const source = await getSource(paymentSourceId);
-        
-        console.log('Payment Source Status:', source.attributes.status);
+      // Use Edge Function to check payment status securely
+      const statusResponse = await checkPaymentStatusViaEdgeFunction({
+        paymentIntentId: paymentIntentId || undefined,
+        paymentSourceId: paymentSourceId || undefined,
+      });
 
-        if (source.attributes.status === 'chargeable' || source.attributes.status === 'paid') {
-          // Update booking status - mark deposit as paid
-          const { error } = await supabase
-            .from('bookings')
-            .update({
-              payment_status: 'PENDING', // Still pending remaining payment
-              deposit_paid: true,
-              paid_at: new Date().toISOString(),
-              status: 'CONFIRMED',
-            })
-            .eq('id', bookingId);
+      console.log('Payment Status Response:', statusResponse);
+      console.log('Payment Status Details:', {
+        success: statusResponse.success,
+        type: statusResponse.type,
+        status: statusResponse.status,
+        paymentIntentId,
+        paymentSourceId,
+        bookingId,
+      });
 
-          if (error) {
-            console.error('Error updating booking:', error);
-          }
-
-          setPaymentStatus('success');
-          setMessage('Deposit payment successful! Your booking is confirmed.');
-          setChecking(false);
-        } else if (source.attributes.status === 'failed' || source.attributes.status === 'cancelled') {
-          setPaymentStatus('failed');
-          setMessage('Payment failed. Please try again.');
-          setChecking(false);
-        } else if (source.attributes.status === 'pending') {
-          setMessage('Waiting for payment confirmation...');
-        }
-      } else if (paymentIntentId) {
-        // Fallback to payment intent for other payment methods
-        const paymentIntent = await getPaymentIntent(paymentIntentId);
-        
-        console.log('Payment Intent Status:', paymentIntent.attributes.status);
-
-        if (paymentIntent.attributes.status === 'succeeded') {
-          // Update booking status - mark deposit as paid
-          const { error } = await supabase
-            .from('bookings')
-            .update({
-              payment_status: 'PENDING', // Still pending remaining payment
-              deposit_paid: true,
-              paid_at: new Date().toISOString(),
-              status: 'CONFIRMED',
-            })
-            .eq('id', bookingId);
-
-          if (error) {
-            console.error('Error updating booking:', error);
-          }
-
-          setPaymentStatus('success');
-          setMessage('Deposit payment successful! Your booking is confirmed.');
-          setChecking(false);
-        } else if (paymentIntent.attributes.status === 'failed') {
-          setPaymentStatus('failed');
-          setMessage('Payment failed. Please try again.');
-          setChecking(false);
-        } else if (paymentIntent.attributes.status === 'processing') {
-          setMessage('Processing your payment...');
+      if (!statusResponse.success) {
+        // Payment not found or error
+        if (statusResponse.error === 'Payment intent not found') {
+          setMessage('Waiting for payment confirmation... (Payment may still be processing)');
         } else {
+          setMessage('Checking payment status... (If you completed payment, it may take a moment to process)');
+        }
+        return;
+      }
+
+      const status = statusResponse.status;
+
+      // Handle Payment Intent status
+      if (statusResponse.type === 'payment_intent') {
+        if (status === 'succeeded') {
+          // Update booking status - mark deposit as paid
+          // Get transaction ID from payment intent if available
+          const transactionId = statusResponse.paymentIntent?.attributes?.last_payment_error 
+            ? null 
+            : statusResponse.paymentIntent?.id || paymentIntentId;
+
+          const { error } = await supabase
+            .from('bookings')
+            .update({
+              payment_status: 'COMPLETED',
+              deposit_paid: true,
+              paid_at: new Date().toISOString(),
+              status: 'CONFIRMED',
+              transaction_id: transactionId || paymentIntentId, // Store payment intent ID as transaction ID
+            })
+            .eq('id', bookingId);
+
+          if (error) {
+            console.error('Error updating booking:', error);
+          } else {
+            console.log('✅ Booking updated successfully with payment completion');
+          }
+
+          setPaymentStatus('success');
+          setMessage('Deposit payment successful! Your booking is confirmed.');
+          setChecking(false);
+          return;
+        } else if (status === 'failed') {
+          setPaymentStatus('failed');
+          setMessage('Payment failed. Please try again.');
+          setChecking(false);
+          return;
+        } else if (status === 'processing') {
+          setMessage('Processing your payment...');
+        } else if (status === 'awaiting_next_action') {
+          // Payment Intent is waiting for user action (authorization)
+          // This is normal - user needs to complete payment in PayMongo
+          setMessage('Waiting for you to complete payment in PayMongo...');
+        } else if (status === 'awaiting_payment_method') {
+          setMessage('Waiting for payment method...');
+        } else {
+          setMessage(`Waiting for payment confirmation... (Status: ${status})`);
+        }
+      }
+
+      // Handle Payment Source status
+      if (statusResponse.type === 'payment_source') {
+        if (status === 'chargeable' || status === 'paid') {
+          // Update booking status - mark deposit as paid
+          // Get transaction ID from source if available
+          const transactionId = statusResponse.source?.id || paymentSourceId || paymentIntentId;
+
+          const { error } = await supabase
+            .from('bookings')
+            .update({
+              payment_status: 'COMPLETED',
+              deposit_paid: true,
+              paid_at: new Date().toISOString(),
+              status: 'CONFIRMED',
+              transaction_id: transactionId, // Store source ID or payment intent ID as transaction ID
+            })
+            .eq('id', bookingId);
+
+          if (error) {
+            console.error('Error updating booking:', error);
+          } else {
+            console.log('✅ Booking updated successfully with payment completion');
+          }
+
+          setPaymentStatus('success');
+          setMessage('Deposit payment successful! Your booking is confirmed.');
+          setChecking(false);
+        } else if (status === 'failed' || status === 'cancelled') {
+          setPaymentStatus('failed');
+          setMessage('Payment failed. Please try again.');
+          setChecking(false);
+        } else if (status === 'pending') {
           setMessage('Waiting for payment confirmation...');
         }
       }
     } catch (error: any) {
       console.error('Error checking payment status:', error);
       // Don't stop checking on error, might be temporary network issue
+      // Only show error message if we've been checking for a while
+      if (checking && paymentStatus === 'pending') {
+        setMessage('Checking payment status... (If you completed payment, it may take a moment to process)');
+      }
     }
   };
 
@@ -174,7 +225,13 @@ export default function PaymentPendingScreen({ route, navigation }: any) {
           <View style={styles.infoBox}>
             <Ionicons name="information-circle" size={20} color={COLORS.info} />
             <Text style={styles.infoText}>
-              Please wait while we verify your payment. This may take a few moments.
+              Please wait while we verify your payment. This may take a few moments.{'\n\n'}
+              <Text style={{ fontWeight: '600' }}>Important:</Text> If you see an error page on PayMongo after completing payment, that's normal! Just close that page and return to this app. We'll automatically verify your payment.{'\n\n'}
+              <Text style={{ fontWeight: '600' }}>What to do:</Text>
+              {'\n'}1. Complete payment in PayMongo
+              {'\n'}2. Close the PayMongo page (even if it shows an error)
+              {'\n'}3. Return to this app
+              {'\n'}4. We'll verify your payment automatically
             </Text>
           </View>
         )}

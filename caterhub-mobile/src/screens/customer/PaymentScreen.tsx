@@ -14,14 +14,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../store/auth';
 import {
-  createPaymentIntent,
-  createPaymentMethod,
-  attachPaymentIntent,
-  createSource,
   toPayMongoAmount,
-  getPaymentIntent,
 } from '../../services/paymongo';
+import { createPaymentViaEdgeFunction } from '../../services/paymentEdgeFunction';
 import { supabase } from '../../services/supabase';
+import { checkPayMongoKeys } from '../../utils/checkPayMongoKeys';
+import { diagnoseEnvironment } from '../../utils/diagnoseEnv';
 
 const COLORS = {
   primary: '#FF8000',
@@ -48,6 +46,15 @@ export default function PaymentScreen({ route, navigation }: any) {
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [loading, setLoading] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+
+  // Check PayMongo keys and environment on mount (for debugging)
+  React.useEffect(() => {
+    if (__DEV__) {
+      console.log('\n🔍 Running environment diagnostic...\n');
+      diagnoseEnvironment();
+      checkPayMongoKeys();
+    }
+  }, []);
 
   const paymentMethods = [
     { id: 'gcash', name: 'GCash', icon: 'wallet', color: '#007DFF', description: 'Pay via GCash e-wallet' },
@@ -87,39 +94,24 @@ export default function PaymentScreen({ route, navigation }: any) {
         return;
       }
 
-      // Step 1: Create Payment Intent for 50% deposit
-      const paymentIntent = await createPaymentIntent({
+      // Use Edge Function for secure payment processing
+      let returnUrl = 'https://www.paymongo.com/success';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        returnUrl = window.location.origin + '/payment/success';
+      }
+
+      console.log('Creating payment via Edge Function...');
+      const paymentResponse = await createPaymentViaEdgeFunction({
         amount: payMongoAmount,
         currency: 'PHP',
         description: `Deposit (50%) - ${description || `Booking #${bookingId}`}`,
-        statement_descriptor: 'CaterHub',
-        metadata: {
           bookingId: bookingId.toString(),
           userId: user?.id || '',
-        },
+        paymentMethod: selectedMethod,
+        returnUrl,
       });
 
-      console.log('Payment Intent created:', paymentIntent.id);
-
-      // Step 2: Create Payment Source (for GCash or PayMaya)
-      if (selectedMethod === 'gcash' || selectedMethod === 'paymaya') {
-        // Use a simple redirect approach - PayMongo provides a generic success page
-        // The app will poll for payment status instead of relying on redirects
-        const source = await createSource(
-          payMongoAmount,
-          selectedMethod,
-          `Deposit (50%) - ${description || `Booking #${bookingId}`}`,
-          {
-            success: 'https://www.paymongo.com/success',
-            failed: 'https://www.paymongo.com/failed',
-          },
-          {
-            bookingId: bookingId.toString(),
-            paymentIntentId: paymentIntent.id,
-          }
-        );
-
-        console.log('Payment Source created:', source);
+      console.log('Payment created via Edge Function:', paymentResponse);
 
         // Update booking with deposit payment info
         await supabase
@@ -127,42 +119,47 @@ export default function PaymentScreen({ route, navigation }: any) {
           .update({
             payment_method: selectedMethod,
             payment_status: 'PENDING',
-            payment_intent_id: paymentIntent.id,
-            payment_source_id: source.id,
+          payment_intent_id: paymentResponse.paymentIntentId,
+          payment_source_id: paymentResponse.paymentSourceId || null,
             deposit_paid: false, // Will be updated when payment succeeds
             remaining_paid: false,
           })
           .eq('id', bookingId);
 
-        // Open payment URL
-        const checkoutUrl = source.attributes.redirect.checkout_url;
-        if (checkoutUrl) {
-          const canOpen = await Linking.canOpenURL(checkoutUrl);
+      // Open checkout URL
+      if (paymentResponse.checkoutUrl) {
+        console.log('Opening checkout URL in Chrome:', paymentResponse.checkoutUrl);
+        const canOpen = await Linking.canOpenURL(paymentResponse.checkoutUrl);
           if (canOpen) {
-            await Linking.openURL(checkoutUrl);
+          // Open in Chrome browser
+          await Linking.openURL(paymentResponse.checkoutUrl);
             
-            // Show instructions
-            Alert.alert(
-              'Complete Payment',
-              'You will be redirected to complete your payment. Please return to the app after payment.',
-              [
-                {
-                  text: 'OK',
-                  onPress: () => {
-                    // Navigate to a pending payment screen
-                    navigation.navigate('PaymentPending', {
-                      bookingId,
-                      paymentIntentId: paymentIntent.id,
-                      paymentSourceId: source.id,
-                    });
-                  },
+          // Show instructions and navigate to pending screen
+          Alert.alert(
+            'Complete Payment',
+            'You will be redirected to Chrome to complete your payment.\n\n' +
+            'After completing payment:\n' +
+            '1. You may see an error page - that\'s normal!\n' +
+            '2. Close that page and return to this app\n' +
+            '3. We\'ll automatically verify your payment',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  navigation.navigate('PaymentPending', {
+                    bookingId,
+                    paymentIntentId: paymentResponse.paymentIntentId,
+                    paymentSourceId: paymentResponse.paymentSourceId || null,
+                  });
                 },
-              ]
-            );
+              },
+            ]
+          );
           } else {
             throw new Error('Cannot open payment URL');
           }
-        }
+      } else {
+        throw new Error('No checkout URL received from payment service');
       }
     } catch (error: any) {
       console.error('Payment error:', error);
@@ -243,7 +240,7 @@ export default function PaymentScreen({ route, navigation }: any) {
           <View style={styles.infoCard}>
             <Ionicons name="information-circle" size={20} color={COLORS.primary} />
             <Text style={styles.infoText}>
-              You will be redirected to complete your 50% deposit payment securely. Please return to the app after completing the payment.
+              You will be redirected to Chrome to complete your 50% deposit payment securely. Please return to the app after completing the payment.
             </Text>
           </View>
         )}
@@ -280,6 +277,7 @@ export default function PaymentScreen({ route, navigation }: any) {
           )}
         </TouchableOpacity>
       </View>
+
     </View>
   );
 }

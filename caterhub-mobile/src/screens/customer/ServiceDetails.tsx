@@ -51,6 +51,16 @@ export default function ServiceDetails({ route, navigation }: any) {
           hasPackages: !!(data?.packages && data.packages.length > 0),
           packageCount: data?.packages?.length || 0,
           userId: (data as any)?.user_id,
+          hasCatererProfile: !!(data as any)?.catererProfile,
+          catererProfileDetails: (data as any)?.catererProfile ? {
+            hasAbout: !!(data as any).catererProfile.about,
+            hasContact: !!(data as any).catererProfile.contactNumber,
+            hasEmail: !!(data as any).catererProfile.email,
+            hasAddress: !!(data as any).catererProfile.address,
+            hasWebsite: !!(data as any).catererProfile.website,
+            hasFacebook: !!(data as any).catererProfile.facebook,
+            hasInstagram: !!(data as any).catererProfile.instagram,
+          } : null,
         });
         setService(data ?? null);
         
@@ -172,7 +182,7 @@ export default function ServiceDetails({ route, navigation }: any) {
             ) : null}
 
             {/* Caterer Profile Information */}
-            {service.catererProfile && (
+            {service.catererProfile ? (
               <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
                 <Text style={styles.sectionTitle}>Caterer Information</Text>
                 
@@ -325,7 +335,20 @@ export default function ServiceDetails({ route, navigation }: any) {
                   </Card>
                 )}
               </View>
-            )}
+            ) : service.user_id ? (
+              <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+                <Card style={[styles.infoCard, { backgroundColor: '#fef3c7' }]}>
+                  <Card.Content>
+                    <Text style={[styles.infoSectionTitle, { marginBottom: 8, color: '#92400e' }]}>
+                      Caterer Information
+                    </Text>
+                    <Text style={[styles.muted, { color: '#92400e' }]}>
+                      Caterer profile information is not available yet. Please check back later.
+                    </Text>
+                  </Card.Content>
+                </Card>
+              </View>
+            ) : null}
 
             <Text style={[styles.sectionTitle, { paddingHorizontal: 16, marginTop: 16 }]}>
               Packages
