@@ -122,27 +122,34 @@ export async function hasUserReviewed(bookingId: number): Promise<boolean> {
 
 /**
  * Get caterer's average rating and review count
+ * Calculates directly from reviews table (caterer_ratings is a view and may have RLS issues)
  */
 export async function getCatererRating(catererId: string): Promise<{
   averageRating: number;
   totalReviews: number;
 }> {
+  // Calculate rating directly from reviews table instead of using view
   const { data, error } = await supabase
-    .from('caterer_ratings')
-    .select('average_rating, total_reviews')
-    .eq('caterer_id', catererId)
-    .single();
+    .from('reviews')
+    .select('rating')
+    .eq('caterer_id', catererId);
 
   if (error) {
-    if (error.code === 'PGRST116') {
-      return { averageRating: 0, totalReviews: 0 };
-    }
-    throw error;
+    console.warn(`[getCatererRating] Error fetching reviews for caterer ${catererId}:`, error);
+    return { averageRating: 0, totalReviews: 0 };
   }
 
+  if (!data || data.length === 0) {
+    return { averageRating: 0, totalReviews: 0 };
+  }
+
+  const totalReviews = data.length;
+  const sumRatings = data.reduce((sum, review) => sum + (review.rating || 0), 0);
+  const averageRating = totalReviews > 0 ? sumRatings / totalReviews : 0;
+
   return {
-    averageRating: data.average_rating || 0,
-    totalReviews: data.total_reviews || 0,
+    averageRating: Math.round(averageRating * 100) / 100, // Round to 2 decimal places
+    totalReviews: totalReviews,
   };
 }
 

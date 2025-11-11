@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Image, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Image, StyleSheet, ScrollView, TouchableOpacity, Linking } from 'react-native';
 import { Text, Button, Card, ActivityIndicator, Divider } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -171,11 +171,200 @@ export default function ServiceDetails({ route, navigation }: any) {
               </View>
             ) : null}
 
+            {/* Caterer Profile Information */}
+            {service.catererProfile && (
+              <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+                <Text style={styles.sectionTitle}>Caterer Information</Text>
+                
+                {/* About from caterer profile */}
+                {service.catererProfile.about ? (
+                  <View style={{ marginBottom: 12 }}>
+                    <Text style={[styles.muted, { marginBottom: 4 }]}>{service.catererProfile.about}</Text>
+                  </View>
+                ) : null}
+                
+                {/* Contact Information */}
+                <Card style={[styles.infoCard, { marginBottom: 12 }]}>
+                  <Card.Content>
+                    <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Contact</Text>
+                    
+                    {service.catererProfile.contactNumber && (
+                      <View style={styles.infoRow}>
+                        <Ionicons name="call-outline" size={18} color="#FF8000" />
+                        <Text style={styles.infoText}>{service.catererProfile.contactNumber}</Text>
+                      </View>
+                    )}
+                    
+                    {service.catererProfile.email && (
+                      <View style={styles.infoRow}>
+                        <Ionicons name="mail-outline" size={18} color="#FF8000" />
+                        <Text style={styles.infoText}>{service.catererProfile.email}</Text>
+                      </View>
+                    )}
+                    
+                    {service.catererProfile.website && (
+                      <TouchableOpacity 
+                        style={styles.infoRow}
+                        onPress={async () => {
+                          try {
+                            const url = service.catererProfile!.website!.startsWith('http') 
+                              ? service.catererProfile!.website 
+                              : `https://${service.catererProfile!.website}`;
+                            const canOpen = await Linking.canOpenURL(url);
+                            if (canOpen) {
+                              await Linking.openURL(url);
+                            }
+                          } catch (e) {
+                            console.error('Error opening website:', e);
+                          }
+                        }}
+                      >
+                        <Ionicons name="globe-outline" size={18} color="#FF8000" />
+                        <Text style={[styles.infoText, { color: '#3b82f6', textDecorationLine: 'underline' }]}>
+                          {service.catererProfile.website}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </Card.Content>
+                </Card>
+                
+                {/* Address */}
+                {service.catererProfile.address && (
+                  <Card style={[styles.infoCard, { marginBottom: 12 }]}>
+                    <Card.Content>
+                      <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Address</Text>
+                      <View style={styles.infoRow}>
+                        <Ionicons name="location-outline" size={18} color="#FF8000" />
+                        <Text style={styles.infoText}>{service.catererProfile.address}</Text>
+                      </View>
+                    </Card.Content>
+                  </Card>
+                )}
+                
+                {/* Service Locations */}
+                {service.locations && service.locations.length > 0 && (
+                  <Card style={[styles.infoCard, { marginBottom: 12 }]}>
+                    <Card.Content>
+                      <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Service Areas</Text>
+                      {service.locations.map((loc, idx) => (
+                        <View key={loc.id || idx} style={{ marginBottom: 8 }}>
+                          <View style={styles.infoRow}>
+                            <Ionicons name="map-outline" size={18} color="#FF8000" />
+                            <View style={{ flex: 1 }}>
+                              {loc.address && (
+                                <Text style={styles.infoText}>{loc.address}</Text>
+                              )}
+                              {(loc.city || loc.province) && (
+                                <Text style={[styles.muted, { fontSize: 12, marginTop: 2 }]}>
+                                  {[loc.city, loc.province, loc.country].filter(Boolean).join(', ')}
+                                </Text>
+                              )}
+                              {loc.serviceRadiusKm && (
+                                <Text style={[styles.muted, { fontSize: 11, marginTop: 2, fontStyle: 'italic' }]}>
+                                  Service radius: {loc.serviceRadiusKm} km
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </Card.Content>
+                  </Card>
+                )}
+                
+                {/* Social Media */}
+                {(service.catererProfile.facebook || service.catererProfile.instagram) && (
+                  <Card style={styles.infoCard}>
+                    <Card.Content>
+                      <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Follow Us</Text>
+                      <View style={{ flexDirection: 'row', gap: 16 }}>
+                        {service.catererProfile.facebook && (
+                          <TouchableOpacity 
+                            style={styles.socialButton}
+                            onPress={async () => {
+                              try {
+                                const url = service.catererProfile!.facebook!.startsWith('http')
+                                  ? service.catererProfile!.facebook
+                                  : `https://facebook.com/${service.catererProfile!.facebook}`;
+                                const canOpen = await Linking.canOpenURL(url);
+                                if (canOpen) {
+                                  await Linking.openURL(url);
+                                }
+                              } catch (e) {
+                                console.error('Error opening Facebook:', e);
+                              }
+                            }}
+                          >
+                            <Ionicons name="logo-facebook" size={24} color="#1877f2" />
+                            <Text style={[styles.infoText, { marginLeft: 4 }]}>Facebook</Text>
+                          </TouchableOpacity>
+                        )}
+                        {service.catererProfile.instagram && (
+                          <TouchableOpacity 
+                            style={styles.socialButton}
+                            onPress={async () => {
+                              try {
+                                const url = service.catererProfile!.instagram!.startsWith('http')
+                                  ? service.catererProfile!.instagram
+                                  : `https://instagram.com/${service.catererProfile!.instagram}`;
+                                const canOpen = await Linking.canOpenURL(url);
+                                if (canOpen) {
+                                  await Linking.openURL(url);
+                                }
+                              } catch (e) {
+                                console.error('Error opening Instagram:', e);
+                              }
+                            }}
+                          >
+                            <Ionicons name="logo-instagram" size={24} color="#e4405f" />
+                            <Text style={[styles.infoText, { marginLeft: 4 }]}>Instagram</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </Card.Content>
+                  </Card>
+                )}
+              </View>
+            )}
+
             <Text style={[styles.sectionTitle, { paddingHorizontal: 16, marginTop: 16 }]}>
               Packages
             </Text>
 
             <View style={{ paddingHorizontal: 16 }}>
+              {!service.user_id && (
+                <Card style={[styles.pkgCard, { backgroundColor: '#fef3c7', borderColor: '#f59e0b', borderWidth: 1 }]}>
+                  <Card.Content>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                      <Ionicons name="warning" size={20} color="#f59e0b" />
+                      <Text style={[styles.pkgTitle, { marginLeft: 8, color: '#92400e' }]}>
+                        Service Not Linked to Caterer
+                      </Text>
+                    </View>
+                    <Text style={[styles.muted, { fontSize: 13, marginBottom: 8 }]}>
+                      This service is not linked to a caterer account. Packages cannot be displayed until the service is properly linked to a caterer via the user_id field.
+                    </Text>
+                    <Text style={[styles.muted, { fontSize: 12, fontStyle: 'italic' }]}>
+                      Database relationship: packages.caterer_id = services.user_id
+                    </Text>
+                  </Card.Content>
+                </Card>
+              )}
+              {service.user_id && (service.packages ?? []).length === 0 && (
+                <Card style={[styles.pkgCard, { backgroundColor: '#eff6ff', borderColor: '#3b82f6', borderWidth: 1 }]}>
+                  <Card.Content>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                      <Ionicons name="information-circle" size={20} color="#3b82f6" />
+                      <Text style={[styles.pkgTitle, { marginLeft: 8, color: '#1e40af' }]}>
+                        No Packages Available
+                      </Text>
+                    </View>
+                    <Text style={[styles.muted, { fontSize: 13 }]}>
+                      This caterer hasn't created any packages yet. Please check back later or contact the caterer directly.
+                    </Text>
+                  </Card.Content>
+                </Card>
+              )}
               {(service.packages ?? []).length > 0 ? (
                 service.packages!.map((pkg) => {
                   // Display sections (from database packages) or categories (from old format)
@@ -278,6 +467,12 @@ const styles = StyleSheet.create({
 
   muted: { color: '#6b7280' },
   sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
+
+  infoCard: { marginBottom: 12, borderRadius: 12, backgroundColor: '#f9fafb', elevation: 1 },
+  infoSectionTitle: { fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 4 },
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
+  infoText: { flex: 1, color: '#374151', fontSize: 14 },
+  socialButton: { flexDirection: 'row', alignItems: 'center', padding: 8, borderRadius: 8, backgroundColor: '#fff' },
 
   pkgCard: { marginBottom: 16, borderRadius: 12, overflow: 'hidden', elevation: 2 },
   inclusionRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },

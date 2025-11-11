@@ -20,6 +20,28 @@ export type ServicePackage = {
   categories: PackageCategory[];
 };
 
+export type CatererProfile = {
+  contactNumber?: string;
+  email?: string;
+  website?: string;
+  address?: string;
+  about?: string;
+  facebook?: string;
+  instagram?: string;
+};
+
+export type ServiceLocation = {
+  id?: string;
+  city?: string;
+  address?: string;
+  country?: string;
+  province?: string;
+  postalCode?: string;
+  latitude?: number;
+  longitude?: number;
+  serviceRadiusKm?: number;
+};
+
 export type Service = {
   id: number;
   name: string;
@@ -36,74 +58,263 @@ export type Service = {
   latitude?: number | null;
   longitude?: number | null;
   user_id?: string | null; // Internal: used for fetching packages
+  
+  // Caterer information
+  catererProfile?: CatererProfile;
+  locations?: ServiceLocation[]; // From partner_applications
 };
 
 
 
 
 export async function fetchServices(): Promise<Service[]> {
-  const { data, error } = await supabase
-    .from('services')
-    .select('*')
-    .order('created_at', { ascending: false });
-    
-  if (error) throw error;
+  console.log('[fetchServices] Fetching approved caterers directly from partner_applications...');
   
-  // Map database snake_case to camelCase
-  return (data || []).map((svc: any) => ({
-    id: svc.id,
-    name: svc.name,
-    description: svc.description,
-    imageUrl: svc.image_url,
-    logoUrl: svc.logo_url,
-    rating: svc.rating,
-    reviewsCount: svc.reviews_count,
-    pricePerHead: svc.price_per_head,
-    favoritesCount: svc.favorites_count,
-    bookingsCount: svc.bookings_count,
-    latitude: svc.latitude,
-    longitude: svc.longitude,
-    user_id: svc.user_id, // Keep for package fetching
-    packages: undefined, // Will be fetched in fetchService()
-  }));
+  // NEW APPROACH: Fetch directly from partner_applications (no services table needed)
+  // This avoids RLS issues and shows approved caterers directly
+  
+  // Step 1: Fetch approved partner applications
+  console.log('[fetchServices] Fetching approved partner applications...');
+  const { data: approvedApplications, error: appError } = await supabase
+    .from('partner_applications')
+    .select('*')
+    .eq('status', 'Approved')
+    .order('created_at', { ascending: false });
+  
+  if (appError) {
+    console.error('[fetchServices] Error fetching approved applications:', appError);
+    console.error('[fetchServices] Error details:', JSON.stringify(appError, null, 2));
+    console.error('[fetchServices] ⚠️ RLS POLICY ISSUE: Customers may not have permission to view approved applications!');
+    console.error('[fetchServices] SOLUTION: Add RLS policy: "Customers can view approved applications"');
+    throw appError;
+  }
+  
+  console.log(`[fetchServices] Found ${approvedApplications?.length || 0} approved partner applications`);
+  
+  if (!approvedApplications || approvedApplications.length === 0) {
+    console.warn('[fetchServices] No approved applications found. Make sure applications are approved and RLS allows viewing.');
+    return [];
+  }
+  
+  // Step 2: Convert approved applications to Service objects
+  const servicesToReturn: any[] = [];
+  const processedUserIds = new Set<string>();
+  
+  for (const app of approvedApplications) {
+    if (!app.user_id || processedUserIds.has(app.user_id)) {
+      continue; // Skip if no user_id or already processed
+    }
+    
+    processedUserIds.add(app.user_id);
+    
+    // Extract location data for latitude/longitude
+    let latitude: number | null = null;
+    let longitude: number | null = null;
+    let locations: ServiceLocation[] = [];
+    
+    try {
+      const locs = typeof app.locations === 'string' 
+        ? JSON.parse(app.locations) 
+        : app.locations;
+      
+      if (Array.isArray(locs) && locs.length > 0) {
+        locations = locs.map((loc: any) => ({
+          id: loc.id,
+          city: loc.city,
+          address: loc.address,
+          country: loc.country,
+          province: loc.province,
+          postalCode: loc.postalCode,
+          latitude: loc.latitude ? parseFloat(loc.latitude) : undefined,
+          longitude: loc.longitude ? parseFloat(loc.longitude) : undefined,
+          serviceRadiusKm: loc.serviceRadiusKm ? parseFloat(loc.serviceRadiusKm) : undefined,
+        }));
+        
+        // Use first location for service coordinates
+        if (locations[0].latitude && locations[0].longitude) {
+          latitude = locations[0].latitude;
+          longitude = locations[0].longitude;
+        }
+      }
+    } catch (e) {
+      console.warn('[fetchServices] Error parsing locations:', e);
+    }
+    
+    // Create service object directly from application (no database insert needed)
+    // Use a hash-based ID from user_id to ensure consistency
+    const serviceId = Math.abs(app.user_id.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0)) % 1000000;
+    
+    const service: any = {
+      id: serviceId,
+      name: app.business_name || 'Catering Service',
+      description: `Catering service by ${app.owner_name || 'Partner'}`,
+      user_id: app.user_id,
+      latitude: latitude,
+      longitude: longitude,
+      price_per_head: null, // Will be set from packages
+      rating: 0,
+      reviews_count: 0,
+      favorites_count: 0,
+      bookings_count: 0,
+      created_at: app.created_at,
+      updated_at: app.updated_at,
+      locations: locations.length > 0 ? locations : undefined,
+      _fromApplication: true, // Flag to indicate this comes from partner_applications
+    };
+    
+    servicesToReturn.push(service);
+    console.log(`[fetchServices] ✅ Created service from application for caterer ${app.user_id} (${app.business_name})`);
+  }
+  
+  console.log(`[fetchServices] ========================================`);
+  console.log(`[fetchServices] SUMMARY:`);
+  console.log(`[fetchServices] - Approved applications found: ${approvedApplications?.length || 0}`);
+  console.log(`[fetchServices] - Total services to return: ${servicesToReturn.length}`);
+  
+  // Count unique caterers (user_id)
+  const uniqueCaterers = new Set(servicesToReturn.filter(s => s.user_id).map(s => s.user_id));
+  const servicesWithoutCaterer = servicesToReturn.filter(s => !s.user_id).length;
+  
+  console.log(`[fetchServices] - Unique caterers (user_id): ${uniqueCaterers.size}`);
+  console.log(`[fetchServices] - Services without user_id: ${servicesWithoutCaterer}`);
+  
+  if (servicesWithoutCaterer > 0) {
+    console.warn(`[fetchServices] WARNING: ${servicesWithoutCaterer} service(s) are not linked to a caterer (missing user_id). These services cannot display packages.`);
+  }
+  
+  console.log(`[fetchServices] Services breakdown by caterer:`, 
+    Array.from(uniqueCaterers).map(uid => ({
+      caterer_id: uid,
+      service_count: servicesToReturn.filter(s => s.user_id === uid).length,
+      service_names: servicesToReturn.filter(s => s.user_id === uid).map((s: any) => s.name)
+    }))
+  );
+  
+  if (servicesToReturn.length === 0) {
+    console.error(`[fetchServices] ⚠️ NO SERVICES FOUND!`);
+    console.error(`[fetchServices] This could be due to:`);
+    console.error(`[fetchServices] 1. No approved partner applications`);
+    console.error(`[fetchServices] 2. RLS policies blocking SELECT on partner_applications`);
+    console.error(`[fetchServices] 3. Database connection issues`);
+    console.error(`[fetchServices] SOLUTION: Add RLS policy: "Public can view approved applications"`);
+  }
+  
+  console.log(`[fetchServices] ========================================`);
+  
+  // Step 3: Fetch caterer profiles for all services
+  const servicesWithProfiles = await Promise.all(
+    servicesToReturn.map(async (svc: any) => {
+      let catererProfile: CatererProfile | undefined;
+      
+      if (svc.user_id) {
+        // Fetch caterer profile
+        try {
+          const { data: profile } = await supabase
+            .from('caterer_profiles')
+            .select('*')
+            .eq('user_id', svc.user_id)
+            .maybeSingle();
+          
+          if (profile) {
+            catererProfile = {
+              contactNumber: profile.contact_number,
+              email: profile.email,
+              website: profile.website,
+              address: profile.address,
+              about: profile.about,
+              facebook: profile.facebook,
+              instagram: profile.instagram,
+            };
+          }
+        } catch (e) {
+          console.warn(`[fetchServices] Error fetching profile for ${svc.user_id}:`, e);
+        }
+      }
+      
+      return {
+        id: svc.id,
+        name: svc.name,
+        description: svc.description,
+        imageUrl: svc.image_url || null,
+        logoUrl: svc.logo_url || null,
+        rating: svc.rating || 0,
+        reviewsCount: svc.reviews_count || 0,
+        pricePerHead: svc.price_per_head || null,
+        favoritesCount: svc.favorites_count || 0,
+        bookingsCount: svc.bookings_count || 0,
+        latitude: svc.latitude,
+        longitude: svc.longitude,
+        user_id: svc.user_id,
+        catererProfile: catererProfile,
+        locations: svc.locations, // Already extracted from application
+        packages: undefined, // Will be fetched in fetchService()
+      };
+    })
+  );
+  
+  console.log(`[fetchServices] Mapped ${servicesWithProfiles.length} services. Services with user_id: ${servicesWithProfiles.filter(s => s.user_id).length}`);
+  console.log(`[fetchServices] Services with caterer profiles: ${servicesWithProfiles.filter(s => s.catererProfile).length}`);
+  console.log(`[fetchServices] Services with locations: ${servicesWithProfiles.filter(s => s.locations && s.locations.length > 0).length}`);
+  
+  return servicesWithProfiles;
 }
 
 
 export async function fetchTopServices(by: 'likes' | 'bookings', limit = 8): Promise<Service[]> {
-  const orderBy = by === 'likes' ? 'favorites_count' : 'bookings_count';
-  const { data, error } = await supabase
-    .from('services')
-    .select('*')
-    .order(orderBy, { ascending: false })
-    .limit(limit);
-    
-  if (error) throw error;
+  console.log(`[fetchTopServices] Fetching top ${limit} services by ${by}...`);
   
-  // Map database snake_case to camelCase
-  return (data || []).map((svc: any) => ({
-    id: svc.id,
-    name: svc.name,
-    description: svc.description,
-    imageUrl: svc.image_url,
-    logoUrl: svc.logo_url,
-    rating: svc.rating,
-    reviewsCount: svc.reviews_count,
-    pricePerHead: svc.price_per_head,
-    favoritesCount: svc.favorites_count,
-    bookingsCount: svc.bookings_count,
-    latitude: svc.latitude,
-    longitude: svc.longitude,
-    user_id: svc.user_id, // Keep for package fetching
-    packages: undefined, // Will be fetched in fetchService()
-  }));
+  // Fetch all services (from partner_applications) and sort
+  const allServices = await fetchServices();
+  
+  if (allServices.length === 0) {
+    console.warn('[fetchTopServices] No services available');
+    return [];
+  }
+  
+  // Sort by the requested metric
+  // Since we don't have favorites_count or bookings_count from applications,
+  // we'll use a simple approach: return first N services, trying to get variety
+  const sorted = [...allServices];
+  
+  // Try to get variety by caterer
+  const uniqueCaterers = new Set<string>();
+  const result: Service[] = [];
+  
+  // First pass: get services from different caterers
+  for (const svc of sorted) {
+    if (result.length >= limit) break;
+    if (svc.user_id && !uniqueCaterers.has(svc.user_id)) {
+      uniqueCaterers.add(svc.user_id);
+      result.push(svc);
+    }
+  }
+  
+  // Second pass: fill remaining slots with any services
+  for (const svc of sorted) {
+    if (result.length >= limit) break;
+    if (!result.find(r => r.id === svc.id)) {
+      result.push(svc);
+    }
+  }
+  
+  console.log(`[fetchTopServices] Selected ${result.length} services from ${uniqueCaterers.size} unique caterers`);
+  return result;
 }
 
 
 /**
  * Fetch packages for a specific service
- * Packages are linked to services through caterer_id (packages) = user_id (services)
+ * Packages are linked to services through: packages.caterer_id = services.user_id
+ * 
+ * @param serviceUserId - The user_id (caterer_id) from the services table
+ * @returns Array of ServicePackage objects
  */
 export async function fetchPackagesForService(serviceUserId: string): Promise<ServicePackage[]> {
+  if (!serviceUserId) {
+    console.warn('[fetchPackagesForService] No serviceUserId provided. Cannot fetch packages.');
+    return [];
+  }
+  
   console.log(`[fetchPackagesForService] Fetching packages for caterer_id: ${serviceUserId}`);
   
   const { data, error } = await supabase
@@ -119,7 +330,12 @@ export async function fetchPackagesForService(serviceUserId: string): Promise<Se
     return [];
   }
   
-  console.log(`[fetchPackagesForService] Found ${data?.length || 0} active packages for caterer ${serviceUserId}`);
+  const packageCount = data?.length || 0;
+  console.log(`[fetchPackagesForService] Found ${packageCount} active packages for caterer ${serviceUserId}`);
+  
+  if (packageCount === 0) {
+    console.warn(`[fetchPackagesForService] No active packages found for caterer ${serviceUserId}. The caterer may need to create packages.`);
+  }
 
   // Transform database packages to ServicePackage format
   return (data || []).map((pkg: any) => {
@@ -158,76 +374,51 @@ export async function fetchPackagesForService(serviceUserId: string): Promise<Se
 }
 
 export async function fetchService(id: number): Promise<Service> {
-  const { data, error } = await supabase
-    .from('services')
-    .select('*')
-    .eq('id', id)
-    .single();
-    
-  if (error) throw error;
+  console.log(`[fetchService] Fetching service ${id}...`);
+  
+  // NEW APPROACH: Find service by matching ID from fetchServices()
+  // Since services are now derived from partner_applications, we need to find by user_id hash
+  // or fetch all and find the matching one
+  
+  // Fetch all services and find the one with matching ID
+  const allServices = await fetchServices();
+  const service = allServices.find(s => s.id === id);
+  
+  if (!service) {
+    throw new Error(`Service ${id} not found`);
+  }
+  
+  console.log(`[fetchService] Service found: ${service.name}, user_id: ${service.user_id || 'MISSING'}`);
   
   // Fetch packages for this service
-  // Packages are linked to services through: packages.caterer_id = services.user_id
+  // CRITICAL: Packages are linked via: packages.caterer_id = services.user_id
   let packages: ServicePackage[] = [];
-  try {
-    const serviceUserId = (data as any).user_id;
-    
-    if (serviceUserId) {
+  const serviceUserId = service.user_id;
+  
+  if (!serviceUserId) {
+    console.error(`[fetchService] CRITICAL: Service ${id} (${service.name}) does not have user_id set.`);
+    console.error(`[fetchService] This service cannot display packages because packages are linked via packages.caterer_id = services.user_id`);
+  } else {
+    try {
       console.log(`[fetchService] Fetching packages for service ${id} with user_id: ${serviceUserId}`);
       packages = await fetchPackagesForService(serviceUserId);
       console.log(`[fetchService] Found ${packages.length} packages for service ${id}`);
-    } else {
-      // Try alternative approach: find packages by matching with services that have packages
-      // This is a fallback for services created before user_id was added
-      console.warn(`[fetchService] Service ${id} (${data.name}) does not have user_id. Attempting alternative package lookup...`);
-      
-      // Alternative: Find all active packages and match by service name or try to find any packages
-      // This is a workaround - ideally services should have user_id set
-      try {
-        const { data: allPackages, error: pkgError } = await supabase
-          .from('packages')
-          .select('*, caterer_id')
-          .eq('is_active', true)
-          .limit(100); // Limit to prevent huge queries
-        
-        if (!pkgError && allPackages && allPackages.length > 0) {
-          console.log(`[fetchService] Found ${allPackages.length} total active packages. Service may not be linked to caterer.`);
-          // We can't reliably match without user_id, so we return empty packages
-          // The service owner should update their service to include user_id
-        }
-      } catch (altError) {
-        console.error('[fetchService] Error in alternative package lookup:', altError);
-      }
-      
-      console.warn(`[fetchService] Cannot fetch packages for service ${id} - service.user_id is missing. Please link the service to a caterer by setting user_id.`);
+    } catch (e) {
+      console.error('[fetchService] Error fetching packages for service:', e);
+      // Continue without packages if fetch fails
     }
-  } catch (e) {
-    console.error('[fetchService] Error fetching packages for service:', e);
-    // Continue without packages if fetch fails
   }
   
-  // Map database snake_case to camelCase
+  // Return service with packages
   return {
-    id: data.id,
-    name: data.name,
-    description: data.description,
-    imageUrl: data.image_url,
-    logoUrl: data.logo_url,
-    rating: data.rating,
-    reviewsCount: data.reviews_count,
-    pricePerHead: data.price_per_head,
-    favoritesCount: data.favorites_count,
-    bookingsCount: data.bookings_count,
-    latitude: data.latitude,
-    longitude: data.longitude,
-    user_id: data.user_id, // Keep for package fetching
+    ...service,
     packages: packages.length > 0 ? packages : undefined,
   };
 }
 
 
 export async function createBooking(payload: {
-  serviceId: number;
+  serviceId: number; // Hash-based ID from partner_applications (not from services table)
   eventDate: string;   
   guests: number;
   notes?: string;
@@ -235,14 +426,16 @@ export async function createBooking(payload: {
   address?: string;
   depositAmount?: number;
   remainingAmount?: number;
+  catererUserId?: string; // user_id of the caterer (needed since we don't use services table)
 }) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('User not authenticated');
   
   // Build insert data - only include fields that exist in current schema
+  // Note: service_id can be null or the hash-based ID (bookings table allows nullable service_id)
   const insertData: any = {
     user_id: user.id,
-    service_id: payload.serviceId,
+    service_id: payload.serviceId || null, // Hash-based ID or null
     event_date: payload.eventDate,
     guests: payload.guests,
     notes: payload.notes,
@@ -343,15 +536,34 @@ export async function searchServices(query: string): Promise<Service[]> {
     return [];
   }
 
+  const searchTerm = `%${query.trim()}%`;
+  
   const { data, error } = await supabase
     .from('services')
     .select('*')
-    .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
+    .or(`name.ilike.${searchTerm},description.ilike.${searchTerm}`)
     .order('name');
 
   if (error) {
+    console.error('[searchServices] Error searching services:', error);
     throw new Error(`Failed to search services: ${error.message}`);
   }
 
-  return data || [];
+  // Map database snake_case to camelCase (same as fetchServices)
+  return (data || []).map((svc: any) => ({
+    id: svc.id,
+    name: svc.name,
+    description: svc.description,
+    imageUrl: svc.image_url,
+    logoUrl: svc.logo_url,
+    rating: svc.rating,
+    reviewsCount: svc.reviews_count,
+    pricePerHead: svc.price_per_head,
+    favoritesCount: svc.favorites_count,
+    bookingsCount: svc.bookings_count,
+    latitude: svc.latitude,
+    longitude: svc.longitude,
+    user_id: svc.user_id, // Keep for package fetching
+    packages: undefined, // Will be fetched in fetchService()
+  }));
 }

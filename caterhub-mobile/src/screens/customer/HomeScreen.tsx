@@ -69,10 +69,14 @@ export default function HomeScreen({ navigation }: any) {
     (async () => {
       try {
         setLoading(true);
+        console.log('[HomeScreen] Starting to fetch services...');
+        
         const [services, topBookedRaw] = await Promise.all([
           fetchServices(),
           fetchTopServices('bookings', 8),
         ]);
+
+        console.log(`[HomeScreen] Fetched ${services.length} services, ${topBookedRaw.length} top booked`);
 
         // Show all services for "Most Popular" section, sorted by bookings count
         const topBooked = (topBookedRaw || []).sort(
@@ -80,17 +84,39 @@ export default function HomeScreen({ navigation }: any) {
         );
 
         if (!mounted) return;
+        
         setAll(services);
         setFeatured(services.slice(0, 6));
         setMostBooked(topBooked);
 
-        if (user) {
-          const ids = await getMyFavorites();
-          if (!mounted) return;
-          setFavIds(ids);
+        console.log(`[HomeScreen] Set ${services.length} all services, ${services.slice(0, 6).length} featured, ${topBooked.length} most booked`);
+        
+        // Diagnostic: Count unique caterers
+        const uniqueCaterers = new Set(services.filter(s => s.user_id).map(s => s.user_id));
+        console.log(`[HomeScreen] DIAGNOSTIC: Total services: ${services.length}, Unique caterers: ${uniqueCaterers.size}`);
+        if (uniqueCaterers.size === 1 && services.length > 1) {
+          console.warn(`[HomeScreen] WARNING: All ${services.length} services belong to the same caterer!`);
         }
-      } catch {
-        // optionally show a snackbar
+
+        if (user) {
+          try {
+            const ids = await getMyFavorites();
+            if (!mounted) return;
+            setFavIds(ids);
+            console.log(`[HomeScreen] Loaded ${ids.length} favorites`);
+          } catch (favError) {
+            console.error('[HomeScreen] Error loading favorites:', favError);
+          }
+        }
+      } catch (error: any) {
+        console.error('[HomeScreen] Error fetching services:', error);
+        console.error('[HomeScreen] Error details:', JSON.stringify(error, null, 2));
+        // Show error to user
+        Alert.alert(
+          'Error Loading Services',
+          error?.message || 'Failed to load catering services. Please check your connection and try again.',
+          [{ text: 'OK' }]
+        );
       } finally {
         if (mounted) setLoading(false);
       }
@@ -221,7 +247,21 @@ export default function HomeScreen({ navigation }: any) {
         showsVerticalScrollIndicator={false}
       >
         {loading ? (
-          <ActivityIndicator style={{ marginTop: 24 }} />
+          <View style={{ padding: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#FF8000" style={{ marginBottom: 12 }} />
+            <Text style={{ color: '#6b7280', fontSize: 14 }}>Loading services...</Text>
+          </View>
+        ) : all.length === 0 && !query.trim() ? (
+          /* Empty State - No Services */
+          <View style={{ padding: 40, alignItems: 'center', marginTop: 60 }}>
+            <Ionicons name="restaurant-outline" size={64} color="#9ca3af" />
+            <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827', marginTop: 16, marginBottom: 8 }}>
+              No Catering Services Available
+            </Text>
+            <Text style={{ fontSize: 14, color: '#6b7280', textAlign: 'center', maxWidth: 300 }}>
+              There are no catering services available at the moment. Please check back later or contact support.
+            </Text>
+          </View>
         ) : query.trim() ? (
           /* Search Results */
           <>
@@ -306,6 +346,15 @@ export default function HomeScreen({ navigation }: any) {
           </>
         ) : (
           <>
+            {/* Debug Info (only in development) */}
+            {__DEV__ && all.length > 0 && (
+              <View style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#f3f4f6', marginBottom: 8 }}>
+                <Text style={{ fontSize: 11, color: '#6b7280' }}>
+                  Debug: {all.length} services from {new Set(all.filter(s => s.user_id).map(s => s.user_id)).size} caterers
+                </Text>
+              </View>
+            )}
+            
             {/* Featured */}
             <Text style={styles.sectionTitle}>Featured</Text>
             <ScrollView
