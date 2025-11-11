@@ -74,6 +74,19 @@ export async function register(email: string, password: string, username: string
   
   if (error) {
     console.error('Supabase auth signup error:', error);
+    
+    // Check for "email already exists" errors
+    const errorMessage = error.message || '';
+    if (
+      errorMessage.includes('already registered') ||
+      errorMessage.includes('User already registered') ||
+      errorMessage.includes('already exists') ||
+      errorMessage.includes('email address is already registered') ||
+      errorMessage.includes('Email already registered')
+    ) {
+      throw new Error('An account with this email already exists. Please use a different email or sign in.');
+    }
+    
     throw new Error(error.message || 'Failed to create account. Please try again.');
   }
   
@@ -118,6 +131,21 @@ export async function register(email: string, password: string, username: string
       
     if (fetchedProfile) {
       profile = fetchedProfile;
+      
+      // IMMEDIATE CHECK: If profile has ADMIN role but we're registering as CATER, fix it immediately
+      if (profile.role === 'ADMIN' && role === 'CATER') {
+        console.error('CRITICAL: Profile fetched with ADMIN role during CATER registration! Fixing immediately...');
+        const { error: immediateFix } = await supabase
+          .from('users')
+          .update({ role: 'CATER' })
+          .eq('id', data.user.id);
+        
+        if (!immediateFix) {
+          profile = { ...profile, role: 'CATER' };
+          console.log('✅ Fixed ADMIN role to CATER immediately');
+        }
+      }
+      
       break;
     }
     
@@ -171,19 +199,39 @@ export async function register(email: string, password: string, username: string
           uniqueUsername = `${finalUsername}_${usernameCounter}`;
         }
         
+        // CRITICAL: Force role to be CATER if registering as CATER, never ADMIN
+        const finalRole = role === 'CATER' ? 'CATER' : (role === 'CUSTOMER' ? 'CUSTOMER' : 'CUSTOMER');
+        
         const { data: newProfile, error: insertError } = await supabase
           .from('users')
           .insert({
             id: data.user.id,
             email: data.user.email || email,
             username: uniqueUsername,
-            role: role
+            role: finalRole // Explicitly set role, never ADMIN
           })
           .select()
           .single();
           
         if (!insertError && newProfile) {
           profile = newProfile;
+          
+          // IMMEDIATE CHECK: Verify role is correct (never ADMIN for CATER registration)
+          if (profile.role === 'ADMIN' && role === 'CATER') {
+            console.error('CRITICAL: Profile created with ADMIN role during CATER registration! Fixing immediately...');
+            const { error: immediateFix } = await supabase
+              .from('users')
+              .update({ role: 'CATER' })
+              .eq('id', data.user.id);
+            
+            if (!immediateFix) {
+              profile = { ...profile, role: 'CATER' };
+              console.log('✅ Fixed ADMIN role to CATER immediately after creation');
+            } else {
+              console.error('Failed to fix ADMIN role:', immediateFix);
+            }
+          }
+          
           break;
         } else {
           console.error('Failed to create user profile manually:', insertError);
@@ -212,17 +260,52 @@ export async function register(email: string, password: string, username: string
   }
   
   // Update role if it doesn't match (for CATER role)
+  // IMPORTANT: Never allow role to be set to ADMIN during registration
   if (role === "CATER" && profile.role !== "CATER") {
+    // If profile somehow has ADMIN role, log error and fix it
+    if (profile.role === "ADMIN") {
+      console.error('SECURITY WARNING: User profile has ADMIN role during CATER registration! Fixing...');
+    }
+    
     const { error: updateError } = await supabase
       .from('users')
       .update({ role: 'CATER' })
       .eq('id', data.user.id);
-      
+    
     if (updateError) {
       console.warn('Failed to update role:', updateError);
     } else {
       profile = { ...profile, role: 'CATER' };
     }
+  }
+  
+  // CRITICAL FINAL CHECK: Ensure role is NEVER ADMIN for new registrations
+  // This catches any case where ADMIN might have been set by a database trigger or default
+  if (profile.role === "ADMIN" && role !== "ADMIN") {
+    console.error('🚨🚨🚨 CRITICAL SECURITY ERROR: User was assigned ADMIN role during registration!');
+    console.error('🚨 Registration role requested:', role);
+    console.error('🚨 Profile role received:', profile.role);
+    console.error('🚨 User ID:', data.user.id);
+    console.error('🚨 Email:', email);
+    console.error('🚨 Fixing to requested role immediately...');
+    
+    const targetRole = role === 'CATER' ? 'CATER' : 'CUSTOMER';
+    const { error: fixError } = await supabase
+      .from('users')
+      .update({ role: targetRole })
+      .eq('id', data.user.id);
+    
+    if (!fixError) {
+      profile = { ...profile, role: targetRole };
+      console.log('✅ Successfully fixed ADMIN role to', targetRole);
+    } else {
+      console.error('❌ CRITICAL: Failed to fix ADMIN role!', fixError);
+    }
+  }
+  
+  // Additional verification: Log role for debugging
+  if (role === 'CATER' && profile.role !== 'CATER') {
+    console.warn('⚠️ Role mismatch: Requested CATER but got', profile.role);
   }
     
   return profile;
