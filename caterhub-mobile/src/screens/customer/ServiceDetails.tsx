@@ -375,14 +375,10 @@ export default function ServiceDetails({ route, navigation }: any) {
                   return (
                     <Card key={pkg.id} style={styles.pkgCard}>
                       <Card.Content>
-                        <Text style={styles.pkgTitle}>
-                          {pkg.name}
-                        </Text>
-                        <Text style={styles.pkgPrice}>
-                          {typeof (pkg as any)._raw?.price === 'string' 
-                            ? (pkg as any)._raw.price 
-                            : `₱${pkg.pricePerHead} / head`}
-                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Text style={styles.pkgTitle}>{pkg.name}</Text>
+                          <Text style={styles.pkgPrice}>{`₱ ${pkg.pricePerHead}`}</Text>
+                        </View>
 
                         {/* Display sections (food categories with dishes) */}
                         {sections.length > 0 && (
@@ -390,14 +386,9 @@ export default function ServiceDetails({ route, navigation }: any) {
                             {sections.map((section: any, sectionIdx: number) => (
                               <View key={sectionIdx} style={styles.sectionBlock}>
                                 <Text style={styles.packageSectionTitle}>
-                                  {section.category || 'Category'}
+                                  {`Choice of ${String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}`}
                                 </Text>
-                                {(section.dishes || []).map((dish: string, dishIdx: number) => (
-                                  <View key={dishIdx} style={styles.dishRow}>
-                                    <Ionicons name="restaurant" size={14} color="#10b981" />
-                                    <Text style={styles.dishText}>{dish}</Text>
-                                  </View>
-                                ))}
+                                {/* Dish options are intentionally hidden on the card. They will be shown in the customization flow. */}
                               </View>
                             ))}
                           </>
