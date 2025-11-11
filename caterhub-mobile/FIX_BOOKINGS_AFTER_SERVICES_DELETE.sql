@@ -3,8 +3,41 @@
 
 -- Step 1: Drop the foreign key constraint on bookings.service_id
 -- Since services table is deleted, we need to remove this constraint
+-- Find constraints by checking the column names, not the referenced table
+DO $$
+DECLARE
+    r record;
+    constraint_name text;
+BEGIN
+    -- Find foreign key constraints on bookings table that involve service_id column
+    FOR r IN (
+        SELECT 
+            c.conname,
+            a.attname AS column_name
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+        WHERE c.conrelid = 'public.bookings'::regclass
+          AND c.contype = 'f'
+          AND a.attname = 'service_id'
+    ) LOOP
+        BEGIN
+            EXECUTE 'ALTER TABLE public.bookings DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+            RAISE NOTICE 'Dropped constraint: %', r.conname;
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'Could not drop constraint %: %', r.conname, SQLERRM;
+        END;
+    END LOOP;
+END $$;
+
+-- Explicitly try common constraint names
 ALTER TABLE public.bookings 
 DROP CONSTRAINT IF EXISTS bookings_service_id_fkey;
+
+ALTER TABLE public.bookings 
+DROP CONSTRAINT IF EXISTS fk_bookings_service_id;
+
+-- Force Supabase to refresh schema cache by adding a comment
+COMMENT ON TABLE public.bookings IS 'Bookings table - services table removed, using packages only';
 
 -- Step 2: Make service_id nullable (it already is, but ensure it)
 -- ALTER TABLE public.bookings ALTER COLUMN service_id DROP NOT NULL; -- Already nullable
