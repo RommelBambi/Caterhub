@@ -996,6 +996,25 @@ export default function PartnerSettingsScreen() {
     mimeType?: string
   ): Promise<string | null> => {
     try {
+      // Refresh session before upload to fix "Invalid Refresh Token" error
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        // Try to refresh the session
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          throw new Error('Please log in again to upload images.');
+        }
+      }
+      
+      // Ensure we have a valid session
+      if (!session) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          throw new Error('Please log in again to upload images.');
+        }
+      }
+
       const timestamp = Date.now();
       const uniqueFileName = `profile-${timestamp}.jpg`;
       const storagePath = `profiles/${userId}/${uniqueFileName}`;
@@ -1031,18 +1050,27 @@ export default function PartnerSettingsScreen() {
           }
         } catch (error) {
           console.warn('Error deleting old profile image:', error);
+          // Don't fail the upload if deletion fails
         }
       }
 
-      const { error } = await supabase.storage
+      // Upload with upsert: true to allow overwriting existing files
+      const { error, data: uploadData } = await supabase.storage
         .from('avatars')
         .upload(storagePath, imageData as any, {
           contentType: mimeType || 'image/jpeg',
-          upsert: false,
+          upsert: true, // Allow overwriting if file exists
         });
 
       if (error) {
         console.error('Upload error:', error);
+        console.error('Upload error details:', JSON.stringify(error, null, 2));
+        
+        // Check if it's an RLS policy error
+        if (error.message?.includes('row-level security') || error.message?.includes('RLS')) {
+          throw new Error('Storage permission denied. Please check your storage bucket RLS policies. Users should be able to upload to their own profile folder.');
+        }
+        
         throw error;
       }
 
@@ -1085,12 +1113,39 @@ export default function PartnerSettingsScreen() {
       }
 
       setUploadingImage(true);
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      
+      // Refresh session before upload to fix "Invalid Refresh Token" error
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.warn('Session error, trying to refresh:', sessionError);
+      }
+      
+      // If no session, try to get user (this will refresh if needed)
+      const { data: { user: authUser }, error: userError } = await supabase.auth.getUser();
 
-      if (!authUser) {
-        Alert.alert('Authentication Required', 'Please log in to upload images.');
+      if (!authUser || userError) {
+        Alert.alert(
+          'Authentication Required', 
+          'Your session has expired. Please log in again to upload images.'
+        );
         setUploadingImage(false);
         return;
+      }
+      
+      // If session is expired, try to refresh it
+      if (!session && authUser) {
+        console.log('No active session, refreshing...');
+        // The getUser() call above should have refreshed the session
+        // But we can also explicitly refresh if needed
+        const { data: { session: newSession } } = await supabase.auth.getSession();
+        if (!newSession) {
+          Alert.alert(
+            'Session Expired',
+            'Please log in again to continue.'
+          );
+          setUploadingImage(false);
+          return;
+        }
       }
 
       const asset = result.assets[0];

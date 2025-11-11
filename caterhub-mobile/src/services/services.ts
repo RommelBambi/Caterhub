@@ -481,10 +481,11 @@ export async function createBooking(payload: {
   if (!user) throw new Error('User not authenticated');
   
   // Build insert data - only include fields that exist in current schema
-  // Note: service_id can be null or the hash-based ID (bookings table allows nullable service_id)
+  // Note: service_id is set to null since services table no longer exists
+  // The foreign key constraint will be removed via SQL migration
   const insertData: any = {
     user_id: user.id,
-    service_id: payload.serviceId || null, // Hash-based ID or null
+    service_id: null, // Services table deleted, so always null
     event_date: payload.eventDate,
     guests: payload.guests,
     notes: payload.notes,
@@ -523,20 +524,26 @@ export async function fetchMyBookings() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
   
+  // Fetch bookings with package info (services table no longer exists)
   const { data, error } = await supabase
     .from('bookings')
     .select(`
       *,
-      services:service_id (
+      packages:package_id (
         id,
         name,
-        price_per_head
+        price,
+        caterer_id
       )
     `)
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
     
-  if (error) throw error;
+  if (error) {
+    console.error('[fetchMyBookings] Error fetching bookings:', error);
+    throw error;
+  }
+  
   return data || [];
 }
 

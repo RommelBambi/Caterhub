@@ -62,17 +62,11 @@ export default function PartnerDashboardScreen() {
         return;
       }
 
-      // Fetch all bookings for this caterer
+      // Fetch all bookings for this caterer (services table no longer exists)
       let bookingsQuery = supabase
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head,
-            user_id
-          ),
           packages:package_id (
             id,
             name,
@@ -316,12 +310,6 @@ export default function PartnerDashboardScreen() {
                         .from('bookings')
                         .select(`
                           *,
-                          services:service_id (
-                            id,
-                            name,
-                            price_per_head,
-                            user_id
-                          ),
                           packages:package_id (
                             id,
                             name,

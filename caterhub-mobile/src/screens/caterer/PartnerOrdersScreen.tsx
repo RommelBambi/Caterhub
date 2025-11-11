@@ -97,17 +97,11 @@ export default function PartnerOrdersScreen() {
       const packageIds = packages?.map(p => p.id) || [];
       console.log('[PartnerOrdersScreen] Package IDs for this caterer:', packageIds);
 
-      // Fetch bookings for services OR packages (cover both cases)
+      // Fetch bookings for packages (services table no longer exists)
       let bookingsQuery = supabase
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head,
-            user_id
-          ),
           packages:package_id (
             id,
             name,
@@ -323,12 +317,6 @@ export default function PartnerOrdersScreen() {
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head,
-            user_id
-          ),
           packages:package_id (
             id,
             name,
@@ -432,21 +420,17 @@ export default function PartnerOrdersScreen() {
     if (!user) return;
 
     try {
-      // Query all bookings and filter by checking if service belongs to caterer
-      // This assumes services might be linked differently
+      // Query all bookings and filter by checking if package belongs to caterer
+      // Services table no longer exists, so we only check packages
       const { data: allBookings, error } = await supabase
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head
-          ),
           packages:package_id (
             id,
             name,
-            price
+            price,
+            caterer_id
           ),
           customer:user_id (
             id,
