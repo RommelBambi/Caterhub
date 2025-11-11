@@ -281,7 +281,7 @@ export async function register(email: string, password: string, username: string
   
   // CRITICAL FINAL CHECK: Ensure role is NEVER ADMIN for new registrations
   // This catches any case where ADMIN might have been set by a database trigger or default
-  if (profile.role === "ADMIN" && role !== "ADMIN") {
+  if (profile.role === "ADMIN") {
     console.error('🚨🚨🚨 CRITICAL SECURITY ERROR: User was assigned ADMIN role during registration!');
     console.error('🚨 Registration role requested:', role);
     console.error('🚨 Profile role received:', profile.role);
@@ -330,16 +330,69 @@ export async function fetchBookingDetails(bookingId: number) {
     .from('bookings')
     .select(`
       *,
-      services:service_id (
+      packages:package_id (
         id,
         name,
-        price_per_head
+        price,
+        caterer_id
       )
     `)
     .eq('id', bookingId)
     .single();
     
   if (error) throw error;
+  
+  // Debug: Log the actual data structure
+  console.log('[fetchBookingDetails] Raw booking data:', JSON.stringify(data, null, 2));
+  if (data?.packages) {
+    console.log('[fetchBookingDetails] Packages structure:', JSON.stringify(data.packages, null, 2));
+  }
+  
+  // Manually fetch caterer business name from partner_applications (same as home screen)
+  if (data?.packages?.caterer_id) {
+    try {
+      const { data: partnerApp } = await supabase
+        .from('partner_applications')
+        .select('business_name, owner_name')
+        .eq('user_id', data.packages.caterer_id)
+        .eq('status', 'Approved')
+        .single();
+      
+      if (partnerApp) {
+        data.packages.business_name = partnerApp.business_name;
+        console.log(`[fetchBookingDetails] Found caterer business: ${partnerApp.business_name} for booking ${bookingId}`);
+      } else {
+        console.warn(`[fetchBookingDetails] No approved partner application found for caterer_id: ${data.packages.caterer_id}`);
+      }
+    } catch (catererError) {
+      console.error(`[fetchBookingDetails] Error fetching caterer business for booking ${bookingId}:`, catererError);
+    }
+  }
+  
+  // If we need service details, we'll fetch them separately from partner_applications
+  // since we don't have a services table
+  if (data && data.service_id) {
+    try {
+      const { data: serviceData } = await supabase
+        .from('partner_applications')
+        .select('business_name, user_id')
+        .eq('id', data.service_id)
+        .eq('status', 'Approved')
+        .single();
+      
+      if (serviceData) {
+        data.service = {
+          id: data.service_id,
+          name: serviceData.business_name,
+          caterer_id: serviceData.user_id
+        };
+      }
+    } catch (serviceError) {
+      console.warn('Could not fetch service details:', serviceError);
+      // Continue without service details
+    }
+  }
+  
   return data;
 }
 
