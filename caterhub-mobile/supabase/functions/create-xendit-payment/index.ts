@@ -113,9 +113,9 @@ serve(async (req)=>{
     console.log('[create-xendit-payment] Booking verified successfully:', booking);
     const authHeaderValue = `Basic ${btoa(xenditSecretKey + ':')}`;
     const externalId = `booking_${bookingId}_${Date.now()}`;
-    // Default redirect URLs
-    const successUrl = returnUrl || `${supabaseUrl}/functions/v1/xendit-redirect?status=success&booking_id=${bookingId}`;
-    const failureUrl = `${supabaseUrl}/functions/v1/xendit-redirect?status=failed&booking_id=${bookingId}`;
+    // Direct app redirect URLs - bypass browser completely
+    const successUrl = returnUrl || `caterhub://payment/success?bookingId=${bookingId}`;
+    const failureUrl = `caterhub://payment/failed?bookingId=${bookingId}`;
     if (paymentMethod === 'invoice') {
       // Use Xendit Invoice API for multiple payment methods
       const invoiceResponse = await fetch(`${XENDIT_BASE_URL}/v2/invoices`, {

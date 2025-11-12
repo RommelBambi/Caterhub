@@ -20,6 +20,7 @@ import { createPaymentViaEdgeFunction } from '../../services/paymentEdgeFunction
 import { supabase } from '../../services/supabase';
 import { checkXenditKeys } from '../../utils/checkXenditKeys';
 import { diagnoseEnvironment } from '../../utils/diagnoseEnv';
+import PaymentWebView from '../../components/payment/PaymentWebView';
 
 const COLORS = {
   primary: '#FF8000',
@@ -46,6 +47,8 @@ export default function PaymentScreen({ route, navigation }: any) {
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [loading, setLoading] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [showPaymentWebView, setShowPaymentWebView] = useState(false);
+  const [checkoutUrl, setCheckoutUrl] = useState('');
 
   // Check Xendit keys and environment on mount (for debugging)
   React.useEffect(() => {
@@ -132,39 +135,11 @@ export default function PaymentScreen({ route, navigation }: any) {
           })
           .eq('id', bookingId);
 
-      // Open checkout URL
+      // Open checkout URL in WebView
       if (paymentResponse.checkoutUrl) {
-        console.log('Opening checkout URL in Chrome:', paymentResponse.checkoutUrl);
-        const canOpen = await Linking.canOpenURL(paymentResponse.checkoutUrl);
-          if (canOpen) {
-          // Open in Chrome browser
-          await Linking.openURL(paymentResponse.checkoutUrl);
-            
-          // Show instructions and navigate to pending screen
-          Alert.alert(
-            'Complete Payment',
-            'You will be redirected to your browser to complete your payment via Xendit.\n\n' +
-            'After completing payment:\n' +
-            '1. You may see a confirmation page\n' +
-            '2. Close that page and return to this app\n' +
-            '3. We\'ll automatically verify your payment',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  navigation.navigate('PaymentPending', {
-                    bookingId,
-                    invoiceId: paymentResponse.invoiceId,
-                    chargeId: paymentResponse.chargeId,
-                    externalId: paymentResponse.externalId || paymentResponse.referenceId,
-                  });
-                },
-              },
-            ]
-          );
-          } else {
-            throw new Error('Cannot open payment URL');
-          }
+        console.log('Opening checkout URL in WebView:', paymentResponse.checkoutUrl);
+        setCheckoutUrl(paymentResponse.checkoutUrl);
+        setShowPaymentWebView(true);
       } else {
         throw new Error('No checkout URL received from payment service');
       }
@@ -247,7 +222,7 @@ export default function PaymentScreen({ route, navigation }: any) {
           <View style={styles.infoCard}>
             <Ionicons name="information-circle" size={20} color={COLORS.primary} />
             <Text style={styles.infoText}>
-              You will be redirected to your browser to complete your 50% deposit payment securely via Xendit. Please return to the app after completing the payment.
+              You'll be taken to a secure payment screen to complete your 50% deposit payment via Xendit. Payment will be processed within the app.
             </Text>
           </View>
         )}
@@ -285,6 +260,46 @@ export default function PaymentScreen({ route, navigation }: any) {
         </TouchableOpacity>
       </View>
 
+      {/* Payment WebView */}
+      <PaymentWebView
+        visible={showPaymentWebView}
+        checkoutUrl={checkoutUrl}
+        onClose={() => setShowPaymentWebView(false)}
+        onPaymentComplete={() => {
+          setShowPaymentWebView(false);
+          setLoading(false);
+          setProcessingPayment(false);
+          
+          // Use safe navigation with fallbacks
+          const params = {
+            bookingId,
+            chargeId: null,
+            invoiceId: null,
+            externalId: null
+          };
+          
+          try {
+            // Only add these if paymentInfo exists
+            if (paymentInfo) {
+              params.chargeId = paymentInfo.chargeId || null;
+              params.invoiceId = paymentInfo.invoiceId || null;
+              params.externalId = paymentInfo.externalId || paymentInfo.referenceId || null;
+            }
+          } catch (err) {
+            console.log('Error accessing payment info:', err);
+          }
+          
+          navigation.navigate('PaymentPending', params);
+        }}
+        onPaymentFailed={() => {
+          setShowPaymentWebView(false);
+          Alert.alert(
+            'Payment Failed',
+            'Your payment could not be processed. No charges were made.',
+            [{ text: 'OK' }]
+          );
+        }}
+      />
     </View>
   );
 }

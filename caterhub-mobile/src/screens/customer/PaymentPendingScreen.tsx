@@ -90,10 +90,8 @@ export default function PaymentPendingScreen({ route, navigation }: any) {
         setMessage('Payment confirmed! Your booking is now confirmed.');
         setChecking(false);
         
-        // Navigate to success screen after 2 seconds
-        setTimeout(() => {
-          navigation.replace('BookingConfirmed', { bookingId });
-        }, 2000);
+        // Show success state but don't auto-navigate
+        // Let user manually tap "View Booking" button for better UX
         
       } else if (status === 'FAILED') {
         // Payment failed

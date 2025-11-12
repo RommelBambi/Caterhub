@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  Alert,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Text } from 'react-native-paper';
@@ -45,26 +46,68 @@ export default function PaymentWebView({
     setLoading(navState.loading);
 
     const url = navState.url.toLowerCase();
+    console.log('[PaymentWebView] Navigation to:', url);
     
-    // Check if payment is complete (success URLs)
+    // Check for caterhub:// deep link redirects
+    if (url.includes('caterhub://payment/')) {
+      if (url.includes('/success')) {
+        console.log('[PaymentWebView] Payment success detected via deep link');
+        Alert.alert(
+          '🎉 Payment Successful!',
+          'Your booking has been confirmed. Check your bookings for details.',
+          [{ text: 'OK', onPress: () => {
+            onPaymentComplete();
+            onClose();
+          }}]
+        );
+        return false; // Prevent navigation
+      } else if (url.includes('/failed')) {
+        console.log('[PaymentWebView] Payment failed detected via deep link');
+        Alert.alert(
+          '❌ Payment Failed',
+          'Your payment could not be processed. No charges were made. Please try again.',
+          [{ text: 'OK', onPress: () => {
+            onPaymentFailed();
+            onClose();
+          }}]
+        );
+        return false; // Prevent navigation
+      }
+    }
+    
+    // Check if payment is complete (success URLs - fallback)
     if (
       url.includes('xendit-redirect') && url.includes('status=success') ||
       url.includes('payment/success') ||
       url.includes('success') && (url.includes('xendit') || url.includes('supabase'))
     ) {
-      console.log('[PaymentWebView] Payment success detected');
-      onPaymentComplete();
+      console.log('[PaymentWebView] Payment success detected via URL');
+      Alert.alert(
+        '🎉 Payment Successful!',
+        'Your booking has been confirmed. Check your bookings for details.',
+        [{ text: 'OK', onPress: () => {
+          onPaymentComplete();
+          onClose();
+        }}]
+      );
       return;
     }
 
-    // Check if payment failed
+    // Check if payment failed (fallback)
     if (
       url.includes('xendit-redirect') && url.includes('status=failed') ||
       url.includes('payment/failed') ||
       url.includes('failed') && (url.includes('xendit') || url.includes('supabase'))
     ) {
-      console.log('[PaymentWebView] Payment failed detected');
-      onPaymentFailed();
+      console.log('[PaymentWebView] Payment failed detected via URL');
+      Alert.alert(
+        '❌ Payment Failed',
+        'Your payment could not be processed. No charges were made. Please try again.',
+        [{ text: 'OK', onPress: () => {
+          onPaymentFailed();
+          onClose();
+        }}]
+      );
       return;
     }
   };
@@ -118,9 +161,64 @@ export default function PaymentWebView({
             domStorageEnabled={true}
             startInLoadingState={true}
             scalesPageToFit={true}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+                console.log('[PaymentWebView] Message received:', data);
+                
+                if (data.type === 'payment_redirect') {
+                  if (data.status === 'success') {
+                    Alert.alert(
+                      '🎉 Payment Successful!',
+                      'Your booking has been confirmed. Check your bookings for details.',
+                      [{ text: 'OK', onPress: () => {
+                        onPaymentComplete();
+                        onClose();
+                      }}]
+                    );
+                  } else {
+                    Alert.alert(
+                      '❌ Payment Failed',
+                      'Your payment could not be processed. No charges were made. Please try again.',
+                      [{ text: 'OK', onPress: () => {
+                        onPaymentFailed();
+                        onClose();
+                      }}]
+                    );
+                  }
+                }
+              } catch (error) {
+                console.log('[PaymentWebView] Error parsing message:', error);
+              }
+            }}
             // Allow navigation to external apps (for payment providers)
             onShouldStartLoadWithRequest={(request) => {
               const url = request.url.toLowerCase();
+              
+              // Handle caterhub:// deep links
+              if (url.includes('caterhub://payment/')) {
+                console.log('[PaymentWebView] Deep link detected:', url);
+                if (url.includes('/success')) {
+                  Alert.alert(
+                    '🎉 Payment Successful!',
+                    'Your booking has been confirmed. Check your bookings for details.',
+                    [{ text: 'OK', onPress: () => {
+                      onPaymentComplete();
+                      onClose();
+                    }}]
+                  );
+                } else if (url.includes('/failed')) {
+                  Alert.alert(
+                    '❌ Payment Failed',
+                    'Your payment could not be processed. No charges were made. Please try again.',
+                    [{ text: 'OK', onPress: () => {
+                      onPaymentFailed();
+                      onClose();
+                    }}]
+                  );
+                }
+                return false; // Don't navigate to deep link
+              }
               
               // Allow Xendit, GCash, PayMaya, and Supabase URLs
               if (
@@ -137,6 +235,55 @@ export default function PaymentWebView({
               // Block other external URLs
               return false;
             }}
+            // Inject JavaScript to handle redirects
+            injectedJavaScript={`
+              // Override window.location to catch redirects
+              const originalLocation = window.location;
+              Object.defineProperty(window, 'location', {
+                get: () => originalLocation,
+                set: (url) => {
+                  console.log('Redirect attempt:', url);
+                  if (url.includes('caterhub://payment/')) {
+                    const urlObj = new URL(url.replace('caterhub://', 'https://caterhub.com/'));
+                    const status = url.includes('/success') ? 'success' : 'failed';
+                    const bookingId = urlObj.searchParams.get('bookingId');
+                    
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'payment_redirect',
+                      status: status,
+                      bookingId: bookingId,
+                      provider: 'xendit'
+                    }));
+                  } else {
+                    originalLocation.href = url;
+                  }
+                }
+              });
+              
+              // Also override window.location.href
+              Object.defineProperty(window.location, 'href', {
+                get: () => originalLocation.href,
+                set: (url) => {
+                  console.log('Href redirect attempt:', url);
+                  if (url.includes('caterhub://payment/')) {
+                    const urlObj = new URL(url.replace('caterhub://', 'https://caterhub.com/'));
+                    const status = url.includes('/success') ? 'success' : 'failed';
+                    const bookingId = urlObj.searchParams.get('bookingId');
+                    
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'payment_redirect',
+                      status: status,
+                      bookingId: bookingId,
+                      provider: 'xendit'
+                    }));
+                  } else {
+                    originalLocation.href = url;
+                  }
+                }
+              });
+              
+              true; // Required for injected JavaScript
+            `}
           />
         </View>
       </View>
