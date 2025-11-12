@@ -10,7 +10,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../services/supabase';
-import { checkPaymentStatusViaEdgeFunction } from '../../services/paymentEdgeFunction';
 
 const COLORS = {
   primary: '#FF8000',
@@ -26,7 +25,7 @@ const COLORS = {
 
 export default function PaymentPendingScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
-  const { bookingId, paymentIntentId, paymentSourceId } = route.params;
+  const { bookingId, invoiceId, chargeId, externalId } = route.params;
 
   const [checking, setChecking] = useState(true);
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'success' | 'failed'>('pending');
@@ -57,237 +56,200 @@ export default function PaymentPendingScreen({ route, navigation }: any) {
       clearInterval(interval);
       clearTimeout(timeout);
     };
-  }, [paymentIntentId, paymentSourceId, bookingId]);
+  }, [invoiceId, chargeId, externalId, bookingId]);
 
   const checkPaymentStatus = async () => {
     try {
-      // Use Edge Function to check payment status securely
-      const statusResponse = await checkPaymentStatusViaEdgeFunction({
-        paymentIntentId: paymentIntentId || undefined,
-        paymentSourceId: paymentSourceId || undefined,
-      });
+      // Check booking status directly from database for Xendit payments
+      const { data: booking, error } = await supabase
+        .from('bookings')
+        .select('payment_status, deposit_paid, xendit_invoice_id, xendit_charge_id, xendit_external_id, status')
+        .eq('id', bookingId)
+        .single();
 
-      console.log('Payment Status Response:', statusResponse);
+      console.log('Booking Status Response:', booking);
       console.log('Payment Status Details:', {
-        success: statusResponse.success,
-        type: statusResponse.type,
-        status: statusResponse.status,
-        paymentIntentId,
-        paymentSourceId,
         bookingId,
+        invoiceId,
+        chargeId,
+        externalId,
+        booking,
       });
 
-      if (!statusResponse.success) {
-        // Payment not found or error
-        if (statusResponse.error === 'Payment intent not found') {
-          setMessage('Waiting for payment confirmation... (Payment may still be processing)');
-        } else {
-          setMessage('Checking payment status... (If you completed payment, it may take a moment to process)');
-        }
+      if (error || !booking) {
+        setMessage('Checking payment status... (If you completed payment, it may take a moment to process)');
         return;
       }
 
-      const status = statusResponse.status;
+      const status = booking.payment_status;
 
-      // Handle Payment Intent status
-      if (statusResponse.type === 'payment_intent') {
-        if (status === 'succeeded') {
-          // Update booking status - mark deposit as paid
-          // Get transaction ID from payment intent if available
-          const transactionId = statusResponse.paymentIntent?.attributes?.last_payment_error 
-            ? null 
-            : statusResponse.paymentIntent?.id || paymentIntentId;
-
-          const { error } = await supabase
-            .from('bookings')
-            .update({
-              payment_status: 'COMPLETED',
-              deposit_paid: true,
-              paid_at: new Date().toISOString(),
-              status: 'CONFIRMED',
-              transaction_id: transactionId || paymentIntentId, // Store payment intent ID as transaction ID
-            })
-            .eq('id', bookingId);
-
-          if (error) {
-            console.error('Error updating booking:', error);
-          } else {
-            console.log('✅ Booking updated successfully with payment completion');
-          }
-
-          setPaymentStatus('success');
-          setMessage('Deposit payment successful! Your booking is confirmed.');
-          setChecking(false);
-          return;
-        } else if (status === 'failed') {
-          setPaymentStatus('failed');
-          setMessage('Payment failed. Please try again.');
-          setChecking(false);
-          return;
-        } else if (status === 'processing') {
-          setMessage('Processing your payment...');
-        } else if (status === 'awaiting_next_action') {
-          // Payment Intent is waiting for user action (authorization)
-          // This is normal - user needs to complete payment in PayMongo
-          setMessage('Waiting for you to complete payment in PayMongo...');
-        } else if (status === 'awaiting_payment_method') {
-          setMessage('Waiting for payment method...');
-        } else {
-          setMessage(`Waiting for payment confirmation... (Status: ${status})`);
-        }
+      // Handle Xendit payment status
+      if (status === 'COMPLETED' && booking.deposit_paid) {
+        // Payment successful
+        setPaymentStatus('success');
+        setMessage('Payment confirmed! Your booking is now confirmed.');
+        setChecking(false);
+        
+        // Navigate to success screen after 2 seconds
+        setTimeout(() => {
+          navigation.replace('BookingConfirmed', { bookingId });
+        }, 2000);
+        
+      } else if (status === 'FAILED') {
+        // Payment failed
+        setPaymentStatus('failed');
+        setMessage('Payment failed. Please try again or contact support.');
+        setChecking(false);
+        
+      } else if (status === 'PENDING') {
+        // Still pending
+        setMessage('Waiting for payment confirmation... Please wait while we verify your payment.');
+        
+      } else {
+        // Unknown status
+        setMessage('Checking payment status... Please wait.');
       }
 
-      // Handle Payment Source status
-      if (statusResponse.type === 'payment_source') {
-        if (status === 'chargeable' || status === 'paid') {
-          // Update booking status - mark deposit as paid
-          // Get transaction ID from source if available
-          const transactionId = statusResponse.source?.id || paymentSourceId || paymentIntentId;
-
-          const { error } = await supabase
-            .from('bookings')
-            .update({
-              payment_status: 'COMPLETED',
-              deposit_paid: true,
-              paid_at: new Date().toISOString(),
-              status: 'CONFIRMED',
-              transaction_id: transactionId, // Store source ID or payment intent ID as transaction ID
-            })
-            .eq('id', bookingId);
-
-          if (error) {
-            console.error('Error updating booking:', error);
-          } else {
-            console.log('✅ Booking updated successfully with payment completion');
-          }
-
-          setPaymentStatus('success');
-          setMessage('Deposit payment successful! Your booking is confirmed.');
-          setChecking(false);
-        } else if (status === 'failed' || status === 'cancelled') {
-          setPaymentStatus('failed');
-          setMessage('Payment failed. Please try again.');
-          setChecking(false);
-        } else if (status === 'pending') {
-          setMessage('Waiting for payment confirmation...');
-        }
-      }
     } catch (error: any) {
       console.error('Error checking payment status:', error);
-      // Don't stop checking on error, might be temporary network issue
-      // Only show error message if we've been checking for a while
-      if (checking && paymentStatus === 'pending') {
-        setMessage('Checking payment status... (If you completed payment, it may take a moment to process)');
-      }
+      setMessage('Error checking payment status. Please check your internet connection.');
     }
   };
 
-  const handleDone = () => {
-    if (paymentStatus === 'success') {
-      // Navigate to bookings list
-      navigation.navigate('Bookings');
-    } else {
-      // Go back to payment screen to retry
-      navigation.goBack();
-    }
+  const handleRetry = () => {
+    setChecking(true);
+    setPaymentStatus('pending');
+    setMessage('Checking payment status...');
+    checkPaymentStatus();
+  };
+
+  const handleGoBack = () => {
+    Alert.alert(
+      'Cancel Payment Check',
+      'Are you sure you want to go back? If you completed the payment, it may still be processing.',
+      [
+        {
+          text: 'Keep Waiting',
+          style: 'cancel',
+        },
+        {
+          text: 'Go Back',
+          style: 'destructive',
+          onPress: () => navigation.goBack(),
+        },
+      ]
+    );
+  };
+
+  const handleViewBooking = () => {
+    navigation.navigate('BookingDetails', { bookingId });
   };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleGoBack} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Payment Status</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {/* Content */}
       <View style={styles.content}>
-        {/* Status Icon */}
-        <View style={styles.iconContainer}>
-          {checking ? (
-            <ActivityIndicator size="large" color={COLORS.primary} />
-          ) : paymentStatus === 'success' ? (
-            <View style={[styles.iconCircle, { backgroundColor: COLORS.success + '20' }]}>
-              <Ionicons name="checkmark-circle" size={80} color={COLORS.success} />
+        <View style={styles.statusCard}>
+          {/* Status Icon */}
+          <View style={[
+            styles.iconContainer,
+            paymentStatus === 'success' && styles.iconSuccess,
+            paymentStatus === 'failed' && styles.iconFailed,
+            paymentStatus === 'pending' && styles.iconPending,
+          ]}>
+            {paymentStatus === 'pending' && checking && (
+              <ActivityIndicator size="large" color={COLORS.white} />
+            )}
+            {paymentStatus === 'success' && (
+              <Ionicons name="checkmark" size={48} color={COLORS.white} />
+            )}
+            {paymentStatus === 'failed' && (
+              <Ionicons name="close" size={48} color={COLORS.white} />
+            )}
+            {paymentStatus === 'pending' && !checking && (
+              <Ionicons name="time" size={48} color={COLORS.white} />
+            )}
+          </View>
+
+          {/* Status Title */}
+          <Text style={styles.statusTitle}>
+            {paymentStatus === 'pending' && 'Verifying Payment'}
+            {paymentStatus === 'success' && 'Payment Successful!'}
+            {paymentStatus === 'failed' && 'Payment Failed'}
+          </Text>
+
+          {/* Status Message */}
+          <Text style={styles.statusMessage}>{message}</Text>
+
+          {/* Payment Details */}
+          <View style={styles.detailsCard}>
+            <Text style={styles.detailsTitle}>Payment Details</Text>
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Booking ID:</Text>
+              <Text style={styles.detailValue}>#{bookingId}</Text>
             </View>
-          ) : (
-            <View style={[styles.iconCircle, { backgroundColor: COLORS.danger + '20' }]}>
-              <Ionicons name="close-circle" size={80} color={COLORS.danger} />
-            </View>
-          )}
+            {invoiceId && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Invoice ID:</Text>
+                <Text style={styles.detailValue}>{invoiceId}</Text>
+              </View>
+            )}
+            {chargeId && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Charge ID:</Text>
+                <Text style={styles.detailValue}>{chargeId}</Text>
+              </View>
+            )}
+            {externalId && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Reference ID:</Text>
+                <Text style={styles.detailValue}>{externalId}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.buttonContainer}>
+            {paymentStatus === 'failed' && (
+              <TouchableOpacity
+                style={[styles.button, styles.retryButton]}
+                onPress={handleRetry}
+              >
+                <Ionicons name="refresh" size={20} color={COLORS.white} />
+                <Text style={styles.buttonText}>Try Again</Text>
+              </TouchableOpacity>
+            )}
+
+            {paymentStatus === 'success' && (
+              <TouchableOpacity
+                style={[styles.button, styles.successButton]}
+                onPress={handleViewBooking}
+              >
+                <Ionicons name="eye" size={20} color={COLORS.white} />
+                <Text style={styles.buttonText}>View Booking</Text>
+              </TouchableOpacity>
+            )}
+
+            {paymentStatus === 'pending' && !checking && (
+              <TouchableOpacity
+                style={[styles.button, styles.retryButton]}
+                onPress={handleRetry}
+              >
+                <Ionicons name="refresh" size={20} color={COLORS.white} />
+                <Text style={styles.buttonText}>Check Again</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
-
-        {/* Status Message */}
-        <Text style={styles.title}>
-          {checking
-            ? 'Verifying Payment'
-            : paymentStatus === 'success'
-            ? 'Payment Successful!'
-            : 'Payment Failed'}
-        </Text>
-        <Text style={styles.message}>{message}</Text>
-
-        {/* Info Box */}
-        {checking && (
-          <View style={styles.infoBox}>
-            <Ionicons name="information-circle" size={20} color={COLORS.info} />
-            <Text style={styles.infoText}>
-              Please wait while we verify your payment. This may take a few moments.{'\n\n'}
-              <Text style={{ fontWeight: '600' }}>Important:</Text> If you see an error page on PayMongo after completing payment, that's normal! Just close that page and return to this app. We'll automatically verify your payment.{'\n\n'}
-              <Text style={{ fontWeight: '600' }}>What to do:</Text>
-              {'\n'}1. Complete payment in PayMongo
-              {'\n'}2. Close the PayMongo page (even if it shows an error)
-              {'\n'}3. Return to this app
-              {'\n'}4. We'll verify your payment automatically
-            </Text>
-          </View>
-        )}
-
-        {paymentStatus === 'success' && (
-          <View style={[styles.infoBox, { backgroundColor: COLORS.success + '15' }]}>
-            <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
-            <Text style={[styles.infoText, { color: COLORS.success }]}>
-              Your 50% deposit has been paid successfully! Your booking is now confirmed. The remaining 50% can be paid during the event.
-            </Text>
-          </View>
-        )}
-
-        {paymentStatus === 'failed' && (
-          <View style={[styles.infoBox, { backgroundColor: COLORS.danger + '15' }]}>
-            <Ionicons name="alert-circle" size={20} color={COLORS.danger} />
-            <Text style={[styles.infoText, { color: COLORS.danger }]}>
-              Your payment could not be processed. Please try again or contact support.
-            </Text>
-          </View>
-        )}
-
-        {/* Action Button */}
-        {!checking && (
-          <TouchableOpacity
-            style={[
-              styles.button,
-              {
-                backgroundColor:
-                  paymentStatus === 'success' ? COLORS.success : COLORS.primary,
-              },
-            ]}
-            onPress={handleDone}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.buttonText}>
-              {paymentStatus === 'success' ? 'View Bookings' : 'Try Again'}
-            </Text>
-            <Ionicons
-              name={paymentStatus === 'success' ? 'calendar' : 'refresh'}
-              size={20}
-              color={COLORS.white}
-            />
-          </TouchableOpacity>
-        )}
-
-        {/* Manual Check Button */}
-        {checking && (
-          <TouchableOpacity
-            style={styles.manualButton}
-            onPress={checkPaymentStatus}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.manualButtonText}>Check Status Now</Text>
-          </TouchableOpacity>
-        )}
       </View>
     </View>
   );
@@ -298,77 +260,123 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.bg,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
   content: {
     flex: 1,
-    alignItems: 'center',
+    padding: 16,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+  },
+  statusCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   iconContainer: {
-    marginBottom: 32,
-  },
-  iconCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 24,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '900',
+  iconPending: {
+    backgroundColor: COLORS.info,
+  },
+  iconSuccess: {
+    backgroundColor: COLORS.success,
+  },
+  iconFailed: {
+    backgroundColor: COLORS.danger,
+  },
+  statusTitle: {
+    fontSize: 24,
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: 12,
     textAlign: 'center',
   },
-  message: {
+  statusMessage: {
     fontSize: 16,
     color: COLORS.textLight,
     textAlign: 'center',
-    marginBottom: 32,
     lineHeight: 24,
-  },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: COLORS.info + '15',
-    padding: 16,
-    borderRadius: 12,
     marginBottom: 32,
-    width: '100%',
-    maxWidth: 400,
   },
-  infoText: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 14,
+  detailsCard: {
+    width: '100%',
+    backgroundColor: COLORS.bg,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  detailsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
     color: COLORS.text,
-    lineHeight: 20,
+    marginBottom: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  detailLabel: {
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  buttonContainer: {
+    width: '100%',
+    gap: 12,
   },
   button: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
-    paddingHorizontal: 32,
     borderRadius: 12,
     gap: 8,
-    width: '100%',
-    maxWidth: 400,
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
+  },
+  successButton: {
+    backgroundColor: COLORS.success,
   },
   buttonText: {
     fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.white,
-  },
-  manualButton: {
-    marginTop: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  manualButtonText: {
-    fontSize: 14,
     fontWeight: '600',
-    color: COLORS.primary,
+    color: COLORS.white,
   },
 });

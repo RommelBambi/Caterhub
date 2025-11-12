@@ -45,7 +45,7 @@ export default function PaymentsPage() {
 
   const fetchPayments = async () => {
     try {
-      // Fetch bookings with payment data from PayMongo integration
+      // Fetch bookings with payment data from Xendit integration
       const { data: bookings, error } = await supabase
         .from('bookings')
         .select(`
@@ -74,7 +74,7 @@ export default function PaymentsPage() {
         return;
       }
 
-      // Transform bookings into payment records with real PayMongo data
+      // Transform bookings into payment records with real Xendit data
       const transformedPayments: Payment[] = (bookings || []).map((booking: any) => {
         let amount = 0;
         if (booking.packages?.price) {
@@ -87,7 +87,7 @@ export default function PaymentsPage() {
           amount = pricePerHead * booking.guests;
         }
 
-        // Use actual payment_status from database (set by PayMongo integration)
+        // Use actual payment_status from database (set by Xendit integration)
         let paymentStatus: 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED' = 
           booking.payment_status || 'PENDING';
 

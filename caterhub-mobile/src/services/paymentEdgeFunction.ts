@@ -1,6 +1,6 @@
 /**
  * Payment Edge Function Service
- * Calls Supabase Edge Function for secure payment processing
+ * Calls Supabase Edge Function for secure payment processing with Xendit
  * This keeps the secret key on the server, not in the mobile app
  */
 
@@ -8,31 +8,40 @@ import { supabase } from './supabase';
 
 // Supabase URL - hardcoded for now (can be moved to env if needed)
 const SUPABASE_URL = 'https://qiudzzioqgdusoyylktr.supabase.co';
-const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/create-payment`;
-const CHECK_PAYMENT_STATUS_URL = `${SUPABASE_URL}/functions/v1/check-payment-status`;
+const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/create-xendit-payment`;
+const CHECK_PAYMENT_STATUS_URL = `${SUPABASE_URL}/functions/v1/check-xendit-payment-status`;
 
 export interface CreatePaymentRequest {
-  amount: number; // in centavos
+  amount: number; // in PHP (not centavos for Xendit)
   currency?: 'PHP';
   description: string;
   bookingId: string;
   userId: string;
-  paymentMethod: 'gcash' | 'paymaya' | 'grab_pay' | 'card';
+  paymentMethod: 'gcash' | 'paymaya' | 'grabpay' | 'invoice';
+  customerInfo?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+  };
   returnUrl?: string;
 }
 
 export interface CreatePaymentResponse {
   success: boolean;
-  paymentIntentId: string;
-  paymentSourceId?: string | null;
+  type: 'invoice' | 'ewallet';
+  invoiceId?: string;
+  chargeId?: string;
+  externalId?: string;
+  referenceId?: string;
   checkoutUrl: string;
-  clientKey?: string;
+  status?: string;
+  expiryDate?: string;
   message?: string;
 }
 
 /**
  * Create payment via Supabase Edge Function
- * This is more secure than calling PayMongo directly from mobile app
+ * This is more secure than calling Xendit directly from mobile app
  */
 export async function createPaymentViaEdgeFunction(
   request: CreatePaymentRequest

@@ -1,23 +1,23 @@
 /**
- * Diagnostic utility to check if PayMongo keys are loaded correctly
+ * Diagnostic utility to check if Xendit keys are loaded correctly
  * Call this from your app to verify environment variables are working
  */
 
-export function checkPayMongoKeys() {
-  const publicKey = process.env.EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY || '';
-  const secretKey = process.env.PAYMONGO_SECRET_KEY || '';
+export function checkXenditKeys() {
+  const publicKey = process.env.EXPO_PUBLIC_XENDIT_PUBLIC_KEY || '';
+  const secretKey = process.env.XENDIT_SECRET_KEY || '';
 
   console.log('========================================');
-  console.log('PayMongo Keys Diagnostic');
+  console.log('Xendit Keys Diagnostic');
   console.log('========================================');
   
   if (publicKey) {
     console.log('✅ Public Key found:', publicKey.substring(0, 20) + '...');
-    console.log('   Key type:', publicKey.startsWith('pk_test_') ? 'TEST' : publicKey.startsWith('pk_live_') ? 'LIVE' : 'UNKNOWN');
+    console.log('   Key type:', publicKey.startsWith('xnd_public_development') ? 'TEST' : publicKey.startsWith('xnd_public_production') ? 'LIVE' : 'UNKNOWN');
   } else {
     console.error('❌ Public Key NOT FOUND');
     console.error('   Make sure your .env file has:');
-    console.error('   EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY=pk_test_...');
+    console.error('   EXPO_PUBLIC_XENDIT_PUBLIC_KEY=xnd_public_development_...');
   }
 
   if (secretKey) {
@@ -35,7 +35,6 @@ export function checkPayMongoKeys() {
   return {
     hasPublicKey: !!publicKey,
     hasSecretKey: !!secretKey,
-    publicKeyType: publicKey.startsWith('pk_test_') ? 'TEST' : publicKey.startsWith('pk_live_') ? 'LIVE' : 'UNKNOWN',
+    publicKeyType: publicKey.startsWith('xnd_public_development') ? 'TEST' : publicKey.startsWith('xnd_public_production') ? 'LIVE' : 'UNKNOWN',
   };
 }
-

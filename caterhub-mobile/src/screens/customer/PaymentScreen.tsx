@@ -14,11 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../store/auth';
 import {
-  toPayMongoAmount,
-} from '../../services/paymongo';
+  toXenditAmount,
+} from '../../services/xendit';
 import { createPaymentViaEdgeFunction } from '../../services/paymentEdgeFunction';
 import { supabase } from '../../services/supabase';
-import { checkPayMongoKeys } from '../../utils/checkPayMongoKeys';
+import { checkXenditKeys } from '../../utils/checkXenditKeys';
 import { diagnoseEnvironment } from '../../utils/diagnoseEnv';
 
 const COLORS = {
@@ -32,7 +32,7 @@ const COLORS = {
   danger: '#dc2626',
 };
 
-type PaymentMethod = 'gcash' | 'paymaya';
+type PaymentMethod = 'gcash' | 'paymaya' | 'invoice';
 
 export default function PaymentScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -47,18 +47,19 @@ export default function PaymentScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
 
-  // Check PayMongo keys and environment on mount (for debugging)
+  // Check Xendit keys and environment on mount (for debugging)
   React.useEffect(() => {
     if (__DEV__) {
       console.log('\n🔍 Running environment diagnostic...\n');
       diagnoseEnvironment();
-      checkPayMongoKeys();
+      checkXenditKeys();
     }
   }, []);
 
   const paymentMethods = [
     { id: 'gcash', name: 'GCash', icon: 'wallet', color: '#007DFF', description: 'Pay via GCash e-wallet' },
     { id: 'paymaya', name: 'PayMaya', icon: 'card', color: '#00D632', description: 'Pay via PayMaya e-wallet' },
+    { id: 'invoice', name: 'More Options', icon: 'options', color: '#6366f1', description: 'GCash, PayMaya, Bank Transfer & more' },
   ];
 
   const handlePayment = async () => {
@@ -69,19 +70,19 @@ export default function PaymentScreen({ route, navigation }: any) {
 
     // Only online payments allowed for deposit
 
-    // Handle online payment with PayMongo
+    // Handle online payment with Xendit
     try {
       setLoading(true);
       setProcessingPayment(true);
 
-      // Check if deposit amount exceeds PayMongo limit (₱100,000 = 10,000,000 centavos)
-      const payMongoAmount = toPayMongoAmount(depositAmount);
-      const MAX_AMOUNT = 10000000; // ₱100,000 in centavos
+      // Check if deposit amount exceeds Xendit limit (₱1,000,000)
+      const xenditAmount = toXenditAmount(depositAmount);
+      const MAX_AMOUNT = 1000000; // ₱1,000,000 limit for Xendit
       
-      if (payMongoAmount > MAX_AMOUNT) {
+      if (xenditAmount > MAX_AMOUNT) {
         Alert.alert(
           'Amount Too Large',
-          `PayMongo has a maximum transaction limit of ₱100,000. Your deposit amount is ₱${depositAmount.toLocaleString()}. Please contact us directly for large bookings.`,
+          `Xendit has a maximum transaction limit of ₱1,000,000. Your deposit amount is ₱${depositAmount.toLocaleString()}. Please contact us directly for large bookings.`,
           [
             {
               text: 'OK',
@@ -95,19 +96,23 @@ export default function PaymentScreen({ route, navigation }: any) {
       }
 
       // Use Edge Function for secure payment processing
-      let returnUrl = 'https://www.paymongo.com/success';
+      let returnUrl = `https://qiudzzioqgdusoyylktr.supabase.co/functions/v1/xendit-redirect?status=success&booking_id=${bookingId}`;
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         returnUrl = window.location.origin + '/payment/success';
       }
 
       console.log('Creating payment via Edge Function...');
       const paymentResponse = await createPaymentViaEdgeFunction({
-        amount: payMongoAmount,
+        amount: xenditAmount,
         currency: 'PHP',
         description: `Deposit (50%) - ${description || `Booking #${bookingId}`}`,
-          bookingId: bookingId.toString(),
-          userId: user?.id || '',
+        bookingId: bookingId.toString(),
+        userId: user?.id || '',
         paymentMethod: selectedMethod,
+        customerInfo: {
+          name: user?.email || 'Customer',
+          email: user?.email || '',
+        },
         returnUrl,
       });
 
@@ -117,10 +122,11 @@ export default function PaymentScreen({ route, navigation }: any) {
         await supabase
           .from('bookings')
           .update({
-            payment_method: selectedMethod,
+            payment_method: selectedMethod === 'invoice' ? 'xendit_invoice' : selectedMethod,
             payment_status: 'PENDING',
-          payment_intent_id: paymentResponse.paymentIntentId,
-          payment_source_id: paymentResponse.paymentSourceId || null,
+            xendit_invoice_id: paymentResponse.invoiceId || null,
+            xendit_charge_id: paymentResponse.chargeId || null,
+            xendit_external_id: paymentResponse.externalId || paymentResponse.referenceId || null,
             deposit_paid: false, // Will be updated when payment succeeds
             remaining_paid: false,
           })
@@ -137,9 +143,9 @@ export default function PaymentScreen({ route, navigation }: any) {
           // Show instructions and navigate to pending screen
           Alert.alert(
             'Complete Payment',
-            'You will be redirected to Chrome to complete your payment.\n\n' +
+            'You will be redirected to your browser to complete your payment via Xendit.\n\n' +
             'After completing payment:\n' +
-            '1. You may see an error page - that\'s normal!\n' +
+            '1. You may see a confirmation page\n' +
             '2. Close that page and return to this app\n' +
             '3. We\'ll automatically verify your payment',
             [
@@ -148,8 +154,9 @@ export default function PaymentScreen({ route, navigation }: any) {
                 onPress: () => {
                   navigation.navigate('PaymentPending', {
                     bookingId,
-                    paymentIntentId: paymentResponse.paymentIntentId,
-                    paymentSourceId: paymentResponse.paymentSourceId || null,
+                    invoiceId: paymentResponse.invoiceId,
+                    chargeId: paymentResponse.chargeId,
+                    externalId: paymentResponse.externalId || paymentResponse.referenceId,
                   });
                 },
               },
@@ -162,8 +169,8 @@ export default function PaymentScreen({ route, navigation }: any) {
         throw new Error('No checkout URL received from payment service');
       }
     } catch (error: any) {
-      console.error('Payment error:', error);
-      Alert.alert('Payment Failed', error.message || 'Failed to process payment. Please try again.');
+      console.error('Xendit payment error:', error);
+      Alert.alert('Payment Failed', error.message || 'Failed to process payment with Xendit. Please try again.');
     } finally {
       setLoading(false);
       setProcessingPayment(false);
@@ -240,7 +247,7 @@ export default function PaymentScreen({ route, navigation }: any) {
           <View style={styles.infoCard}>
             <Ionicons name="information-circle" size={20} color={COLORS.primary} />
             <Text style={styles.infoText}>
-              You will be redirected to Chrome to complete your 50% deposit payment securely. Please return to the app after completing the payment.
+              You will be redirected to your browser to complete your 50% deposit payment securely via Xendit. Please return to the app after completing the payment.
             </Text>
           </View>
         )}

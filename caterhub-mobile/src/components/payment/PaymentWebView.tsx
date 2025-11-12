@@ -48,9 +48,9 @@ export default function PaymentWebView({
     
     // Check if payment is complete (success URLs)
     if (
-      url.includes('paymongo.com/success') ||
+      url.includes('xendit-redirect') && url.includes('status=success') ||
       url.includes('payment/success') ||
-      url.includes('success') && url.includes('paymongo')
+      url.includes('success') && (url.includes('xendit') || url.includes('supabase'))
     ) {
       console.log('[PaymentWebView] Payment success detected');
       onPaymentComplete();
@@ -59,9 +59,9 @@ export default function PaymentWebView({
 
     // Check if payment failed
     if (
-      url.includes('paymongo.com/failed') ||
+      url.includes('xendit-redirect') && url.includes('status=failed') ||
       url.includes('payment/failed') ||
-      url.includes('failed') && url.includes('paymongo')
+      url.includes('failed') && (url.includes('xendit') || url.includes('supabase'))
     ) {
       console.log('[PaymentWebView] Payment failed detected');
       onPaymentFailed();
@@ -118,16 +118,18 @@ export default function PaymentWebView({
             domStorageEnabled={true}
             startInLoadingState={true}
             scalesPageToFit={true}
-            // Allow navigation to external apps (for GCash app)
+            // Allow navigation to external apps (for payment providers)
             onShouldStartLoadWithRequest={(request) => {
               const url = request.url.toLowerCase();
               
-              // Allow PayMongo and GCash URLs
+              // Allow Xendit, GCash, PayMaya, and Supabase URLs
               if (
-                url.includes('paymongo.com') ||
+                url.includes('xendit.co') ||
                 url.includes('gcash.com') ||
                 url.includes('gcash.app') ||
-                url.includes('secure-authentication.paymongo.com')
+                url.includes('paymaya.com') ||
+                url.includes('supabase.co') ||
+                url.includes('checkout.xendit.co')
               ) {
                 return true;
               }
