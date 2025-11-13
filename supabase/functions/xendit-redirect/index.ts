@@ -1,5 +1,5 @@
-// Supabase Edge Function for PayMongo Redirect Handler
-// Deploy: supabase functions deploy paymongo-redirect
+// Supabase Edge Function for Xendit Redirect Handler
+// Deploy: supabase functions deploy xendit-redirect
 
 // @ts-ignore - Deno is available in Supabase Edge Functions runtime
 Deno.serve(async (req) => {
@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
     const status = url.searchParams.get('status')
     const bookingId = url.searchParams.get('booking_id')
 
-    console.log('PayMongo redirect received:', { status, bookingId })
+    console.log('Xendit redirect received:', { status, bookingId })
 
     // Create a simple HTML page that redirects back to the app
     const html = `
@@ -84,14 +84,28 @@ Deno.serve(async (req) => {
               font-size: 14px;
               color: #64748b;
             }
+            .logo {
+              width: 80px;
+              height: 80px;
+              margin: 0 auto 20px;
+              background: #FF8000;
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: white;
+              font-weight: bold;
+              font-size: 18px;
+            }
           </style>
         </head>
         <body>
           <div class="container">
+            <div class="logo">CH</div>
             ${status === 'success' ? `
               <div class="icon success">✓</div>
               <h1>Payment Successful!</h1>
-              <p>Your deposit payment has been processed successfully. You can now close this window and return to the app.</p>
+              <p>Your deposit payment has been processed successfully via Xendit. You can now close this window and return to the CaterHub app.</p>
             ` : `
               <div class="icon failed">✗</div>
               <h1>Payment Failed</h1>
@@ -101,11 +115,11 @@ Deno.serve(async (req) => {
             <div class="info">
               ${status === 'success' 
                 ? 'Your booking is confirmed. Check your app for details.' 
-                : 'No charges were made to your account.'}
+                : 'No charges were made to your account. You can try a different payment method.'}
             </div>
             
             <p style="margin-top: 24px; font-size: 14px;">
-              You can close this window now.
+              You can close this window now and return to CaterHub.
             </p>
           </div>
           
@@ -120,9 +134,16 @@ Deno.serve(async (req) => {
               window.ReactNativeWebView.postMessage(JSON.stringify({
                 type: 'payment_redirect',
                 status: '${status}',
-                bookingId: '${bookingId}'
+                bookingId: '${bookingId}',
+                provider: 'xendit'
               }));
             }
+            
+            // Try to redirect to app deep link
+            setTimeout(() => {
+              const deepLink = 'caterhub://payment/${status}?bookingId=${bookingId}';
+              window.location.href = deepLink;
+            }, 2000);
           </script>
         </body>
       </html>
@@ -135,7 +156,7 @@ Deno.serve(async (req) => {
       },
     })
   } catch (error) {
-    console.error('Error in paymongo-redirect:', error)
+    console.error('Error in xendit-redirect:', error)
     
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred'
     
