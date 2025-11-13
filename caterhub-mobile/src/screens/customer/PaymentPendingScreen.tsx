@@ -140,7 +140,11 @@ export default function PaymentPendingScreen({ route, navigation }: any) {
   };
 
   const handleViewBooking = () => {
-    navigation.navigate('BookingDetails', { bookingId });
+    // Navigate to Bookings tab first, then to BookingDetails
+    navigation.navigate('Bookings', {
+      screen: 'BookingDetails',
+      params: { bookingId }
+    });
   };
 
   return (

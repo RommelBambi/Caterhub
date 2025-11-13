@@ -83,7 +83,11 @@ export default function NotificationsScreen({ navigation, userRole = 'customer' 
           // Navigate to caterer order details (would need to fetch full order data)
           console.log('Navigate to caterer order details:', notification.related_id);
         } else if (userRole === 'customer') {
-          navigation.navigate('BookingDetails', { bookingId: notification.related_id });
+          // Navigate to Bookings tab first, then to BookingDetails
+          navigation.navigate('Bookings', {
+            screen: 'BookingDetails',
+            params: { bookingId: notification.related_id }
+          });
         }
       }
     }
