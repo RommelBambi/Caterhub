@@ -70,9 +70,12 @@ export default function PaymentsPage() {
 
       if (error) {
         console.error('Error fetching payments:', error);
-        Alert.alert('Error', 'Failed to load payments');
+        Alert.alert('Error', error?.message || 'Failed to load payments. Please check your connection and try again.');
+        setPayments([]);
         return;
       }
+
+      console.log(`Found ${bookings?.length || 0} bookings to process for payments`);
 
       // Transform bookings into payment records with real Xendit data
       const transformedPayments: Payment[] = (bookings || []).map((booking: any) => {
@@ -118,6 +121,7 @@ export default function PaymentsPage() {
       });
 
       setPayments(transformedPayments);
+      console.log(`Processed ${transformedPayments.length} payment records`);
     } catch (error) {
       console.error('Error:', error);
       Alert.alert('Error', 'Failed to load payments');

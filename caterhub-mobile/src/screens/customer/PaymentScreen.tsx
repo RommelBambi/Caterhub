@@ -38,17 +38,18 @@ type PaymentMethod = 'gcash' | 'paymaya' | 'invoice';
 export default function PaymentScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { bookingId, amount, description } = route.params;
+  const { bookingId, amount, description, isRemainingPayment = false } = route.params;
   
-  // Calculate deposit (50%) and remaining (50%)
-  const depositAmount = Math.round(amount / 2);
-  const remainingAmount = amount - depositAmount;
+  // Calculate deposit (50%) and remaining (50%) - unless this is a remaining payment
+  const depositAmount = isRemainingPayment ? 0 : Math.round(amount / 2);
+  const remainingAmount = isRemainingPayment ? amount : (amount - depositAmount);
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [loading, setLoading] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [showPaymentWebView, setShowPaymentWebView] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState('');
+  const [paymentResponse, setPaymentResponse] = useState<any>(null);
 
   // Check Xendit keys and environment on mount (for debugging)
   React.useEffect(() => {
@@ -78,14 +79,15 @@ export default function PaymentScreen({ route, navigation }: any) {
       setLoading(true);
       setProcessingPayment(true);
 
-      // Check if deposit amount exceeds Xendit limit (₱1,000,000)
-      const xenditAmount = toXenditAmount(depositAmount);
+      // Check if payment amount exceeds Xendit limit (₱1,000,000)
+      const paymentAmount = isRemainingPayment ? remainingAmount : depositAmount;
+      const xenditAmount = toXenditAmount(paymentAmount);
       const MAX_AMOUNT = 1000000; // ₱1,000,000 limit for Xendit
       
       if (xenditAmount > MAX_AMOUNT) {
         Alert.alert(
           'Amount Too Large',
-          `Xendit has a maximum transaction limit of ₱1,000,000. Your deposit amount is ₱${depositAmount.toLocaleString()}. Please contact us directly for large bookings.`,
+          `Xendit has a maximum transaction limit of ₱1,000,000. Your payment amount is ₱${paymentAmount.toLocaleString()}. Please contact us directly for large bookings.`,
           [
             {
               text: 'OK',
@@ -108,7 +110,9 @@ export default function PaymentScreen({ route, navigation }: any) {
       const paymentResponse = await createPaymentViaEdgeFunction({
         amount: xenditAmount,
         currency: 'PHP',
-        description: `Deposit (50%) - ${description || `Booking #${bookingId}`}`,
+        description: isRemainingPayment 
+          ? `Remaining Balance (50%) - ${description || `Booking #${bookingId}`}`
+          : `Deposit (50%) - ${description || `Booking #${bookingId}`}`,
         bookingId: bookingId.toString(),
         userId: user?.id || '',
         paymentMethod: selectedMethod,
@@ -120,19 +124,29 @@ export default function PaymentScreen({ route, navigation }: any) {
       });
 
       console.log('Payment created via Edge Function:', paymentResponse);
+      setPaymentResponse(paymentResponse);
 
-        // Update booking with deposit payment info
+        // Update booking with payment info
+        const updateData: any = {
+          payment_method: selectedMethod === 'invoice' ? 'xendit_invoice' : selectedMethod,
+          payment_status: 'PENDING',
+          xendit_invoice_id: paymentResponse.invoiceId || null,
+          xendit_charge_id: paymentResponse.chargeId || null,
+          xendit_external_id: paymentResponse.externalId || paymentResponse.referenceId || null,
+        };
+
+        if (isRemainingPayment) {
+          // For remaining payment, don't update deposit status
+          updateData.remaining_paid = false; // Will be updated when payment succeeds
+        } else {
+          // For deposit payment
+          updateData.deposit_paid = false; // Will be updated when payment succeeds
+          updateData.remaining_paid = false;
+        }
+
         await supabase
           .from('bookings')
-          .update({
-            payment_method: selectedMethod === 'invoice' ? 'xendit_invoice' : selectedMethod,
-            payment_status: 'PENDING',
-            xendit_invoice_id: paymentResponse.invoiceId || null,
-            xendit_charge_id: paymentResponse.chargeId || null,
-            xendit_external_id: paymentResponse.externalId || paymentResponse.referenceId || null,
-            deposit_paid: false, // Will be updated when payment succeeds
-            remaining_paid: false,
-          })
+          .update(updateData)
           .eq('id', bookingId);
 
       // Open checkout URL in WebView
@@ -252,7 +266,10 @@ export default function PaymentScreen({ route, navigation }: any) {
           ) : (
             <>
               <Text style={styles.payButtonText}>
-                Pay Deposit (₱{depositAmount.toLocaleString()})
+                {isRemainingPayment 
+                  ? `Pay Remaining (₱${remainingAmount.toLocaleString()})`
+                  : `Pay Deposit (₱${depositAmount.toLocaleString()})`
+                }
               </Text>
               <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
             </>
@@ -279,11 +296,11 @@ export default function PaymentScreen({ route, navigation }: any) {
           };
           
           try {
-            // Only add these if paymentInfo exists
-            if (paymentInfo) {
-              params.chargeId = paymentInfo.chargeId || null;
-              params.invoiceId = paymentInfo.invoiceId || null;
-              params.externalId = paymentInfo.externalId || paymentInfo.referenceId || null;
+            // Only add these if paymentResponse exists
+            if (paymentResponse) {
+              params.chargeId = paymentResponse.chargeId || null;
+              params.invoiceId = paymentResponse.invoiceId || null;
+              params.externalId = paymentResponse.externalId || paymentResponse.referenceId || null;
             }
           } catch (err) {
             console.log('Error accessing payment info:', err);

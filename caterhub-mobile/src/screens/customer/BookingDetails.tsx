@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { fetchBookingDetails, cancelBooking } from '../../services/api';
 import { useAuth } from '../../store/auth';
 import { hasUserReviewed } from '../../services/reviews';
+import ReportIssueModal from '../../components/common/ReportIssueModal';
 
 const BookingDetails = ({ route, navigation }: any) => {
   const { bookingId } = route.params;
@@ -22,6 +23,7 @@ const BookingDetails = ({ route, navigation }: any) => {
   const [error, setError] = useState<string | null>(null);
   const [canceling, setCanceling] = useState(false);
   const [hasReviewed, setHasReviewed] = useState(false);
+  const [reportIssueModalVisible, setReportIssueModalVisible] = useState(false);
 
   // Fetch booking details
   const loadDetails = async () => {
@@ -68,6 +70,67 @@ const BookingDetails = ({ route, navigation }: any) => {
             } finally {
               setCanceling(false);
             }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleEarlyPayment = () => {
+    // Navigate to payment screen for remaining balance
+    navigation.navigate('Payment', {
+      bookingId: booking.id,
+      amount: remainingAmount,
+      depositAmount: 0, // No deposit, just remaining
+      remainingAmount: remainingAmount,
+      description: `Remaining Balance - ${booking.packages?.business_name || 'Catering Service'}`,
+      isRemainingPayment: true
+    });
+  };
+
+  const handleReportIssue = () => {
+    setReportIssueModalVisible(true);
+  };
+
+  const handleReportIssueSuccess = () => {
+    // Optionally refresh booking details or show additional success actions
+    Alert.alert(
+      'Issue Reported',
+      'Thank you for reporting this issue. Our support team will review it and contact you soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleRefundRequest = () => {
+    const eventDate = new Date(booking.event_date);
+    const currentDate = new Date();
+    const daysUntilEvent = Math.ceil((eventDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    let message = 'Are you sure you want to request a refund and cancel this booking?';
+    let warningMessage = '';
+    
+    if (daysUntilEvent <= 7) {
+      warningMessage = '\n\n⚠️ WARNING: Cancellations within 7 days of the event may not be fully refundable. Refund amount will be determined based on our cancellation policy.';
+    } else {
+      warningMessage = '\n\n✅ Good news: Since your event is more than 7 days away, you may be eligible for a full refund.';
+    }
+    
+    Alert.alert(
+      'Request Refund',
+      message + warningMessage,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => {
+            // For now, show contact information
+            // Later this can navigate to a refund request form
+            Alert.alert(
+              'Refund Request',
+              `We'll process your refund request for booking #${booking.id}.\n\nPlease contact our support team:\nEmail: support@caterhub.com\nPhone: +63 123 456 7890\n\nInclude your booking ID for faster processing.`,
+              [{ text: 'OK' }]
+            );
           },
         },
       ]
@@ -245,12 +308,45 @@ const BookingDetails = ({ route, navigation }: any) => {
                 </View>
               )}
 
-              {/* Show ON THE WAY status */}
+              {/* Enhanced Status Display */}
               {b.status === 'ON_THE_WAY' && (
-                <View style={[styles.row, { backgroundColor: '#fef3c7', padding: 8, borderRadius: 6, marginTop: 4 }]}>
-                  <Ionicons name="car" size={18} color="#f59e0b" />
-                  <Text style={[styles.label, { color: '#f59e0b', fontWeight: '600' }]}>
-                    Caterer is on the way!
+                <View style={[styles.statusAlert, { backgroundColor: '#fef3c7', borderColor: '#f59e0b' }]}>
+                  <View style={styles.statusHeader}>
+                    <Ionicons name="car" size={20} color="#f59e0b" />
+                    <Text style={[styles.statusTitle, { color: '#f59e0b' }]}>
+                      Caterer is on the way!
+                    </Text>
+                  </View>
+                  <Text style={styles.statusSubtitle}>
+                    Your caterer is en route to your location. Please prepare the venue.
+                  </Text>
+                </View>
+              )}
+              
+              {b.status === 'PENDING' && depositPaid && (
+                <View style={[styles.statusAlert, { backgroundColor: '#fef3c7', borderColor: '#f59e0b' }]}>
+                  <View style={styles.statusHeader}>
+                    <Ionicons name="time" size={20} color="#f59e0b" />
+                    <Text style={[styles.statusTitle, { color: '#f59e0b' }]}>
+                      Awaiting Caterer Confirmation
+                    </Text>
+                  </View>
+                  <Text style={styles.statusSubtitle}>
+                    Your deposit has been paid. The caterer will review your booking and set the delivery fee before confirming.
+                  </Text>
+                </View>
+              )}
+
+              {b.status === 'CONFIRMED' && (
+                <View style={[styles.statusAlert, { backgroundColor: '#f0fdf4', borderColor: '#22c55e' }]}>
+                  <View style={styles.statusHeader}>
+                    <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+                    <Text style={[styles.statusTitle, { color: '#22c55e' }]}>
+                      Booking Confirmed!
+                    </Text>
+                  </View>
+                  <Text style={styles.statusSubtitle}>
+                    Your booking is confirmed with delivery fee set. The caterer will contact you closer to the event date.
                   </Text>
                 </View>
               )}
@@ -286,16 +382,40 @@ const BookingDetails = ({ route, navigation }: any) => {
                   )}
                   
                   {remainingAmount > 0 && (
-                    <View style={styles.row}>
-                      <Ionicons 
-                        name={remainingPaid ? "checkmark-circle" : "time-outline"} 
-                        size={18} 
-                        color={remainingPaid ? "#22c55e" : "#f59e0b"} 
-                      />
-                      <Text style={styles.label}>
-                        Remaining (50%): {formatCurrency(remainingAmount)}
-                        {remainingPaid ? ` - Paid (${b.remaining_paid_method || 'cash'})` : ' - Pay during event'}
-                      </Text>
+                    <View>
+                      <View style={styles.row}>
+                        <Ionicons 
+                          name={remainingPaid ? "checkmark-circle" : "time-outline"} 
+                          size={18} 
+                          color={remainingPaid ? "#22c55e" : "#f59e0b"} 
+                        />
+                        <Text style={styles.label}>
+                          Remaining (50%): {formatCurrency(remainingAmount)}
+                          {remainingPaid ? ` - Paid (${b.remaining_paid_method || 'cash'})` : ' - Pay during event'}
+                        </Text>
+                      </View>
+                      
+                      {/* Early Payment Option */}
+                      {!remainingPaid && depositPaid && (b.status === 'CONFIRMED' || b.status === 'ON_THE_WAY') && (
+                        <View style={styles.earlyPaymentCard}>
+                          <View style={styles.earlyPaymentHeader}>
+                            <Ionicons name="card" size={18} color="#FF8000" />
+                            <Text style={styles.earlyPaymentTitle}>Pay Early (Optional)</Text>
+                          </View>
+                          <Text style={styles.earlyPaymentSubtitle}>
+                            You can pay the remaining balance now instead of during the event
+                          </Text>
+                          <Button
+                            mode="contained"
+                            buttonColor="#FF8000"
+                            textColor="#fff"
+                            style={styles.earlyPaymentButton}
+                            onPress={() => handleEarlyPayment()}
+                          >
+                            Pay Remaining {formatCurrency(remainingAmount)}
+                          </Button>
+                        </View>
+                      )}
                     </View>
                   )}
                 </>
@@ -411,23 +531,51 @@ const BookingDetails = ({ route, navigation }: any) => {
           </Card>
         )}
 
-        {/* Cancel Button */}
-        {b.status !== 'CANCELLED' &&
-          b.status !== 'COMPLETED' &&
-          b.status !== 'DECLINED' && (
+        {/* Action Buttons */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>Need Help?</Text>
+            
+            {/* Report/Support Ticket */}
             <Button
-              mode="contained"
-              buttonColor="#ef4444"
-              textColor="#fff"
-              style={styles.cancelBtn}
-              loading={canceling}
-              disabled={canceling}
-              onPress={handleCancelBooking}
+              mode="outlined"
+              buttonColor="transparent"
+              textColor="#6b7280"
+              style={[styles.actionButton, { borderColor: '#d1d5db' }]}
+              icon="flag"
+              onPress={() => handleReportIssue()}
             >
-              Cancel Booking
+              Report an Issue
             </Button>
-          )}
+            
+            {/* Refund/Cancel with Warning */}
+            {b.status !== 'CANCELLED' &&
+              b.status !== 'COMPLETED' &&
+              b.status !== 'DECLINED' && (
+                <Button
+                  mode="outlined"
+                  buttonColor="transparent"
+                  textColor="#ef4444"
+                  style={[styles.actionButton, { borderColor: '#fecaca', marginTop: 8 }]}
+                  icon="close-circle"
+                  loading={canceling}
+                  disabled={canceling}
+                  onPress={handleRefundRequest}
+                >
+                  Request Refund/Cancel
+                </Button>
+              )}
+          </Card.Content>
+        </Card>
       </ScrollView>
+
+      {/* Report Issue Modal */}
+      <ReportIssueModal
+        visible={reportIssueModalVisible}
+        onClose={() => setReportIssueModalVisible(false)}
+        bookingId={booking?.id}
+        onSuccess={handleReportIssueSuccess}
+      />
     </View>
   );
 };
@@ -489,6 +637,60 @@ const styles = StyleSheet.create({
   receiptAmount: { fontSize: 15, color: '#111827', fontWeight: '600' },
   receiptTotalLabel: { fontSize: 16 },
   receiptTotalValue: { fontSize: 16, color: '#FF8000' },
+  
+  // New styles for enhanced features
+  statusAlert: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  statusTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  statusSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginLeft: 28,
+  },
+  earlyPaymentCard: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#fff5e6',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+  },
+  earlyPaymentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  earlyPaymentTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FF8000',
+  },
+  earlyPaymentSubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 8,
+  },
+  earlyPaymentButton: {
+    borderRadius: 6,
+  },
+  actionButton: {
+    borderRadius: 8,
+    marginVertical: 2,
+  },
 });
 
 export default BookingDetails;

@@ -12,6 +12,7 @@ import PaymentsPage from '../../components/admin/PaymentsPage';
 import AnalyticsPage from '../../components/admin/AnalyticsPage';
 import SettingsPage from '../../components/admin/SettingsPage';
 import RefundsPage from '../../components/admin/RefundsPage';
+import TicketsPage from '../../components/admin/TicketsPage';
 import { supabase } from '../../services/supabase';
 
 const COLORS = {
@@ -102,17 +103,76 @@ export default function AdminDashboardScreen() {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [dashboardStats, setDashboardStats] = useState({
+    totalUsers: 0,
+    activeBookings: 0,
+    revenue: 0,
+    loading: true
+  });
 
   const menuItems: MenuItem[] = [
     { id: "dashboard", label: "Dashboard", icon: "grid-outline" },
     { id: "recruitment", label: "Recruitment", icon: "people-outline" },
-    { id: "bookings", label: "Bookings", icon: "calendar-outline" },
     { id: "users", label: "Users", icon: "person-outline" },
+    { id: "bookings", label: "Bookings", icon: "calendar-outline" },
+    { id: "tickets", label: "Support Tickets", icon: "help-circle-outline" },
     { id: "payments", label: "Payments", icon: "card-outline" },
-    { id: "analytics", label: "Analytics", icon: "stats-chart-outline" },
+    { id: "analytics", label: "Analytics", icon: "bar-chart-outline" },
     { id: "settings", label: "Settings", icon: "settings-outline" },
-    { id: "refunds", label: "Refunds", icon: "refresh-outline" },
+    { id: "refunds", label: "Refunds", icon: "return-down-back-outline" },
   ];
+
+  const fetchDashboardStats = async () => {
+    try {
+      // Fetch total users count
+      const { count: usersCount, error: usersError } = await supabase
+        .from('users')
+        .select('*', { count: 'exact', head: true });
+
+      if (usersError) throw usersError;
+
+      // Fetch active bookings count (this month)
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
+      const { count: bookingsCount, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', startOfMonth.toISOString())
+        .in('status', ['confirmed', 'pending']);
+
+      if (bookingsError) console.warn('Bookings fetch error:', bookingsError);
+
+      // Fetch revenue (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const { data: paymentsData, error: paymentsError } = await supabase
+        .from('payments')
+        .select('amount')
+        .gte('created_at', thirtyDaysAgo.toISOString())
+        .eq('status', 'completed');
+
+      if (paymentsError) console.warn('Payments fetch error:', paymentsError);
+
+      const totalRevenue = paymentsData?.reduce((sum, payment) => sum + (payment.amount || 0), 0) || 0;
+
+      setDashboardStats({
+        totalUsers: usersCount || 0,
+        activeBookings: bookingsCount || 0,
+        revenue: totalRevenue,
+        loading: false
+      });
+    } catch (error: any) {
+      console.error('Error fetching dashboard stats:', error);
+      setDashboardStats(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  React.useEffect(() => {
+    fetchDashboardStats();
+  }, []);
 
   const handleApproveApplication = async (applicationId: string) => {
     try {
@@ -167,17 +227,23 @@ export default function AdminDashboardScreen() {
             <View style={styles.statsGrid}>
               <View style={styles.statCard}>
                 <Text style={styles.statLabel}>Total Users</Text>
-                <Text style={[styles.statValue, { color: COLORS.primary }]}>1,234</Text>
+                <Text style={[styles.statValue, { color: COLORS.primary }]}>
+                  {dashboardStats.loading ? '...' : dashboardStats.totalUsers.toLocaleString()}
+                </Text>
                 <Text style={styles.statSub}>Registered users</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statLabel}>Active Bookings</Text>
-                <Text style={[styles.statValue, { color: COLORS.success }]}>89</Text>
+                <Text style={[styles.statValue, { color: COLORS.success }]}>
+                  {dashboardStats.loading ? '...' : dashboardStats.activeBookings.toLocaleString()}
+                </Text>
                 <Text style={styles.statSub}>This month</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statLabel}>Revenue</Text>
-                <Text style={[styles.statValue, { color: COLORS.info }]}>₱45,678</Text>
+                <Text style={[styles.statValue, { color: COLORS.info }]}>
+                  {dashboardStats.loading ? '...' : `₱${dashboardStats.revenue.toLocaleString()}`}
+                </Text>
                 <Text style={styles.statSub}>Last 30 days</Text>
               </View>
             </View>
@@ -199,6 +265,12 @@ export default function AdminDashboardScreen() {
         return (
           <View style={styles.sectionCard}>
             <UsersPage refreshTrigger={refreshTrigger} />
+          </View>
+        );
+      case "tickets":
+        return (
+          <View style={styles.sectionCard}>
+            <TicketsPage />
           </View>
         );
       case "payments":

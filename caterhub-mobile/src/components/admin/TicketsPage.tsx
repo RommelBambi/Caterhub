@@ -2,31 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl, TextInput, Modal } from 'react-native';
 import { supabase } from '../../services/supabase';
 
-interface Booking {
+interface SupportTicket {
   id: number;
   user_id: string;
-  service_id: number;
-  package_id: string | null;
-  event_date: string;
-  guests: number;
-  notes: string | null;
-  status: 'PENDING' | 'CONFIRMED' | 'DECLINED' | 'COMPLETED' | 'CANCELLED';
+  booking_id?: number;
+  subject: string;
+  description: string;
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   created_at: string;
   updated_at: string;
-  services?: {
-    id: number;
-    name: string;
-    price_per_head: number;
-  };
   users?: {
     id: string;
     username: string;
     email: string;
   };
-  packages?: {
-    id: string;
-    name: string;
-    price: string;
+  bookings?: {
+    id: number;
+    event_date: string;
+    status: string;
   };
 }
 
@@ -44,49 +38,48 @@ const COLORS = {
   warning: "#f59e0b",
 };
 
-export default function BookingsPage() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
+export default function TicketsPage() {
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<'All' | 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED'>('All');
+  const [filter, setFilter] = useState<'All' | 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
-  const fetchBookings = async () => {
+  const fetchTickets = async () => {
     try {
+      // Fetch real support tickets from the database
       const { data, error } = await supabase
-        .from('bookings')
+        .from('support_tickets')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head
-          ),
           users:user_id (
             id,
             username,
             email
           ),
-          packages:package_id (
+          bookings:booking_id (
             id,
-            name,
-            price
+            event_date,
+            status
           )
         `)
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching bookings:', error);
-        Alert.alert('Error', 'Failed to load bookings');
+        console.error('Error fetching tickets:', error);
+        Alert.alert('Error', error?.message || 'Failed to load support tickets. Please check your connection and try again.');
+        setTickets([]);
         return;
       }
 
-      setBookings(data || []);
-    } catch (error) {
-      console.error('Error:', error);
-      Alert.alert('Error', 'Failed to load bookings');
+      // Use real data from database
+      setTickets(data || []);
+      console.log(`Loaded ${data?.length || 0} support tickets`);
+    } catch (error: any) {
+      console.error('Error fetching tickets:', error);
+      Alert.alert('Error', error?.message || 'Failed to load tickets');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -94,64 +87,85 @@ export default function BookingsPage() {
   };
 
   useEffect(() => {
-    fetchBookings();
+    fetchTickets();
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchBookings();
+    fetchTickets();
   };
 
-  const updateBookingStatus = async (bookingId: number, newStatus: string) => {
+  const updateTicketStatus = async (ticketId: number, newStatus: string) => {
     try {
+      // Update ticket status in database
       const { error } = await supabase
-        .from('bookings')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', bookingId);
+        .from('support_tickets')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', ticketId);
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
+
+      // Update local state
+      setTickets(prev => prev.map(ticket => 
+        ticket.id === ticketId 
+          ? { ...ticket, status: newStatus as any, updated_at: new Date().toISOString() }
+          : ticket
+      ));
       
-      Alert.alert('Success', `Booking status updated to ${newStatus}`);
-      fetchBookings();
+      Alert.alert('Success', `Ticket status updated to ${newStatus}`);
     } catch (error: any) {
-      console.error('Error updating booking:', error);
-      Alert.alert('Error', error?.message || 'Failed to update booking');
+      console.error('Error updating ticket:', error);
+      Alert.alert('Error', error?.message || 'Failed to update ticket');
     }
   };
 
-  const handleViewBookingDetails = (booking: Booking) => {
-    setSelectedBooking(booking);
+  const handleViewTicketDetails = (ticket: SupportTicket) => {
+    setSelectedTicket(ticket);
     setDetailModalVisible(true);
   };
 
-  const filteredBookings = bookings.filter((booking) => {
-    const matchesStatus = filter === 'All' || booking.status === filter;
+  const filteredTickets = tickets.filter((ticket) => {
+    const matchesStatus = filter === 'All' || ticket.status === filter;
     const matchesSearch = !searchQuery.trim()
       ? true
-      : booking.users?.username.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
-        booking.services?.name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+      : ticket.subject.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        ticket.users?.username.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        ticket.users?.email.toLowerCase().includes(searchQuery.trim().toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'CONFIRMED': return COLORS.success;
-      case 'CANCELLED': return COLORS.danger;
-      case 'DECLINED': return COLORS.danger;
-      case 'PENDING': return COLORS.warning;
-      case 'COMPLETED': return COLORS.info;
+      case 'RESOLVED': return COLORS.success;
+      case 'CLOSED': return COLORS.textLight;
+      case 'IN_PROGRESS': return COLORS.info;
+      case 'OPEN': return COLORS.warning;
       default: return COLORS.textLight;
     }
   };
 
   const getStatusBg = (status: string) => {
     switch (status) {
-      case 'CONFIRMED': return COLORS.success + '15';
-      case 'CANCELLED': return COLORS.danger + '15';
-      case 'DECLINED': return COLORS.danger + '15';
-      case 'PENDING': return COLORS.warning + '15';
-      case 'COMPLETED': return COLORS.info + '15';
+      case 'RESOLVED': return COLORS.success + '15';
+      case 'CLOSED': return COLORS.textLight + '15';
+      case 'IN_PROGRESS': return COLORS.info + '15';
+      case 'OPEN': return COLORS.warning + '15';
       default: return COLORS.bg;
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'URGENT': return COLORS.danger;
+      case 'HIGH': return COLORS.warning;
+      case 'MEDIUM': return COLORS.info;
+      case 'LOW': return COLORS.textLight;
+      default: return COLORS.textLight;
     }
   };
 
@@ -166,71 +180,58 @@ export default function BookingsPage() {
     });
   };
 
-  const calculateTotal = (booking: Booking) => {
-    if (booking.packages?.price) {
-      const priceMatch = booking.packages.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
-      if (priceMatch) {
-        return parseFloat(priceMatch[1].replace(/,/g, ''));
-      }
-    }
-    const pricePerHead = booking.services?.price_per_head || 0;
-    return pricePerHead * booking.guests;
-  };
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading bookings...</Text>
+        <Text style={styles.loadingText}>Loading tickets...</Text>
       </View>
     );
   }
 
-  const pendingCount = bookings.filter(b => b.status === 'PENDING').length;
-  const confirmedCount = bookings.filter(b => b.status === 'CONFIRMED').length;
-  const completedCount = bookings.filter(b => b.status === 'COMPLETED').length;
-  const totalRevenue = bookings
-    .filter(b => b.status === 'COMPLETED')
-    .reduce((sum, b) => sum + calculateTotal(b), 0);
+  const openCount = tickets.filter(t => t.status === 'OPEN').length;
+  const inProgressCount = tickets.filter(t => t.status === 'IN_PROGRESS').length;
+  const resolvedCount = tickets.filter(t => t.status === 'RESOLVED').length;
+  const urgentCount = tickets.filter(t => t.priority === 'URGENT').length;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.pageTitle}>Bookings Management</Text>
+      <Text style={styles.pageTitle}>Support Tickets</Text>
       
       {/* Stats */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Total Bookings</Text>
-          <Text style={[styles.statValue, { color: COLORS.text }]}>{bookings.length}</Text>
+          <Text style={styles.statLabel}>Total Tickets</Text>
+          <Text style={[styles.statValue, { color: COLORS.text }]}>{tickets.length}</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Pending</Text>
-          <Text style={[styles.statValue, { color: COLORS.warning }]}>{pendingCount}</Text>
+          <Text style={styles.statLabel}>Open</Text>
+          <Text style={[styles.statValue, { color: COLORS.warning }]}>{openCount}</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Confirmed</Text>
-          <Text style={[styles.statValue, { color: COLORS.success }]}>{confirmedCount}</Text>
+          <Text style={styles.statLabel}>In Progress</Text>
+          <Text style={[styles.statValue, { color: COLORS.info }]}>{inProgressCount}</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Completed</Text>
-          <Text style={[styles.statValue, { color: COLORS.info }]}>{completedCount}</Text>
+          <Text style={styles.statLabel}>Resolved</Text>
+          <Text style={[styles.statValue, { color: COLORS.success }]}>{resolvedCount}</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Revenue (Completed)</Text>
-          <Text style={[styles.statValue, { color: COLORS.success }]}>₱{totalRevenue.toLocaleString()}</Text>
+          <Text style={styles.statLabel}>Urgent</Text>
+          <Text style={[styles.statValue, { color: COLORS.danger }]}>{urgentCount}</Text>
         </View>
       </View>
 
       <View style={styles.toolbar}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by customer or service"
+          placeholder="Search by subject, customer, or email"
           placeholderTextColor={COLORS.textLight}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         <View style={styles.filterGroup}>
-          {(['All', 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const).map((filterOption) => (
+          {(['All', 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const).map((filterOption) => (
             <Pressable
               key={filterOption}
               style={[
@@ -262,90 +263,84 @@ export default function BookingsPage() {
           <View style={styles.tableHeader}>
             <Text style={[styles.headerCell, styles.colId]}>ID</Text>
             <Text style={[styles.headerCell, styles.colCustomer]}>Customer</Text>
-            <Text style={[styles.headerCell, styles.colService]}>Service</Text>
-            <Text style={[styles.headerCell, styles.colDate]}>Event Date</Text>
-            <Text style={[styles.headerCell, styles.colGuests]}>Guests</Text>
-            <Text style={[styles.headerCell, styles.colTotal]}>Total</Text>
+            <Text style={[styles.headerCell, styles.colSubject]}>Subject</Text>
+            <Text style={[styles.headerCell, styles.colPriority]}>Priority</Text>
             <Text style={[styles.headerCell, styles.colStatus]}>Status</Text>
+            <Text style={[styles.headerCell, styles.colDate]}>Created</Text>
             <Text style={[styles.headerCell, styles.colActions]}>Actions</Text>
           </View>
 
-          {filteredBookings.length === 0 ? (
+          {filteredTickets.length === 0 ? (
             <View style={styles.emptyStateRow}>
               <Text style={styles.emptyStateText}>
                 {searchQuery.trim()
                   ? 'No matches found'
                   : filter === 'All'
-                    ? 'No bookings found'
-                    : `No ${filter.toLowerCase()} bookings`}
+                    ? 'No tickets found'
+                    : `No ${filter.toLowerCase()} tickets`}
               </Text>
             </View>
           ) : (
-            filteredBookings.map((booking) => (
-              <View key={booking.id} style={styles.tableRow}>
-                <Text style={[styles.cellText, styles.colId]}>#{booking.id}</Text>
+            filteredTickets.map((ticket) => (
+              <View key={ticket.id} style={styles.tableRow}>
+                <Text style={[styles.cellText, styles.colId]}>#{ticket.id}</Text>
                 <View style={[styles.cell, styles.colCustomer]}>
                   <Text style={styles.cellTextBold} numberOfLines={1}>
-                    {booking.users?.username || 'Unknown'}
+                    {ticket.users?.username || 'Unknown'}
                   </Text>
                   <Text style={styles.cellTextSmall} numberOfLines={1}>
-                    {booking.users?.email || 'N/A'}
+                    {ticket.users?.email || 'N/A'}
                   </Text>
                 </View>
-                <View style={[styles.cell, styles.colService]}>
-                  <Text style={styles.cellTextBold} numberOfLines={1}>
-                    {booking.services?.name || 'N/A'}
+                <View style={[styles.cell, styles.colSubject]}>
+                  <Text style={styles.cellTextBold} numberOfLines={2}>
+                    {ticket.subject}
                   </Text>
-                  {booking.packages && (
-                    <Text style={styles.cellTextSmall} numberOfLines={1}>
-                      📦 {booking.packages.name}
+                  {ticket.booking_id && (
+                    <Text style={styles.cellTextSmall}>
+                      Booking #{ticket.booking_id}
                     </Text>
                   )}
                 </View>
-                <Text style={[styles.cellText, styles.colDate]} numberOfLines={2}>
-                  {formatDate(booking.event_date)}
-                </Text>
-                <Text style={[styles.cellText, styles.colGuests]}>{booking.guests}</Text>
-                <Text style={[styles.cellText, styles.colTotal]}>
-                  ₱{calculateTotal(booking).toLocaleString()}
-                </Text>
-                <View style={[styles.cell, styles.colStatus]}>
-                  <View style={[styles.statusBadge, { backgroundColor: getStatusBg(booking.status) }]}>
-                    <Text style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
-                      {booking.status}
+                <View style={[styles.cell, styles.colPriority]}>
+                  <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(ticket.priority) + '15' }]}>
+                    <Text style={[styles.priorityText, { color: getPriorityColor(ticket.priority) }]}>
+                      {ticket.priority}
                     </Text>
                   </View>
                 </View>
+                <View style={[styles.cell, styles.colStatus]}>
+                  <View style={[styles.statusBadge, { backgroundColor: getStatusBg(ticket.status) }]}>
+                    <Text style={[styles.statusText, { color: getStatusColor(ticket.status) }]}>
+                      {ticket.status}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.cellText, styles.colDate]} numberOfLines={2}>
+                  {formatDate(ticket.created_at)}
+                </Text>
                 <View style={[styles.cell, styles.colActions]}>
                   <View style={styles.actionButtons}>
                     <Pressable
                       style={[styles.actionButton, styles.viewButton]}
-                      onPress={() => handleViewBookingDetails(booking)}
+                      onPress={() => handleViewTicketDetails(ticket)}
                     >
                       <Text style={styles.actionButtonText}>👁</Text>
                     </Pressable>
-                    {booking.status === 'PENDING' && (
-                      <>
-                        <Pressable
-                          style={[styles.actionButton, styles.confirmButton]}
-                          onPress={() => updateBookingStatus(booking.id, 'CONFIRMED')}
-                        >
-                          <Text style={styles.actionButtonText}>✓</Text>
-                        </Pressable>
-                        <Pressable
-                          style={[styles.actionButton, styles.declineButton]}
-                          onPress={() => updateBookingStatus(booking.id, 'DECLINED')}
-                        >
-                          <Text style={styles.actionButtonText}>✕</Text>
-                        </Pressable>
-                      </>
-                    )}
-                    {booking.status === 'CONFIRMED' && (
+                    {ticket.status === 'OPEN' && (
                       <Pressable
-                        style={[styles.actionButton, styles.completeButton]}
-                        onPress={() => updateBookingStatus(booking.id, 'COMPLETED')}
+                        style={[styles.actionButton, styles.progressButton]}
+                        onPress={() => updateTicketStatus(ticket.id, 'IN_PROGRESS')}
                       >
-                        <Text style={styles.actionButtonText}>Complete</Text>
+                        <Text style={styles.actionButtonText}>▶</Text>
+                      </Pressable>
+                    )}
+                    {(ticket.status === 'OPEN' || ticket.status === 'IN_PROGRESS') && (
+                      <Pressable
+                        style={[styles.actionButton, styles.resolveButton]}
+                        onPress={() => updateTicketStatus(ticket.id, 'RESOLVED')}
+                      >
+                        <Text style={styles.actionButtonText}>✓</Text>
                       </Pressable>
                     )}
                   </View>
@@ -356,7 +351,7 @@ export default function BookingsPage() {
         </View>
       </ScrollView>
 
-      {/* Booking Details Modal */}
+      {/* Ticket Details Modal */}
       <Modal
         visible={detailModalVisible}
         animationType="slide"
@@ -366,40 +361,40 @@ export default function BookingsPage() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Booking Details</Text>
+              <Text style={styles.modalTitle}>Ticket Details</Text>
               <Pressable onPress={() => setDetailModalVisible(false)} style={styles.closeButton}>
                 <Text style={styles.closeButtonText}>×</Text>
               </Pressable>
             </View>
 
-            {selectedBooking && (
+            {selectedTicket && (
               <ScrollView style={styles.modalScrollContent}>
-                {/* Booking Info */}
+                {/* Ticket Info */}
                 <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Booking Information</Text>
+                  <Text style={styles.modalSectionTitle}>Ticket Information</Text>
                   <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalDetailLabel}>Booking ID:</Text>
-                    <Text style={styles.modalDetailValue}>#{selectedBooking.id}</Text>
+                    <Text style={styles.modalDetailLabel}>Ticket ID:</Text>
+                    <Text style={styles.modalDetailValue}>#{selectedTicket.id}</Text>
+                  </View>
+                  <View style={styles.modalDetailRow}>
+                    <Text style={styles.modalDetailLabel}>Subject:</Text>
+                    <Text style={styles.modalDetailValue}>{selectedTicket.subject}</Text>
                   </View>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Status:</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: getStatusBg(selectedBooking.status) }]}>
-                      <Text style={[styles.statusText, { color: getStatusColor(selectedBooking.status) }]}>
-                        {selectedBooking.status}
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusBg(selectedTicket.status) }]}>
+                      <Text style={[styles.statusText, { color: getStatusColor(selectedTicket.status) }]}>
+                        {selectedTicket.status}
                       </Text>
                     </View>
                   </View>
                   <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalDetailLabel}>Event Date:</Text>
-                    <Text style={styles.modalDetailValue}>{formatDate(selectedBooking.event_date)}</Text>
-                  </View>
-                  <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalDetailLabel}>Guests:</Text>
-                    <Text style={styles.modalDetailValue}>{selectedBooking.guests}</Text>
-                  </View>
-                  <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalDetailLabel}>Total Amount:</Text>
-                    <Text style={styles.modalDetailValue}>₱{calculateTotal(selectedBooking).toLocaleString()}</Text>
+                    <Text style={styles.modalDetailLabel}>Priority:</Text>
+                    <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(selectedTicket.priority) + '15' }]}>
+                      <Text style={[styles.priorityText, { color: getPriorityColor(selectedTicket.priority) }]}>
+                        {selectedTicket.priority}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -408,47 +403,49 @@ export default function BookingsPage() {
                   <Text style={styles.modalSectionTitle}>Customer Information</Text>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Name:</Text>
-                    <Text style={styles.modalDetailValue}>{selectedBooking.users?.username || 'Unknown'}</Text>
+                    <Text style={styles.modalDetailValue}>{selectedTicket.users?.username || 'Unknown'}</Text>
                   </View>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Email:</Text>
-                    <Text style={styles.modalDetailValue}>{selectedBooking.users?.email || 'N/A'}</Text>
+                    <Text style={styles.modalDetailValue}>{selectedTicket.users?.email || 'N/A'}</Text>
                   </View>
                 </View>
 
-                {/* Service Info */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Service Information</Text>
-                  <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalDetailLabel}>Service:</Text>
-                    <Text style={styles.modalDetailValue}>{selectedBooking.services?.name || 'N/A'}</Text>
-                  </View>
-                  {selectedBooking.packages && (
-                    <View style={styles.modalDetailRow}>
-                      <Text style={styles.modalDetailLabel}>Package:</Text>
-                      <Text style={styles.modalDetailValue}>{selectedBooking.packages.name}</Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Notes */}
-                {selectedBooking.notes && (
+                {/* Booking Info */}
+                {selectedTicket.booking_id && selectedTicket.bookings && (
                   <View style={styles.modalSection}>
-                    <Text style={styles.modalSectionTitle}>Notes</Text>
-                    <Text style={styles.modalNotesText}>{selectedBooking.notes}</Text>
+                    <Text style={styles.modalSectionTitle}>Related Booking</Text>
+                    <View style={styles.modalDetailRow}>
+                      <Text style={styles.modalDetailLabel}>Booking ID:</Text>
+                      <Text style={styles.modalDetailValue}>#{selectedTicket.booking_id}</Text>
+                    </View>
+                    <View style={styles.modalDetailRow}>
+                      <Text style={styles.modalDetailLabel}>Event Date:</Text>
+                      <Text style={styles.modalDetailValue}>{formatDate(selectedTicket.bookings.event_date)}</Text>
+                    </View>
+                    <View style={styles.modalDetailRow}>
+                      <Text style={styles.modalDetailLabel}>Booking Status:</Text>
+                      <Text style={styles.modalDetailValue}>{selectedTicket.bookings.status}</Text>
+                    </View>
                   </View>
                 )}
 
-                {/* Dates */}
+                {/* Description */}
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Description</Text>
+                  <Text style={styles.modalDescriptionText}>{selectedTicket.description}</Text>
+                </View>
+
+                {/* Timestamps */}
                 <View style={styles.modalSection}>
                   <Text style={styles.modalSectionTitle}>Timestamps</Text>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Created:</Text>
-                    <Text style={styles.modalDetailValue}>{formatDate(selectedBooking.created_at)}</Text>
+                    <Text style={styles.modalDetailValue}>{formatDate(selectedTicket.created_at)}</Text>
                   </View>
                   <View style={styles.modalDetailRow}>
                     <Text style={styles.modalDetailLabel}>Last Updated:</Text>
-                    <Text style={styles.modalDetailValue}>{formatDate(selectedBooking.updated_at)}</Text>
+                    <Text style={styles.modalDetailValue}>{formatDate(selectedTicket.updated_at)}</Text>
                   </View>
                 </View>
               </ScrollView>
@@ -467,19 +464,18 @@ const styles = StyleSheet.create({
   pageTitle: {
     fontSize: 32,
     fontWeight: '900',
-    marginBottom: 24,
     color: COLORS.text,
+    marginBottom: 24,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
   },
   loadingText: {
     marginTop: 16,
+    fontSize: 16,
     color: COLORS.textLight,
-    fontSize: 14,
   },
   statsRow: {
     flexDirection: 'row',
@@ -489,41 +485,45 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    minWidth: 140,
+    minWidth: 120,
     backgroundColor: COLORS.white,
-    padding: 16,
     borderRadius: 12,
+    padding: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   statLabel: {
     fontSize: 12,
+    fontWeight: '600',
     color: COLORS.textLight,
     marginBottom: 8,
   },
   statValue: {
     fontSize: 24,
     fontWeight: '900',
+    color: COLORS.text,
   },
   toolbar: {
     flexDirection: 'row',
+    gap: 16,
+    marginBottom: 24,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 20,
-    flexWrap: 'wrap',
   },
   searchInput: {
-    flexGrow: 1,
-    minWidth: 200,
-    backgroundColor: COLORS.white,
+    flex: 1,
+    height: 40,
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
     fontSize: 14,
     color: COLORS.text,
+    backgroundColor: COLORS.white,
   },
   filterGroup: {
     flexDirection: 'row',
@@ -552,103 +552,110 @@ const styles = StyleSheet.create({
   },
   tableWrapper: {
     flex: 1,
-  },
-  table: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: COLORS.white,
+  },
+  table: {
+    minWidth: 800,
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: COLORS.hover,
+    backgroundColor: COLORS.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
   headerCell: {
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    fontWeight: '700',
     fontSize: 12,
+    fontWeight: '700',
     color: COLORS.text,
+    textTransform: 'uppercase',
   },
   tableRow: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     alignItems: 'center',
   },
   cell: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
     justifyContent: 'center',
   },
   cellText: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    fontSize: 14,
     color: COLORS.text,
-    fontSize: 13,
   },
   cellTextBold: {
-    color: COLORS.text,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
+    color: COLORS.text,
   },
   cellTextSmall: {
+    fontSize: 12,
     color: COLORS.textLight,
-    fontSize: 11,
     marginTop: 2,
   },
-  colId: { width: 70 },
-  colCustomer: { flex: 1.5, minWidth: 140 },
-  colService: { flex: 1.5, minWidth: 140 },
-  colDate: { flex: 1.2, minWidth: 120 },
-  colGuests: { width: 70, textAlign: 'center' },
-  colTotal: { width: 100, textAlign: 'right' },
-  colStatus: { width: 110 },
+  colId: { width: 60 },
+  colCustomer: { width: 150 },
+  colSubject: { width: 200 },
+  colPriority: { width: 100 },
+  colStatus: { width: 120 },
+  colDate: { width: 120 },
   colActions: { width: 120 },
   statusBadge: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
     alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 4,
   },
   statusText: {
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
   },
+  priorityBadge: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+  },
+  priorityText: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
   emptyStateRow: {
-    padding: 40,
+    paddingVertical: 48,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   emptyStateText: {
-    color: COLORS.textLight,
     fontSize: 16,
+    color: COLORS.textLight,
+    fontStyle: 'italic',
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 4,
   },
   actionButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 32,
-  },
-  confirmButton: {
-    backgroundColor: COLORS.success,
-  },
-  declineButton: {
-    backgroundColor: COLORS.danger,
-  },
-  completeButton: {
-    backgroundColor: COLORS.info,
   },
   viewButton: {
     backgroundColor: COLORS.textLight,
+  },
+  progressButton: {
+    backgroundColor: COLORS.info,
+  },
+  resolveButton: {
+    backgroundColor: COLORS.success,
   },
   actionButtonText: {
     color: COLORS.white,
@@ -733,7 +740,7 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     flex: 1,
   },
-  modalNotesText: {
+  modalDescriptionText: {
     fontSize: 14,
     color: COLORS.textLight,
     lineHeight: 20,

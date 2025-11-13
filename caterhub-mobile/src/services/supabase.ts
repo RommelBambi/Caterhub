@@ -17,6 +17,8 @@ export interface Database {
           role: 'CUSTOMER' | 'CATER' | 'ADMIN' | 'CUSTOM';
           location?: string | null;
           profile_image_url?: string | null;
+          suspended?: boolean;
+          suspension_reason?: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -27,6 +29,8 @@ export interface Database {
           role: 'CUSTOMER' | 'CATER' | 'ADMIN' | 'CUSTOM';
           location?: string | null;
           profile_image_url?: string | null;
+          suspended?: boolean;
+          suspension_reason?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -37,6 +41,8 @@ export interface Database {
           role?: 'CUSTOMER' | 'CATER' | 'ADMIN';
           location?: string | null;
           profile_image_url?: string | null;
+          suspended?: boolean;
+          suspension_reason?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -612,6 +618,50 @@ export interface Database {
           created_at: string;
           updated_at: string;
           distance_km: number; // Always 0 in view, calculated elsewhere
+        };
+      };
+      support_tickets: {
+        Row: {
+          id: number;
+          user_id: string;
+          booking_id?: number | null;
+          subject: string;
+          description: string;
+          type: 'payment' | 'booking' | 'caterer' | 'food_quality' | 'delivery' | 'app_bug' | 'account' | 'other';
+          status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+          priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+          admin_notes?: string | null;
+          resolved_at?: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          user_id: string;
+          booking_id?: number | null;
+          subject: string;
+          description: string;
+          type: 'payment' | 'booking' | 'caterer' | 'food_quality' | 'delivery' | 'app_bug' | 'account' | 'other';
+          status?: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+          priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+          admin_notes?: string | null;
+          resolved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          user_id?: string;
+          booking_id?: number | null;
+          subject?: string;
+          description?: string;
+          type?: 'payment' | 'booking' | 'caterer' | 'food_quality' | 'delivery' | 'app_bug' | 'account' | 'other';
+          status?: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+          priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+          admin_notes?: string | null;
+          resolved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
       };
     };

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Modal, Pressable, Alert, Linking, Platform } from 'react-native';
 import { supabase } from '../../services/supabase';
 
@@ -238,6 +238,59 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
                 }}
               >
                 <Text style={styles.approveButtonText}>Approve</Text>
+              </Pressable>
+            </View>
+          )}
+          {/* Allow changing approved applications back to rejected */}
+          {application.status === 'Approved' && (
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalActionButton, styles.rejectButton]}
+                onPress={() => {
+                  Alert.alert(
+                    'Change Status to Rejected',
+                    'Are you sure you want to change this approved application back to rejected? This will revoke the caterer\'s access.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Change to Rejected',
+                        style: 'destructive',
+                        onPress: () => {
+                          onReject(application.id);
+                          onClose();
+                        }
+                      }
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.rejectButtonText}>Change to Rejected</Text>
+              </Pressable>
+            </View>
+          )}
+          {/* Allow changing rejected applications back to approved */}
+          {application.status === 'Rejected' && (
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalActionButton, styles.approveButton]}
+                onPress={() => {
+                  Alert.alert(
+                    'Change Status to Approved',
+                    'Are you sure you want to approve this previously rejected application?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Approve',
+                        onPress: () => {
+                          onApprove(application.id);
+                          onClose();
+                        }
+                      }
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.approveButtonText}>Approve Application</Text>
               </Pressable>
             </View>
           )}

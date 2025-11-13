@@ -4,14 +4,14 @@ import { supabase } from '../../services/supabase';
 
 const COLORS = {
   primary: "#FF8000",
-  text: "#1e293b",
-  textLight: "#64748b",
-  bg: "#f8fafc",
+  text: "#111827",
+  textLight: "#6b7280",
+  bg: "#f9fafb",
   white: "#ffffff",
-  border: "#e2e8f0",
-  hover: "#f1f5f9",
+  border: "#e5e7eb",
+  hover: "#f3f4f6",
   success: "#22c55e",
-  danger: "#dc2626",
+  danger: "#ef4444",
   info: "#0ea5e9",
   warning: "#f59e0b",
 };
@@ -21,6 +21,9 @@ interface AnalyticsData {
   totalBookings: number;
   totalRevenue: number;
   avgBookingValue: number;
+  totalCaterers: number;
+  pendingApplications: number;
+  completionRate: number;
   topServices: Array<{ name: string; count: number; revenue: number }>;
   revenueByMonth: Array<{ month: string; revenue: number }>;
   bookingsByStatus: { [key: string]: number };
@@ -56,8 +59,13 @@ export default function AnalyticsPage() {
           )
         `);
 
-      if (usersError || bookingsError) {
-        throw usersError || bookingsError;
+      // Fetch partner applications
+      const { data: applications, error: applicationsError } = await supabase
+        .from('partner_applications')
+        .select('id, status');
+
+      if (usersError || bookingsError || applicationsError) {
+        throw usersError || bookingsError || applicationsError;
       }
 
       // Calculate analytics
@@ -128,11 +136,22 @@ export default function AnalyticsPage() {
         .sort((a, b) => new Date(a.month).getTime() - new Date(b.month).getTime())
         .slice(-6);
 
+      // Calculate caterer and application metrics
+      const totalCaterers = applications?.filter(app => app.status === 'Approved').length || 0;
+      const pendingApplications = applications?.filter(app => app.status === 'Pending').length || 0;
+      
+      // Calculate completion rate
+      const completedBookings = bookings?.filter(b => b.status === 'COMPLETED').length || 0;
+      const completionRate = totalBookings > 0 ? (completedBookings / totalBookings) * 100 : 0;
+
       setAnalytics({
         totalUsers,
         totalBookings,
         totalRevenue,
         avgBookingValue,
+        totalCaterers,
+        pendingApplications,
+        completionRate,
         topServices,
         revenueByMonth,
         bookingsByStatus,
@@ -213,6 +232,48 @@ export default function AnalyticsPage() {
               {analytics.totalUsers}
             </Text>
             <Text style={styles.statSubtext}>Registered</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Active Caterers</Text>
+            <Text style={[styles.statValue, { color: COLORS.primary }]}>
+              {analytics.totalCaterers}
+            </Text>
+            <Text style={styles.statSubtext}>Approved partners</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Completion Rate</Text>
+            <Text style={[styles.statValue, { color: COLORS.success }]}>
+              {analytics.completionRate.toFixed(1)}%
+            </Text>
+            <Text style={styles.statSubtext}>Bookings completed</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Additional Metrics */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Platform Health</Text>
+        <View style={styles.statsGrid}>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Pending Applications</Text>
+            <Text style={[styles.statValue, { color: analytics.pendingApplications > 0 ? COLORS.warning : COLORS.success }]}>
+              {analytics.pendingApplications}
+            </Text>
+            <Text style={styles.statSubtext}>Awaiting review</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Platform Fee Revenue</Text>
+            <Text style={[styles.statValue, { color: COLORS.info }]}>
+              ₱{(analytics.totalRevenue * 0.15).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </Text>
+            <Text style={styles.statSubtext}>15% platform fee</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Active Bookings</Text>
+            <Text style={[styles.statValue, { color: COLORS.info }]}>
+              {(analytics.bookingsByStatus['CONFIRMED'] || 0) + (analytics.bookingsByStatus['ON_THE_WAY'] || 0)}
+            </Text>
+            <Text style={styles.statSubtext}>Confirmed + On the way</Text>
           </View>
         </View>
       </View>

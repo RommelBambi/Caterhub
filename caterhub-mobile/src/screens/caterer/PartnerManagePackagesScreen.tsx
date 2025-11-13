@@ -88,8 +88,12 @@ export default function PartnerManagePackagesScreen() {
   // Only re-run when the authenticated user id changes to avoid refresh while typing
   useEffect(() => {
     if (!user?.id) return; // wait for auth to initialize
-    // Manual refresh mode: do not auto-load to avoid any background reloads while typing
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
+    // Auto-load packages on mount if not already loaded
+    if (!hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      loadPackagesFromSupabase();
+    }
   }, [user?.id]);
 
   // prevent re-loading multiple times within the same session
@@ -101,6 +105,8 @@ export default function PartnerManagePackagesScreen() {
     
     setLoading(true);
     try {
+      console.log(`[loadPackagesFromSupabase] Loading packages for caterer: ${user.id}`);
+      
       const { data, error } = await supabase
         .from('packages')
         .select('*')
@@ -110,9 +116,12 @@ export default function PartnerManagePackagesScreen() {
 
       if (error) {
         console.error('Error loading packages:', error);
-        Alert.alert('Error', 'Failed to load packages');
+        Alert.alert('Error', error?.message || 'Failed to load packages. Please check your connection and try again.');
+        setPackages([]);
         return;
       }
+
+      console.log(`[loadPackagesFromSupabase] Found ${data?.length || 0} packages`);
 
       // Transform Supabase data to CateringPackage format
       const transformedPackages: CateringPackage[] = (data || []).map(pkg => ({
@@ -124,9 +133,11 @@ export default function PartnerManagePackagesScreen() {
       }));
 
       setPackages(transformedPackages);
-    } catch (err) {
+      console.log(`[loadPackagesFromSupabase] Successfully loaded ${transformedPackages.length} packages`);
+    } catch (err: any) {
       console.error('Failed to load packages', err);
-      Alert.alert('Error', 'Failed to load packages');
+      Alert.alert('Error', err?.message || 'Failed to load packages. Please try again.');
+      setPackages([]);
     } finally {
       setLoading(false);
     }
