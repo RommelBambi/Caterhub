@@ -32,14 +32,14 @@ interface Booking {
 
 const COLORS = {
   primary: "#FF8000",
-  text: "#1e293b",
-  textLight: "#64748b",
-  bg: "#f8fafc",
+  text: "#111827",
+  textLight: "#6b7280",
+  bg: "#f9fafb",
   white: "#ffffff",
-  border: "#e2e8f0",
-  hover: "#f1f5f9",
+  border: "#e5e7eb",
+  hover: "#f3f4f6",
   success: "#22c55e",
-  danger: "#dc2626",
+  danger: "#ef4444",
   info: "#0ea5e9",
   warning: "#f59e0b",
 };

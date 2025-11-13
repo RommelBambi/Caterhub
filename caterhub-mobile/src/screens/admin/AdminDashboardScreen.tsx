@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../store/auth';
+import { isWeb } from '../../utils/platform';
+import TopBar from '../../components/admin/TopBar';
 import RecruitmentPage from '../../components/admin/RecruitmentPage';
 import ApplicationDetailModal from '../../components/admin/ApplicationDetailModal';
 import UsersPage from '../../components/admin/UsersPage';
@@ -14,14 +16,14 @@ import { supabase } from '../../services/supabase';
 
 const COLORS = {
   primary: "#FF8000",
-  text: "#1e293b",
-  textLight: "#64748b",
-  bg: "#f8fafc",
+  text: "#111827",
+  textLight: "#6b7280",
+  bg: "#f9fafb",
   white: "#ffffff",
-  border: "#e2e8f0",
-  hover: "#f1f5f9",
+  border: "#e5e7eb",
+  hover: "#f3f4f6",
   success: "#22c55e",
-  danger: "#dc2626",
+  danger: "#ef4444",
   info: "#0ea5e9",
 };
 
@@ -50,6 +52,47 @@ interface PartnerApplication {
   status: 'Pending' | 'Approved' | 'Rejected';
   created_at: string;
   updated_at: string;
+}
+
+function SidebarItem({
+  label,
+  icon,
+  active,
+  collapsed,
+  onPress
+}: {
+  label: string;
+  icon: string;
+  active: boolean;
+  collapsed: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.sidebarItem,
+        active ? styles.sidebarItemActive : null,
+        collapsed && styles.sidebarItemCollapsed
+      ]}
+    >
+      <Ionicons 
+        name={icon as any} 
+        size={20} 
+        color={active ? COLORS.primary : "#6b7280"} 
+      />
+      {!collapsed && (
+        <Text
+          style={[
+            styles.sidebarItemText,
+            active ? styles.sidebarItemTextActive : null
+          ]}
+        >
+          {label}
+        </Text>
+      )}
+    </Pressable>
+  );
 }
 
 export default function AdminDashboardScreen() {
@@ -114,70 +157,78 @@ export default function AdminDashboardScreen() {
     switch (currentPage) {
       case "dashboard":
         return (
-          <View style={styles.contentContainer}>
-            <Text style={styles.pageTitle}>Dashboard</Text>
+          <View style={styles.pageHeaderRow}>
+            <View style={styles.pageHeaderLeft}>
+              <Text style={styles.pageTitle}>Dashboard Overview</Text>
+              <Text style={styles.pageSubTitle}>
+                Welcome back, {user?.username}
+              </Text>
+            </View>
             <View style={styles.statsGrid}>
               <View style={styles.statCard}>
                 <Text style={styles.statLabel}>Total Users</Text>
                 <Text style={[styles.statValue, { color: COLORS.primary }]}>1,234</Text>
+                <Text style={styles.statSub}>Registered users</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statLabel}>Active Bookings</Text>
                 <Text style={[styles.statValue, { color: COLORS.success }]}>89</Text>
+                <Text style={styles.statSub}>This month</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statLabel}>Revenue</Text>
                 <Text style={[styles.statValue, { color: COLORS.info }]}>₱45,678</Text>
+                <Text style={styles.statSub}>Last 30 days</Text>
               </View>
             </View>
           </View>
         );
       case "recruitment":
         return (
-          <View style={styles.contentContainer}>
+          <View style={styles.sectionCard}>
             <RecruitmentPage onViewDetails={handleViewDetails} refreshTrigger={refreshTrigger} />
           </View>
         );
       case "bookings":
         return (
-          <View style={styles.contentContainer}>
+          <View style={styles.sectionCard}>
             <BookingsPage />
           </View>
         );
       case "users":
         return (
-          <View style={styles.contentContainer}>
+          <View style={styles.sectionCard}>
             <UsersPage refreshTrigger={refreshTrigger} />
           </View>
         );
       case "payments":
         return (
-          <View style={styles.contentContainer}>
+          <View style={styles.sectionCard}>
             <PaymentsPage />
           </View>
         );
       case "analytics":
         return (
-          <View style={styles.contentContainer}>
+          <View style={styles.sectionCard}>
             <AnalyticsPage />
           </View>
         );
       case "settings":
         return (
-          <View style={styles.contentContainer}>
+          <View style={styles.sectionCard}>
             <SettingsPage />
           </View>
         );
       case "refunds":
         return (
-          <View style={styles.contentContainer}>
+          <View style={styles.sectionCard}>
             <RefundsPage />
           </View>
         );
       default:
         const menuItem = menuItems.find(item => item.id === currentPage);
         return (
-          <View style={styles.contentContainer}>
+          <View style={styles.sectionCard}>
             <Text style={styles.pageTitle}>
               {menuItem?.label || "Page"}
             </Text>
@@ -188,71 +239,62 @@ export default function AdminDashboardScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.screen}>
       {/* Sidebar */}
-      {!sidebarCollapsed && (
-        <View style={styles.sidebar}>
-        <View style={styles.sidebarHeader}>
-          <Text style={styles.sidebarTitle}>
-            CaterHub Admin
-          </Text>
-          <Text style={styles.sidebarSubtitle}>Welcome, {user?.username}</Text>
-        </View>
-
-        <ScrollView style={styles.menu}>
-          {menuItems.map((item) => (
-            <Pressable
-              key={item.id}
-              onPress={() => setCurrentPage(item.id)}
-              style={[
-                styles.menuItem,
-                currentPage === item.id && styles.menuItemActive,
-              ]}
+      {isWeb && (
+        <View style={[styles.sidebar, sidebarCollapsed && styles.sidebarCollapsed]}>
+          {/* Header with Logo and Toggle */}
+          <View style={styles.header}>
+            {!sidebarCollapsed && <Text style={styles.logoText}>CaterAdmin</Text>}
+            <TouchableOpacity 
+              onPress={() => setSidebarCollapsed(!sidebarCollapsed)} 
+              style={styles.toggleButton}
             >
-              <Ionicons
-                name={item.icon as any}
-                size={20}
-                color={currentPage === item.id ? COLORS.primary : "#6b7280"}
+              <Ionicons 
+                name={sidebarCollapsed ? "chevron-forward" : "chevron-back"} 
+                size={20} 
+                color="#6b7280" 
               />
-              <Text
-                style={[
-                  styles.menuLabel,
-                  currentPage === item.id && styles.menuLabelActive,
-                ]}
-              >
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+            </TouchableOpacity>
+          </View>
 
-        <View style={styles.sidebarFooter}>
-          <Pressable
-            onPress={logout}
-            style={styles.logoutButton}
-          >
+          <View style={styles.navList}>
+            {menuItems.map((item) => (
+              <SidebarItem
+                key={item.id}
+                label={item.label}
+                icon={item.icon}
+                active={currentPage === item.id}
+                collapsed={sidebarCollapsed}
+                onPress={() => setCurrentPage(item.id)}
+              />
+            ))}
+          </View>
+
+          <Pressable style={styles.logoutRow} onPress={logout}>
             <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-            <Text style={styles.logoutButtonText}>Logout</Text>
+            {!sidebarCollapsed && <Text style={styles.logoutText}>Logout</Text>}
           </Pressable>
-        </View>
         </View>
       )}
 
-      <Pressable
-        onPress={() => setSidebarCollapsed((prev) => !prev)}
-        style={[styles.sidebarToggle, sidebarCollapsed && styles.sidebarToggleCollapsed]}
-      >
-        <Ionicons
-          name={sidebarCollapsed ? 'chevron-forward' : 'chevron-back'}
-          size={20}
-          color={COLORS.textLight}
-        />
-      </Pressable>
-
-      {/* Main Content */}
-      <ScrollView style={styles.mainContent}>
-        {renderPageContent()}
-      </ScrollView>
+      <View style={styles.mainArea}>
+        <TopBar title={menuItems.find(item => item.id === currentPage)?.label || "Admin Panel"} />
+        
+        <ScrollView
+          style={styles.scrollRegion}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {renderPageContent()}
+          
+          {/* Footer */}
+          {isWeb && (
+            <View style={styles.footerArea}>
+              <Text style={styles.footerText}>© 2025 CaterHub • Admin Panel</Text>
+            </View>
+          )}
+        </ScrollView>
+      </View>
 
       {/* Application Detail Modal */}
       <ApplicationDetailModal
@@ -270,134 +312,172 @@ export default function AdminDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    flexDirection: 'row',
-    backgroundColor: COLORS.bg,
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    backgroundColor: "#f9fafb"
   },
   sidebar: {
-    width: 280,
-    backgroundColor: COLORS.white,
+    width: 220,
+    backgroundColor: "#ffffff",
     borderRightWidth: 1,
-    borderRightColor: COLORS.border,
-    paddingVertical: 24,
-    display: 'flex',
-    flexDirection: 'column',
+    borderRightColor: "#e5e7eb",
+    paddingTop: 16,
+    paddingHorizontal: 12,
+    justifyContent: "space-between"
   },
-  sidebarHeader: {
-    paddingHorizontal: 24,
-    marginBottom: 32,
+  sidebarCollapsed: {
+    width: 70,
+    paddingHorizontal: 8
   },
-  sidebarTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: COLORS.primary,
-    margin: 0,
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16
   },
-  sidebarSubtitle: {
-    marginTop: 4,
-    color: COLORS.textLight,
+  logoText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#FF8000"
+  },
+  toggleButton: {
+    padding: 4,
+    borderRadius: 4,
+    backgroundColor: "#f3f4f6"
+  },
+  navList: {
+    flexGrow: 1
+  },
+  sidebarItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    marginBottom: 4,
+    gap: 12
+  },
+  sidebarItemCollapsed: {
+    justifyContent: "center",
+    paddingHorizontal: 12
+  },
+  sidebarItemActive: {
+    backgroundColor: "#fff5e6"
+  },
+  sidebarItemText: {
+    color: "#374151",
     fontSize: 14,
+    fontWeight: "600"
   },
-  menu: {
-    flex: 1,
+  sidebarItemTextActive: {
+    color: COLORS.primary
   },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    gap: 12,
-    backgroundColor: 'transparent',
-  },
-  menuItemActive: {
-    backgroundColor: COLORS.primary + '10',
-  },
-  menuIcon: {
-    fontSize: 20,
-  },
-  menuLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: COLORS.text,
-  },
-  menuLabelActive: {
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  sidebarFooter: {
-    paddingHorizontal: 24,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    width: '100%',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.danger,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
+  logoutRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+    paddingVertical: 12,
+    marginTop: 16
   },
-  logoutButtonText: {
-    color: COLORS.danger,
-    fontWeight: '600',
-    fontSize: 14,
+  logoutText: {
+    color: "#ef4444",
+    fontWeight: "600",
+    fontSize: 14
   },
-  sidebarToggle: {
-    width: 20,
-    backgroundColor: COLORS.white,
-    borderRightWidth: 1,
-    borderRightColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'stretch',
-  },
-  sidebarToggleCollapsed: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    zIndex: 10,
-  },
-  mainContent: {
+  mainArea: {
     flex: 1,
-    padding: 24,
+    backgroundColor: "#f9fafb"
   },
-  contentContainer: {
-    flex: 1,
+  scrollRegion: {
+    flex: 1
+  },
+  scrollContent: {
+    padding: Platform.OS === 'web' ? 16 : 12,
+    paddingBottom: Platform.OS === 'web' ? 16 : 100
+  },
+  pageHeaderRow: {
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    justifyContent: Platform.OS === 'web' ? "space-between" : "flex-start",
+    alignItems: Platform.OS === 'web' ? "flex-start" : "flex-start",
+    marginBottom: 16,
+    gap: Platform.OS === 'web' ? 0 : 12
+  },
+  pageHeaderLeft: {
+    flex: 1
   },
   pageTitle: {
-    fontSize: 32,
-    fontWeight: '900',
-    marginBottom: 24,
-    color: COLORS.text,
+    fontSize: Platform.OS === 'web' ? 18 : 20,
+    fontWeight: "700",
+    color: "#111827"
+  },
+  pageSubTitle: {
+    color: "#6b7280",
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    marginTop: 4
   },
   statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 20,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Platform.OS === 'web' ? 16 : 8,
+    marginTop: 16
   },
   statCard: {
-    flex: 1,
-    minWidth: 250,
-    backgroundColor: COLORS.white,
-    padding: 24,
-    borderRadius: 18,
+    flex: Platform.OS === 'web' ? 1 : 0,
+    flexBasis: Platform.OS === 'web' ? 'auto' : '30%',
+    maxWidth: Platform.OS === 'web' ? undefined : '30%',
+    minWidth: Platform.OS === 'web' ? 200 : 0,
+    backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: "#e5e7eb",
+    borderRadius: Platform.OS === 'web' ? 8 : 8,
+    paddingVertical: Platform.OS === 'web' ? 16 : 12,
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 10 : 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: Platform.OS === 'web' ? 20 : 4,
+    elevation: 2
   },
   statLabel: {
-    marginBottom: 12,
-    color: COLORS.text,
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 12 : 10,
+    fontWeight: "600",
+    color: "#6b7280",
+    marginBottom: Platform.OS === 'web' ? 8 : 4
   },
   statValue: {
-    fontSize: 32,
-    fontWeight: '900',
-    margin: 0,
+    fontSize: Platform.OS === 'web' ? 24 : 16,
+    fontWeight: "700",
+    color: "#111827"
+  },
+  statSub: {
+    fontSize: Platform.OS === 'web' ? 12 : 9,
+    color: "#6b7280",
+    marginTop: Platform.OS === 'web' ? 4 : 2
+  },
+  sectionCard: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: Platform.OS === 'web' ? 8 : 12,
+    padding: Platform.OS === 'web' ? 16 : 12,
+    marginBottom: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 10 : 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: Platform.OS === 'web' ? 20 : 4,
+    elevation: 2
+  },
+  footerArea: {
+    alignItems: "center",
+    marginTop: 16,
+    paddingBottom: 40
+  },
+  footerText: {
+    fontSize: 12,
+    color: "#6b7280"
   },
   placeholderText: {
     color: COLORS.textLight,
