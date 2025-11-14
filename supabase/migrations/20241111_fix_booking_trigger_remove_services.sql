@@ -1,70 +1,6 @@
--- Create notifications table
-CREATE TABLE IF NOT EXISTS notifications (
-  id BIGSERIAL PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  message TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('booking', 'payment', 'status', 'review', 'system')),
-  related_id BIGINT, -- Can be booking_id, payment_id, etc.
-  read BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Fix booking status notification trigger to use packages instead of services table
+-- The services table has been removed, so we need to get caterer_id from packages
 
--- Create index for faster queries
-CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
-CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
-
--- Enable RLS
-ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-
--- Drop policies if they exist, then recreate them
-DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
-CREATE POLICY "Users can view own notifications"
-  ON notifications
-  FOR SELECT
-  USING (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "System can insert notifications" ON notifications;
-CREATE POLICY "System can insert notifications"
-  ON notifications
-  FOR INSERT
-  WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Users can update own notifications" ON notifications;
-CREATE POLICY "Users can update own notifications"
-  ON notifications
-  FOR UPDATE
-  USING (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Users can delete own notifications" ON notifications;
-CREATE POLICY "Users can delete own notifications"
-  ON notifications
-  FOR DELETE
-  USING (auth.uid() = user_id);
-
--- Function to create notification
-CREATE OR REPLACE FUNCTION create_notification(
-  p_user_id UUID,
-  p_title TEXT,
-  p_message TEXT,
-  p_type TEXT,
-  p_related_id BIGINT DEFAULT NULL
-)
-RETURNS notifications AS $$
-DECLARE
-  new_notification notifications;
-BEGIN
-  INSERT INTO notifications (user_id, title, message, type, related_id)
-  VALUES (p_user_id, p_title, p_message, p_type, p_related_id)
-  RETURNING * INTO new_notification;
-  
-  RETURN new_notification;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Trigger function for booking status changes
 CREATE OR REPLACE FUNCTION notify_booking_status_change()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -191,33 +127,3 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create trigger for booking status changes
-DROP TRIGGER IF EXISTS booking_status_notification_trigger ON bookings;
-CREATE TRIGGER booking_status_notification_trigger
-  AFTER INSERT OR UPDATE ON bookings
-  FOR EACH ROW
-  EXECUTE FUNCTION notify_booking_status_change();
-
--- Trigger function for new reviews
-CREATE OR REPLACE FUNCTION notify_new_review()
-RETURNS TRIGGER AS $$
-BEGIN
-  -- Notify caterer about new review
-  PERFORM create_notification(
-    NEW.caterer_id,
-    'New Review Received',
-    'You received a ' || NEW.rating || '-star review',
-    'review',
-    NEW.id
-  );
-  
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create trigger for new reviews
-DROP TRIGGER IF EXISTS new_review_notification_trigger ON reviews;
-CREATE TRIGGER new_review_notification_trigger
-  AFTER INSERT ON reviews
-  FOR EACH ROW
-  EXECUTE FUNCTION notify_new_review();

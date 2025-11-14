@@ -46,15 +46,11 @@ export default function RefundsPage() {
   const fetchRefunds = async () => {
     try {
       // Since we don't have a refunds table yet, we'll simulate with cancelled bookings
+      // Services table no longer exists - fetch bookings with packages and users only
       const { data: bookings, error } = await supabase
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head
-          ),
           users:user_id (
             id,
             username,
@@ -75,7 +71,7 @@ export default function RefundsPage() {
         return;
       }
 
-      // Transform cancelled bookings into refund records
+        // Transform cancelled bookings into refund records
       const transformedRefunds: Refund[] = (bookings || []).map((booking: any) => {
         let amount = 0;
         if (booking.packages?.price) {
@@ -84,8 +80,8 @@ export default function RefundsPage() {
             amount = parseFloat(priceMatch[1].replace(/,/g, ''));
           }
         } else {
-          const pricePerHead = booking.services?.price_per_head || 0;
-          amount = pricePerHead * booking.guests;
+          // Fallback: use deposit_amount + remaining_amount if available
+          amount = (booking.deposit_amount || 0) + (booking.remaining_amount || 0);
         }
 
         // Simulate refund status based on booking status
@@ -109,7 +105,7 @@ export default function RefundsPage() {
           booking: {
             id: booking.id,
             users: booking.users,
-            services: booking.services,
+            services: undefined, // Services table no longer exists
           },
         };
       });
@@ -150,7 +146,7 @@ export default function RefundsPage() {
     const matchesSearch = !searchQuery.trim()
       ? true
       : refund.booking?.users?.username.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
-        refund.booking?.services?.name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+        refund.booking?.users?.email.toLowerCase().includes(searchQuery.trim().toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
@@ -300,7 +296,7 @@ export default function RefundsPage() {
                   </Text>
                 </View>
                 <Text style={[styles.cellText, styles.colService]} numberOfLines={1}>
-                  {refund.booking?.services?.name || 'N/A'}
+                  {refund.booking?.packages?.name || 'N/A'}
                 </Text>
                 <Text style={[styles.cellText, styles.colAmount, styles.amountText]}>
                   ₱{refund.amount.toLocaleString()}

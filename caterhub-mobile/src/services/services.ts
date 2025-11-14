@@ -774,34 +774,131 @@ export async function searchServices(query: string): Promise<Service[]> {
     return [];
   }
 
-  const searchTerm = `%${query.trim()}%`;
+  const searchTerm = query.trim().toLowerCase();
 
-  const { data, error } = await supabase
-    .from('services')
+  // Search in partner_applications (services table no longer exists)
+  const { data: applications, error } = await supabase
+    .from('partner_applications')
     .select('*')
-    .or(`name.ilike.${searchTerm},description.ilike.${searchTerm}`)
-    .order('name');
+    .eq('status', 'Approved')
+    .or(`business_name.ilike.%${searchTerm}%,owner_name.ilike.%${searchTerm}%`)
+    .order('business_name');
 
   if (error) {
     console.error('[searchServices] Error searching services:', error);
     throw new Error(`Failed to search services: ${error.message}`);
   }
 
-  // Map database snake_case to camelCase (same as fetchServices)
-  return (data || []).map((svc: any) => ({
-    id: svc.id,
-    name: svc.name,
-    description: svc.description,
-    imageUrl: svc.image_url,
-    logoUrl: svc.logo_url,
-    rating: svc.rating,
-    reviewsCount: svc.reviews_count,
-    pricePerHead: svc.price_per_head,
-    favoritesCount: svc.favorites_count,
-    bookingsCount: svc.bookings_count,
-    latitude: svc.latitude,
-    longitude: svc.longitude,
-    user_id: svc.user_id, // Keep for package fetching
-    packages: undefined, // Will be fetched in fetchService()
-  }));
+  if (!applications || applications.length === 0) {
+    return [];
+  }
+
+  // Transform partner_applications to Service format (same as fetchServices)
+  const services: Service[] = [];
+  
+  for (const app of applications) {
+    // Get packages for this caterer
+    const { data: packages } = await supabase
+      .from('packages')
+      .select('*')
+      .eq('caterer_id', app.user_id)
+      .eq('is_active', true);
+
+    // Get caterer profile for additional info
+    const { data: profile } = await supabase
+      .from('caterer_profiles')
+      .select('*')
+      .eq('user_id', app.user_id)
+      .maybeSingle();
+
+    // Get rating
+    const { data: reviews } = await supabase
+      .from('reviews')
+      .select('rating')
+      .eq('caterer_id', app.user_id);
+
+    const rating = reviews && reviews.length > 0
+      ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
+      : 0;
+
+    // Parse locations
+    let locations: any[] = [];
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+
+    try {
+      if (app.locations && Array.isArray(app.locations)) {
+        locations = app.locations;
+        if (locations[0]?.latitude && locations[0]?.longitude) {
+          latitude = locations[0].latitude;
+          longitude = locations[0].longitude;
+        }
+      }
+    } catch (e) {
+      console.warn('[searchServices] Error parsing locations:', e);
+    }
+
+    // Create hash-based ID (same as fetchServices)
+    const serviceId = Math.abs(app.user_id.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0)) % 1000000;
+
+    // Transform packages to ServicePackage format (same as fetchPackagesForService)
+    const transformedPackages: ServicePackage[] = (packages || []).map((pkg: any) => {
+      // Convert sections to categories format
+      const categories: PackageCategory[] = (pkg.sections || []).map((section: any, idx: number) => ({
+        id: `section_${idx}`,
+        name: section.category || 'Category',
+        options: (section.dishes || []).map((dish: string, dishIdx: number) => ({
+          id: `dish_${idx}_${dishIdx}`,
+          name: dish,
+        })),
+        required: true,
+        pick: 1,
+      }));
+
+      // Extract price per head from price string (e.g., "₱250/head" or "250")
+      let pricePerHead = 0;
+      try {
+        const priceMatch = pkg.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+        if (priceMatch) {
+          pricePerHead = parseFloat(priceMatch[1].replace(/,/g, ''));
+        }
+      } catch (e) {
+        // If parsing fails, default to 0
+      }
+
+      return {
+        id: pkg.id,
+        name: pkg.name,
+        pricePerHead: pricePerHead || 250, // fallback
+        categories: categories,
+      } as ServicePackage;
+    });
+
+    // Calculate average price per head from packages
+    const avgPricePerHead = transformedPackages.length > 0
+      ? transformedPackages.reduce((sum, pkg) => sum + pkg.pricePerHead, 0) / transformedPackages.length
+      : undefined;
+
+    const service: Service = {
+      id: serviceId,
+      name: app.business_name || 'Catering Service',
+      description: profile?.about || `Catering service by ${app.owner_name || 'Partner'}`,
+      imageUrl: undefined,
+      logoUrl: undefined,
+      rating: Math.round(rating * 100) / 100,
+      reviewsCount: reviews?.length || 0,
+      pricePerHead: avgPricePerHead,
+      favoritesCount: 0,
+      bookingsCount: 0,
+      latitude: latitude,
+      longitude: longitude,
+      user_id: app.user_id,
+      packages: transformedPackages,
+      locations: locations.length > 0 ? locations : undefined,
+    };
+
+    services.push(service);
+  }
+
+  return services;
 }

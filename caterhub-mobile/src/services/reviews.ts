@@ -35,18 +35,27 @@ export async function createReview(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
-  // Get booking details to get caterer_id and service_id
+  // Get booking details to get caterer_id from package (services table no longer exists)
   const { data: booking, error: bookingError } = await supabase
     .from('bookings')
-    .select('service_id, services:service_id(user_id)')
+    .select(`
+      service_id,
+      package_id,
+      packages:package_id (
+        caterer_id
+      )
+    `)
     .eq('id', bookingId)
     .single();
 
   if (bookingError) throw bookingError;
   if (!booking) throw new Error('Booking not found');
 
-  const catererId = (booking.services as any)?.user_id;
-  if (!catererId) throw new Error('Caterer not found');
+  // Get caterer_id from package (services table no longer exists)
+  const catererId = (booking.packages as any)?.caterer_id;
+  if (!catererId) {
+    throw new Error('Caterer not found - booking must have a valid package');
+  }
 
   const { data, error } = await supabase
     .from('reviews')
@@ -54,7 +63,7 @@ export async function createReview(
       booking_id: bookingId,
       user_id: user.id,
       caterer_id: catererId,
-      service_id: booking.service_id,
+      service_id: booking.service_id || null, // Can be null since services table is removed
       rating,
       comment,
     })
