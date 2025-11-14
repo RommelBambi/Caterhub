@@ -16,8 +16,9 @@ interface Payment {
       username: string;
       email: string;
     };
-    services?: {
+    packages?: {
       name: string;
+      price: string;
     };
   };
 }
@@ -50,11 +51,6 @@ export default function PaymentsPage() {
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head
-          ),
           users:user_id (
             id,
             username,
@@ -86,8 +82,9 @@ export default function PaymentsPage() {
             amount = parseFloat(priceMatch[1].replace(/,/g, ''));
           }
         } else {
-          const pricePerHead = booking.services?.price_per_head || 0;
-          amount = pricePerHead * booking.guests;
+          // If no package, calculate based on a default rate or use 0
+          // You may want to add a default price logic here
+          amount = 0;
         }
 
         // Use actual payment_status from database (set by Xendit integration)
@@ -115,7 +112,7 @@ export default function PaymentsPage() {
           booking: {
             id: booking.id,
             users: booking.users,
-            services: booking.services,
+            packages: booking.packages,
           },
         };
       });
@@ -297,7 +294,7 @@ export default function PaymentsPage() {
                   </Text>
                 </View>
                 <Text style={[styles.cellText, styles.colService]} numberOfLines={1}>
-                  {payment.booking?.services?.name || 'N/A'}
+                  {payment.booking?.packages?.name || 'N/A'}
                 </Text>
                 <Text style={[styles.cellText, styles.colAmount, styles.amountText]}>
                   ₱{payment.amount.toLocaleString()}
