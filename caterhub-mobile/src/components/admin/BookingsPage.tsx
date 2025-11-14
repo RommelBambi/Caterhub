@@ -55,15 +55,11 @@ export default function BookingsPage() {
 
   const fetchBookings = async () => {
     try {
-      const { data, error } = await supabase
+      // Fetch bookings without services join (services table doesn't exist)
+      const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head
-          ),
           users:user_id (
             id,
             username,
@@ -72,21 +68,57 @@ export default function BookingsPage() {
           packages:package_id (
             id,
             name,
-            price
+            price,
+            caterer_id
           )
         `)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching bookings:', error);
-        Alert.alert('Error', 'Failed to load bookings');
+      if (bookingsError) {
+        console.error('Error fetching bookings:', bookingsError);
+        Alert.alert('Error', `Failed to load bookings: ${bookingsError.message}`);
+        setBookings([]);
         return;
       }
 
-      setBookings(data || []);
-    } catch (error) {
+      // Fetch partner applications to get service names
+      const { data: applications, error: appsError } = await supabase
+        .from('partner_applications')
+        .select('user_id, business_name')
+        .eq('status', 'Approved');
+
+      if (appsError) {
+        console.warn('Error fetching applications:', appsError);
+      }
+
+      // Create a map of caterer_id to business_name
+      const catererNameMap = new Map<string, string>();
+      applications?.forEach((app: any) => {
+        if (app.user_id && app.business_name) {
+          catererNameMap.set(app.user_id, app.business_name);
+        }
+      });
+
+      // Enrich bookings with service names from partner_applications
+      const enrichedBookings = (bookingsData || []).map((booking: any) => {
+        const catererId = booking.packages?.caterer_id;
+        const serviceName = catererId ? (catererNameMap.get(catererId) || 'Unknown Service') : null;
+        
+        return {
+          ...booking,
+          services: serviceName ? {
+            id: booking.service_id || 0,
+            name: serviceName,
+            price_per_head: 0, // Not available from partner_applications
+          } : undefined,
+        };
+      });
+
+      setBookings(enrichedBookings);
+    } catch (error: any) {
       console.error('Error:', error);
-      Alert.alert('Error', 'Failed to load bookings');
+      Alert.alert('Error', `Failed to load bookings: ${error?.message || 'Unknown error'}`);
+      setBookings([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -167,12 +199,21 @@ export default function BookingsPage() {
   };
 
   const calculateTotal = (booking: Booking) => {
+    // Try to get amount from deposit + remaining + delivery fee first
+    if ((booking as any).deposit_amount && (booking as any).remaining_amount) {
+      return ((booking as any).deposit_amount || 0) + ((booking as any).remaining_amount || 0) + ((booking as any).delivery_fee || 0);
+    }
+    
+    // Fallback to package price calculation
     if (booking.packages?.price) {
       const priceMatch = booking.packages.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
       if (priceMatch) {
-        return parseFloat(priceMatch[1].replace(/,/g, ''));
+        const pricePerHead = parseFloat(priceMatch[1].replace(/,/g, ''));
+        return pricePerHead * booking.guests;
       }
     }
+    
+    // Last resort: use service price_per_head if available
     const pricePerHead = booking.services?.price_per_head || 0;
     return pricePerHead * booking.guests;
   };

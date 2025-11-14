@@ -116,33 +116,44 @@ function SidebarItem({
 
 const styles = StyleSheet.create({
   sidebar: {
-    width: 220,
+    width: 240,
     backgroundColor: "#ffffff",
     borderRightWidth: 1,
     borderRightColor: "#e5e7eb",
-    paddingTop: 16,
-    paddingHorizontal: 12,
-    justifyContent: "space-between"
+    paddingTop: 20,
+    paddingHorizontal: 16,
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3
   },
   sidebarCollapsed: {
     width: 70,
-    paddingHorizontal: 8
+    paddingHorizontal: 12
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6"
   },
   logoText: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#FF8000"
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#FF8000",
+    letterSpacing: -0.5
   },
   toggleButton: {
-    padding: 4,
-    borderRadius: 4,
-    backgroundColor: "#f3f4f6"
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: "#f9fafb",
+    borderWidth: 1,
+    borderColor: "#e5e7eb"
   },
   navList: {
     flexGrow: 1
@@ -150,18 +161,21 @@ const styles = StyleSheet.create({
   sidebarItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
     marginBottom: 4,
-    gap: 12
+    gap: 12,
+    transition: "all 0.2s"
   },
   sidebarItemCollapsed: {
     justifyContent: "center",
-    paddingHorizontal: 12
+    paddingHorizontal: 16
   },
   sidebarItemActive: {
-    backgroundColor: "#fff5e6"
+    backgroundColor: "#fff5e6",
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary
   },
   sidebarItemText: {
     color: "#374151",
@@ -169,16 +183,19 @@ const styles = StyleSheet.create({
     fontWeight: "600"
   },
   sidebarItemTextActive: {
-    color: COLORS.primary
+    color: COLORS.primary,
+    fontWeight: "700"
   },
   logoutRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
     borderTopWidth: 1,
     borderTopColor: "#e5e7eb",
-    paddingVertical: 12,
-    marginTop: 16
+    paddingVertical: 14,
+    marginTop: 16,
+    borderRadius: 8,
+    paddingHorizontal: 12
   },
   logoutText: {
     color: "#ef4444",

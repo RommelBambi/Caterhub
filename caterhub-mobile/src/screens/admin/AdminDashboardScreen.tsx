@@ -217,34 +217,120 @@ export default function AdminDashboardScreen() {
     switch (currentPage) {
       case "dashboard":
         return (
-          <View style={styles.pageHeaderRow}>
-            <View style={styles.pageHeaderLeft}>
-              <Text style={styles.pageTitle}>Dashboard Overview</Text>
-              <Text style={styles.pageSubTitle}>
-                Welcome back, {user?.username}
-              </Text>
+          <View style={styles.dashboardContainer}>
+            {/* Welcome Header */}
+            <View style={styles.welcomeSection}>
+              <View>
+                <Text style={styles.welcomeTitle}>Welcome back, {user?.username || 'Admin'}!</Text>
+                <Text style={styles.welcomeSubtitle}>
+                  Here's what's happening with your platform today
+                </Text>
+              </View>
+              <View style={styles.dateBadge}>
+                <Ionicons name="calendar-outline" size={16} color={COLORS.primary} />
+                <Text style={styles.dateText}>
+                  {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                </Text>
+              </View>
             </View>
+
+            {/* Stats Grid */}
             <View style={styles.statsGrid}>
-              <View style={styles.statCard}>
+              <View style={[styles.statCard, styles.statCardPrimary]}>
+                <View style={styles.statCardHeader}>
+                  <View style={[styles.statIconContainer, { backgroundColor: COLORS.primary + '15' }]}>
+                    <Ionicons name="people" size={24} color={COLORS.primary} />
+                  </View>
+                  <Ionicons name="trending-up-outline" size={16} color={COLORS.success} />
+                </View>
                 <Text style={styles.statLabel}>Total Users</Text>
                 <Text style={[styles.statValue, { color: COLORS.primary }]}>
                   {dashboardStats.loading ? '...' : dashboardStats.totalUsers.toLocaleString()}
                 </Text>
                 <Text style={styles.statSub}>Registered users</Text>
               </View>
-              <View style={styles.statCard}>
+
+              <View style={[styles.statCard, styles.statCardSuccess]}>
+                <View style={styles.statCardHeader}>
+                  <View style={[styles.statIconContainer, { backgroundColor: COLORS.success + '15' }]}>
+                    <Ionicons name="calendar" size={24} color={COLORS.success} />
+                  </View>
+                  <Ionicons name="trending-up-outline" size={16} color={COLORS.success} />
+                </View>
                 <Text style={styles.statLabel}>Active Bookings</Text>
                 <Text style={[styles.statValue, { color: COLORS.success }]}>
                   {dashboardStats.loading ? '...' : dashboardStats.activeBookings.toLocaleString()}
                 </Text>
                 <Text style={styles.statSub}>This month</Text>
               </View>
-              <View style={styles.statCard}>
+
+              <View style={[styles.statCard, styles.statCardInfo]}>
+                <View style={styles.statCardHeader}>
+                  <View style={[styles.statIconContainer, { backgroundColor: COLORS.info + '15' }]}>
+                    <Ionicons name="cash" size={24} color={COLORS.info} />
+                  </View>
+                  <Ionicons name="trending-up-outline" size={16} color={COLORS.success} />
+                </View>
                 <Text style={styles.statLabel}>Revenue</Text>
                 <Text style={[styles.statValue, { color: COLORS.info }]}>
                   {dashboardStats.loading ? '...' : `₱${dashboardStats.revenue.toLocaleString()}`}
                 </Text>
                 <Text style={styles.statSub}>Last 30 days</Text>
+              </View>
+            </View>
+
+            {/* Quick Actions */}
+            <View style={styles.quickActionsSection}>
+              <Text style={styles.sectionTitle}>Quick Actions</Text>
+              <View style={styles.quickActionsGrid}>
+                <Pressable 
+                  style={({ pressed }) => [
+                    styles.quickActionCard,
+                    pressed && styles.quickActionCardPressed
+                  ]}
+                  onPress={() => setCurrentPage('recruitment')}
+                >
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.primary + '10' }]}>
+                    <Ionicons name="person-add" size={28} color={COLORS.primary} />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Review Applications</Text>
+                </Pressable>
+                <Pressable 
+                  style={({ pressed }) => [
+                    styles.quickActionCard,
+                    pressed && styles.quickActionCardPressed
+                  ]}
+                  onPress={() => setCurrentPage('bookings')}
+                >
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.success + '10' }]}>
+                    <Ionicons name="calendar" size={28} color={COLORS.success} />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Manage Bookings</Text>
+                </Pressable>
+                <Pressable 
+                  style={({ pressed }) => [
+                    styles.quickActionCard,
+                    pressed && styles.quickActionCardPressed
+                  ]}
+                  onPress={() => setCurrentPage('tickets')}
+                >
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.info + '10' }]}>
+                    <Ionicons name="help-circle" size={28} color={COLORS.info} />
+                  </View>
+                  <Text style={styles.quickActionLabel}>Support Tickets</Text>
+                </Pressable>
+                <Pressable 
+                  style={({ pressed }) => [
+                    styles.quickActionCard,
+                    pressed && styles.quickActionCardPressed
+                  ]}
+                  onPress={() => setCurrentPage('analytics')}
+                >
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.danger + '10' }]}>
+                    <Ionicons name="bar-chart" size={28} color={COLORS.danger} />
+                  </View>
+                  <Text style={styles.quickActionLabel}>View Analytics</Text>
+                </Pressable>
               </View>
             </View>
           </View>
@@ -390,33 +476,44 @@ const styles = StyleSheet.create({
     backgroundColor: "#f9fafb"
   },
   sidebar: {
-    width: 220,
+    width: 240,
     backgroundColor: "#ffffff",
     borderRightWidth: 1,
     borderRightColor: "#e5e7eb",
-    paddingTop: 16,
-    paddingHorizontal: 12,
-    justifyContent: "space-between"
+    paddingTop: 20,
+    paddingHorizontal: 16,
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3
   },
   sidebarCollapsed: {
     width: 70,
-    paddingHorizontal: 8
+    paddingHorizontal: 12
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16
+    marginBottom: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6"
   },
   logoText: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#FF8000"
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#FF8000",
+    letterSpacing: -0.5
   },
   toggleButton: {
-    padding: 4,
-    borderRadius: 4,
-    backgroundColor: "#f3f4f6"
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: "#f9fafb",
+    borderWidth: 1,
+    borderColor: "#e5e7eb"
   },
   navList: {
     flexGrow: 1
@@ -424,18 +521,21 @@ const styles = StyleSheet.create({
   sidebarItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
     marginBottom: 4,
-    gap: 12
+    gap: 12,
+    transition: "all 0.2s"
   },
   sidebarItemCollapsed: {
     justifyContent: "center",
-    paddingHorizontal: 12
+    paddingHorizontal: 16
   },
   sidebarItemActive: {
-    backgroundColor: "#fff5e6"
+    backgroundColor: "#fff5e6",
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary
   },
   sidebarItemText: {
     color: "#374151",
@@ -443,16 +543,19 @@ const styles = StyleSheet.create({
     fontWeight: "600"
   },
   sidebarItemTextActive: {
-    color: COLORS.primary
+    color: COLORS.primary,
+    fontWeight: "700"
   },
   logoutRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
     borderTopWidth: 1,
     borderTopColor: "#e5e7eb",
-    paddingVertical: 12,
-    marginTop: 16
+    paddingVertical: 14,
+    marginTop: 16,
+    borderRadius: 8,
+    paddingHorizontal: 12
   },
   logoutText: {
     color: "#ef4444",
@@ -470,6 +573,42 @@ const styles = StyleSheet.create({
     padding: Platform.OS === 'web' ? 16 : 12,
     paddingBottom: Platform.OS === 'web' ? 16 : 100
   },
+  dashboardContainer: {
+    width: '100%'
+  },
+  welcomeSection: {
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    justifyContent: "space-between",
+    alignItems: Platform.OS === 'web' ? "center" : "flex-start",
+    marginBottom: 24,
+    gap: 16
+  },
+  welcomeTitle: {
+    fontSize: Platform.OS === 'web' ? 28 : 24,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 4
+  },
+  welcomeSubtitle: {
+    color: "#6b7280",
+    fontSize: Platform.OS === 'web' ? 15 : 14
+  },
+  dateBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#fff",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb"
+  },
+  dateText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151"
+  },
   pageHeaderRow: {
     flexDirection: Platform.OS === 'web' ? "row" : "column",
     justifyContent: Platform.OS === 'web' ? "space-between" : "flex-start",
@@ -481,53 +620,129 @@ const styles = StyleSheet.create({
     flex: 1
   },
   pageTitle: {
-    fontSize: Platform.OS === 'web' ? 18 : 20,
+    fontSize: Platform.OS === 'web' ? 24 : 22,
     fontWeight: "700",
     color: "#111827"
   },
   pageSubTitle: {
     color: "#6b7280",
-    fontSize: Platform.OS === 'web' ? 13 : 14,
+    fontSize: Platform.OS === 'web' ? 14 : 13,
     marginTop: 4
   },
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: Platform.OS === 'web' ? 16 : 8,
-    marginTop: 16
+    gap: 16,
+    marginBottom: 32
   },
   statCard: {
     flex: Platform.OS === 'web' ? 1 : 0,
-    flexBasis: Platform.OS === 'web' ? 'auto' : '30%',
-    maxWidth: Platform.OS === 'web' ? undefined : '30%',
-    minWidth: Platform.OS === 'web' ? 200 : 0,
+    flexBasis: Platform.OS === 'web' ? 'auto' : '48%',
+    minWidth: Platform.OS === 'web' ? 240 : '48%',
     backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: Platform.OS === 'web' ? 8 : 8,
-    paddingVertical: Platform.OS === 'web' ? 16 : 12,
-    paddingHorizontal: Platform.OS === 'web' ? 16 : 8,
+    borderRadius: 12,
+    padding: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 10 : 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: Platform.OS === 'web' ? 20 : 4,
-    elevation: 2
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#f3f4f6"
+  },
+  statCardPrimary: {
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary
+  },
+  statCardSuccess: {
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.success
+  },
+  statCardInfo: {
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.info
+  },
+  statCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16
+  },
+  statIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center"
   },
   statLabel: {
-    fontSize: Platform.OS === 'web' ? 12 : 10,
+    fontSize: 13,
     fontWeight: "600",
     color: "#6b7280",
-    marginBottom: Platform.OS === 'web' ? 8 : 4
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5
   },
   statValue: {
-    fontSize: Platform.OS === 'web' ? 24 : 16,
-    fontWeight: "700",
-    color: "#111827"
+    fontSize: Platform.OS === 'web' ? 32 : 28,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 4
   },
   statSub: {
-    fontSize: Platform.OS === 'web' ? 12 : 9,
-    color: "#6b7280",
-    marginTop: Platform.OS === 'web' ? 4 : 2
+    fontSize: 12,
+    color: "#9ca3af",
+    marginTop: 4
+  },
+  quickActionsSection: {
+    marginTop: 8
+  },
+  sectionTitle: {
+    fontSize: Platform.OS === 'web' ? 20 : 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 16
+  },
+  quickActionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12
+  },
+  quickActionCard: {
+    flex: Platform.OS === 'web' ? 0 : 1,
+    flexBasis: Platform.OS === 'web' ? 'auto' : '48%',
+    minWidth: Platform.OS === 'web' ? 180 : '48%',
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    gap: 12
+  },
+  quickActionCardPressed: {
+    backgroundColor: "#f9fafb",
+    transform: [{ scale: 0.98 }]
+  },
+  quickActionIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 4
+  },
+  quickActionLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+    textAlign: "center"
   },
   sectionCard: {
     backgroundColor: "#fff",

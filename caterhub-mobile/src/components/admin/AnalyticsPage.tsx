@@ -42,27 +42,23 @@ export default function AnalyticsPage() {
         .from('users')
         .select('id, created_at');
 
-      // Fetch bookings with related data
+      // Fetch bookings with related data (no services table - use packages and partner_applications)
       const { data: bookings, error: bookingsError } = await supabase
         .from('bookings')
         .select(`
           *,
-          services:service_id (
-            id,
-            name,
-            price_per_head
-          ),
           packages:package_id (
             id,
             name,
-            price
+            price,
+            caterer_id
           )
         `);
 
-      // Fetch partner applications
+      // Fetch partner applications (these are the "services")
       const { data: applications, error: applicationsError } = await supabase
         .from('partner_applications')
-        .select('id, status');
+        .select('id, status, business_name, user_id');
 
       if (usersError || bookingsError || applicationsError) {
         throw usersError || bookingsError || applicationsError;
@@ -78,23 +74,37 @@ export default function AnalyticsPage() {
       const monthlyRevenue: { [key: string]: number } = {};
       const bookingsByStatus: { [key: string]: number } = {};
 
+      // Create a map of caterer_id to business_name for quick lookup
+      const catererNameMap = new Map<string, string>();
+      applications?.forEach((app: any) => {
+        if (app.user_id && app.business_name) {
+          catererNameMap.set(app.user_id, app.business_name);
+        }
+      });
+
       bookings?.forEach((booking: any) => {
         let amount = 0;
         if (booking.packages?.price) {
+          // Extract price from package (format: "₱250/head" or "250")
           const priceMatch = booking.packages.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
           if (priceMatch) {
-            amount = parseFloat(priceMatch[1].replace(/,/g, ''));
+            const pricePerHead = parseFloat(priceMatch[1].replace(/,/g, ''));
+            amount = pricePerHead * booking.guests;
           }
-        } else {
-          const pricePerHead = booking.services?.price_per_head || 0;
-          amount = pricePerHead * booking.guests;
+        } else if (booking.deposit_amount && booking.remaining_amount) {
+          // Use deposit + remaining + delivery fee if available
+          amount = (booking.deposit_amount || 0) + (booking.remaining_amount || 0) + (booking.delivery_fee || 0);
+        } else if (booking.delivery_fee) {
+          // Fallback: use delivery fee if available
+          amount = booking.delivery_fee;
         }
 
         if (booking.status === 'COMPLETED') {
           totalRevenue += amount;
 
-          // Track by service
-          const serviceName = booking.services?.name || 'Unknown';
+          // Track by service (get business name from caterer_id)
+          const catererId = booking.packages?.caterer_id;
+          const serviceName = catererId ? (catererNameMap.get(catererId) || 'Unknown Service') : 'Unknown Service';
           if (!serviceRevenue[serviceName]) {
             serviceRevenue[serviceName] = { count: 0, revenue: 0 };
           }
@@ -159,7 +169,24 @@ export default function AnalyticsPage() {
       });
     } catch (error: any) {
       console.error('Error fetching analytics:', error);
-      Alert.alert('Error', 'Failed to load analytics');
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      
+      // Set default analytics data even on error to prevent showing error state
+      setAnalytics({
+        totalUsers: 0,
+        totalBookings: 0,
+        totalRevenue: 0,
+        avgBookingValue: 0,
+        totalCaterers: 0,
+        pendingApplications: 0,
+        completionRate: 0,
+        topServices: [],
+        revenueByMonth: [],
+        bookingsByStatus: {},
+        userGrowth: [],
+      });
+      
+      Alert.alert('Error', `Failed to load analytics: ${error?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
       setRefreshing(false);

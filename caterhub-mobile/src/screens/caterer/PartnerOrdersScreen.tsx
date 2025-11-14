@@ -52,23 +52,33 @@ export default function PartnerOrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
-  // Fetch orders from Supabase
+  // Fetch orders from Supabase - Optimized for faster loading
   const fetchOrders = async () => {
     if (!user) {
       console.warn('[PartnerOrdersScreen] No user, cannot fetch orders');
+      setLoading(false);
+      setRefreshing(false);
       return;
     }
 
     console.log('[PartnerOrdersScreen] Fetching orders for caterer:', user.id);
 
     try {
-      // Services table no longer exists - only use packages
-      // Get packages for this caterer
+      // Optimized: Fetch packages and bookings in parallel where possible
+      // First, get package IDs quickly
       const { data: packages, error: packagesError } = await supabase
         .from('packages')
         .select('id')
         .eq('caterer_id', user.id)
         .eq('is_active', true);
+
+      if (packagesError) {
+        console.error('[PartnerOrdersScreen] Error fetching packages:', packagesError);
+        setOrders([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
 
       const packageIds = packages?.map(p => p.id) || [];
       console.log('[PartnerOrdersScreen] Package IDs for this caterer:', packageIds);
@@ -81,8 +91,8 @@ export default function PartnerOrdersScreen() {
         return;
       }
 
-      // Fetch bookings for packages (services table no longer exists)
-      let bookingsQuery = supabase
+      // Fetch bookings with all necessary joins in one query
+      const { data: bookings, error: bookingsError } = await supabase
         .from('bookings')
         .select(`
           *,
@@ -98,87 +108,48 @@ export default function PartnerOrdersScreen() {
             email
           )
         `)
+        .in('package_id', packageIds)
         .order('created_at', { ascending: false });
 
-      // Filter by package_id only
-      bookingsQuery = bookingsQuery.in('package_id', packageIds);
-      console.log('[PartnerOrdersScreen] Querying bookings by package_id:', packageIds);
-
-      const { data: bookings, error } = await bookingsQuery;
-
-      console.log('[PartnerOrdersScreen] Found bookings:', bookings?.length || 0);
-      if (bookings && bookings.length > 0) {
-        console.log('[PartnerOrdersScreen] Sample booking:', {
-          id: bookings[0].id,
-          service_id: bookings[0].service_id,
-          package_id: bookings[0].package_id,
-          user_id: bookings[0].user_id,
-          customer: bookings[0].customer?.username,
-        });
-      }
-
-      if (error) {
-        console.error('Error fetching orders:', error);
-        Alert.alert('Error', 'Failed to load orders');
+      if (bookingsError) {
+        console.error('[PartnerOrdersScreen] Error fetching bookings:', bookingsError);
+        Alert.alert('Error', `Failed to load orders: ${bookingsError.message}`);
+        setOrders([]);
         setLoading(false);
         setRefreshing(false);
         return;
       }
 
-      // If customer data is missing from joins, fetch it separately
-      const bookingsWithCustomers = await Promise.all(
-        (bookings || []).map(async (booking: any) => {
-          // If customer join worked, use it
-          if (booking.customer) {
-            return booking;
+      console.log('[PartnerOrdersScreen] Found bookings:', bookings?.length || 0);
+
+      if (!bookings || bookings.length === 0) {
+        console.log('[PartnerOrdersScreen] No bookings found');
+        setOrders([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      // Transform bookings to Order format immediately (no additional async operations)
+      const transformedOrders: Order[] = bookings
+        .filter((booking: any) => {
+          // Filter out bookings without required data
+          if (!booking.packages) {
+            console.warn('[PartnerOrdersScreen] Booking missing package:', booking.id);
+            return false;
           }
-
-          // Otherwise, fetch customer data separately
-          console.log('[PartnerOrdersScreen] Fetching customer data separately for booking:', booking.id, 'user_id:', booking.user_id);
-          
-          const { data: customerData, error: customerError } = await supabase
-            .from('users')
-            .select('id, username, email')
-            .eq('id', booking.user_id)
-            .single();
-
-          if (customerError) {
-            console.warn('[PartnerOrdersScreen] Failed to fetch customer data:', customerError);
-            // Still include booking but with minimal customer info
-            return {
-              ...booking,
-              customer: {
-                id: booking.user_id,
-                username: 'Unknown Customer',
-                email: 'N/A',
-              },
+          if (!booking.customer) {
+            console.warn('[PartnerOrdersScreen] Booking missing customer:', booking.id);
+            // Still include it but with default customer info
+            booking.customer = {
+              id: booking.user_id,
+              username: 'Unknown Customer',
+              email: 'N/A',
             };
           }
-
-          return {
-            ...booking,
-            customer: customerData,
-          };
+          return true;
         })
-      );
-
-      // Transform bookings to Order format
-      const validBookings = bookingsWithCustomers.filter((booking: any) => {
-        if (!booking.customer) {
-          console.warn('[PartnerOrdersScreen] Booking missing customer after fetch:', booking.id);
-          return false;
-        }
-        // Package is required (services table no longer exists)
-        if (!booking.packages) {
-          console.warn('[PartnerOrdersScreen] Booking missing package:', booking.id);
-          return false;
-        }
-        return true;
-      });
-
-      console.log('[PartnerOrdersScreen] Valid bookings after filtering:', validBookings.length);
-
-      const transformedOrders: Order[] = validBookings.map((booking: any) => {
+        .map((booking: any) => {
           // Parse notes to extract package and dish info
           let notesData: any = {};
           try {
@@ -196,38 +167,42 @@ export default function PartnerOrdersScreen() {
 
           const inclusions = notesData.inclusions || [];
 
-          // Get package information from database or fallback to notes
+          // Get package information from database
           const packageInfo = booking.packages || null;
           const packageName = packageInfo?.name || (notesData.packageId ? `Package ${notesData.packageId}` : undefined);
           
-          // Calculate total price - use package price if available, otherwise use service price_per_head
+          // Calculate total price - prioritize deposit + remaining + delivery fee
           let total = 0;
-          if (packageInfo?.price) {
+          if (booking.deposit_amount && booking.remaining_amount) {
+            // Use actual payment amounts if available
+            total = (booking.deposit_amount || 0) + (booking.remaining_amount || 0) + (booking.delivery_fee || 0);
+          } else if (packageInfo?.price) {
             // Parse package price string (e.g., "12,500" or "₱12,500")
             const priceMatch = packageInfo.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
             if (priceMatch) {
               const packagePrice = parseFloat(priceMatch[1].replace(/,/g, ''));
-              // Package price might be total or per head - check if we need to multiply by guests
-              // For now, assume it's a total package price (not per head)
-              total = packagePrice;
+              // Package price is per head, multiply by guests
+              total = packagePrice * (booking.guests || 1);
             }
-          } else {
-            // Fallback to service price_per_head * guests
-            // Services table no longer exists - removed fallback
-            const pricePerHead = 0;
-            total = pricePerHead * booking.guests;
           }
+
+          // Handle customer data - use joined data or provide defaults
+          const customer = booking.customer || {
+            id: booking.user_id,
+            username: 'Unknown Customer',
+            email: 'N/A',
+          };
 
           return {
             id: booking.id,
             bookingId: `ORD-${booking.id}`,
-            customerName: booking.customer.username || 'Unknown',
-            customerEmail: booking.customer.email || '',
-            customerId: booking.customer.id,
+            customerName: customer.username || 'Unknown',
+            customerEmail: customer.email || '',
+            customerId: customer.id,
             serviceName: booking.packages?.name || 'Unknown Service',
             packageName: packageName,
             packagePrice: packageInfo?.price,
-            venue: notesData.address || 'Not specified',
+            venue: booking.address || notesData.address || 'Not specified',
             selectedDishes,
             inclusions,
             status: booking.status,
@@ -240,9 +215,10 @@ export default function PartnerOrdersScreen() {
 
       console.log('[PartnerOrdersScreen] Transformed orders:', transformedOrders.length);
       setOrders(transformedOrders);
-    } catch (err) {
+    } catch (err: any) {
       console.error('[PartnerOrdersScreen] Failed to fetch orders:', err);
-      Alert.alert('Error', 'Failed to load orders');
+      Alert.alert('Error', `Failed to load orders: ${err?.message || 'Unknown error'}`);
+      setOrders([]);
     } finally {
       setLoading(false);
       setRefreshing(false);

@@ -8,8 +8,11 @@ interface SupportTicket {
   booking_id?: number;
   subject: string;
   description: string;
+  type: 'payment' | 'booking' | 'caterer' | 'food_quality' | 'delivery' | 'app_bug' | 'account' | 'other';
   status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  admin_notes?: string | null;
+  resolved_at?: string | null;
   created_at: string;
   updated_at: string;
   users?: {
@@ -49,37 +52,100 @@ export default function TicketsPage() {
 
   const fetchTickets = async () => {
     try {
-      // Fetch real support tickets from the database
-      const { data, error } = await supabase
+      // First, fetch tickets without joins to avoid FK issues
+      const { data: ticketsData, error: ticketsError } = await supabase
         .from('support_tickets')
-        .select(`
-          *,
-          users:user_id (
-            id,
-            username,
-            email
-          ),
-          bookings:booking_id (
-            id,
-            event_date,
-            status
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching tickets:', error);
-        Alert.alert('Error', error?.message || 'Failed to load support tickets. Please check your connection and try again.');
+      if (ticketsError) {
+        console.error('Error fetching tickets:', ticketsError);
+        console.error('Error details:', JSON.stringify(ticketsError, null, 2));
+        
+        // Check if it's an RLS policy issue
+        if (ticketsError.code === 'PGRST301' || ticketsError.message?.includes('row-level security')) {
+          Alert.alert(
+            'Permission Error', 
+            'Unable to load support tickets. Please ensure RLS policies allow admin access to support_tickets table.'
+          );
+        } else {
+          Alert.alert('Error', ticketsError?.message || 'Failed to load support tickets. Please check your connection and try again.');
+        }
+        
         setTickets([]);
         return;
       }
 
-      // Use real data from database
-      setTickets(data || []);
-      console.log(`Loaded ${data?.length || 0} support tickets`);
+      if (!ticketsData || ticketsData.length === 0) {
+        console.log('No tickets found');
+        setTickets([]);
+        return;
+      }
+
+      console.log(`✅ Found ${ticketsData.length} support tickets, enriching with user data...`);
+
+      // Fetch user data from public.users table for each unique user_id
+      const uniqueUserIds = [...new Set(ticketsData.map(t => t.user_id))];
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('id, username, email')
+        .in('id', uniqueUserIds);
+
+      if (usersError) {
+        console.warn('Error fetching users:', usersError);
+      }
+
+      // Create a map of user_id to user data
+      const usersMap = new Map<string, { id: string; username: string; email: string }>();
+      usersData?.forEach((user: any) => {
+        usersMap.set(user.id, user);
+      });
+
+      // Fetch booking data for tickets that have booking_id
+      const bookingIds = ticketsData
+        .map(t => t.booking_id)
+        .filter((id): id is number => id !== null && id !== undefined);
+      
+      let bookingsMap = new Map<number, { id: number; event_date: string; status: string }>();
+      
+      if (bookingIds.length > 0) {
+        const { data: bookingsData, error: bookingsError } = await supabase
+          .from('bookings')
+          .select('id, event_date, status')
+          .in('id', bookingIds);
+
+        if (bookingsError) {
+          console.warn('Error fetching bookings:', bookingsError);
+        } else {
+          bookingsData?.forEach((booking: any) => {
+            bookingsMap.set(booking.id, booking);
+          });
+        }
+      }
+
+      // Enrich tickets with user and booking data
+      const enrichedTickets: SupportTicket[] = ticketsData.map((ticket: any) => ({
+        ...ticket,
+        users: usersMap.get(ticket.user_id) || {
+          id: ticket.user_id,
+          username: 'Unknown User',
+          email: 'N/A',
+        },
+        bookings: ticket.booking_id ? (bookingsMap.get(ticket.booking_id) || undefined) : undefined,
+      }));
+
+      console.log(`✅ Loaded ${enrichedTickets.length} support tickets with enriched data`);
+      
+      if (enrichedTickets.length > 0) {
+        console.log('Sample ticket:', JSON.stringify(enrichedTickets[0], null, 2));
+      }
+
+      setTickets(enrichedTickets);
     } catch (error: any) {
       console.error('Error fetching tickets:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
       Alert.alert('Error', error?.message || 'Failed to load tickets');
+      setTickets([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
