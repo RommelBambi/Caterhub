@@ -6,6 +6,7 @@ import PartnerOrderDetailsScreen from '../../screens/caterer/PartnerOrderDetails
 import PartnerManagePackagesScreen from '../../screens/caterer/PartnerManagePackagesScreen';
 import PartnerSettingsScreen from '../../screens/caterer/PartnerSettingsScreen';
 import PartnerWalletScreen from '../../screens/caterer/PartnerWalletScreen';
+import PartnerWithdrawalScreen from '../../screens/caterer/PartnerWithdrawalScreen';
 import { useAuth } from '../../store/auth';
 
 export type PartnerStackParamList = {
@@ -14,6 +15,7 @@ export type PartnerStackParamList = {
   PartnerManagePackages: undefined;
   PartnerSettings: undefined;
   PartnerWallet: undefined;
+  PartnerWithdrawal: { availableBalance: number };
   PartnerOrderDetails: {
     order: {
       id: string;
@@ -63,6 +65,11 @@ export default function PartnerNav() {
       <Stack.Screen
         name="PartnerWallet"
         component={PartnerWalletScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="PartnerWithdrawal"
+        component={PartnerWithdrawalScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

@@ -39,11 +39,20 @@ type PaymentMethod = 'gcash' | 'paymaya';
 export default function PaymentScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { bookingId, amount, description, isRemainingPayment = false } = route.params;
+  const { bookingId, amount, description, isRemainingPayment = false, paymentOption, depositAmount: routeDepositAmount, remainingAmount: routeRemainingAmount } = route.params;
   
-  // Calculate deposit (50%) and remaining (50%) - unless this is a remaining payment
-  const depositAmount = isRemainingPayment ? 0 : Math.round(amount / 2);
-  const remainingAmount = isRemainingPayment ? amount : (amount - depositAmount);
+  // Use paymentOption to determine payment amounts
+  // If paymentOption is 'full', show full amount; if 'deposit', show 50%
+  const isFullPayment = paymentOption === 'full';
+  const depositAmount = isRemainingPayment 
+    ? 0 
+    : (isFullPayment ? amount : (routeDepositAmount ?? Math.round(amount / 2)));
+  const remainingAmount = isRemainingPayment 
+    ? amount 
+    : (isFullPayment ? 0 : (routeRemainingAmount ?? (amount - depositAmount)));
+  
+  // The amount to pay now
+  const paymentAmount = isFullPayment ? amount : depositAmount;
 
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [loading, setLoading] = useState(false);
@@ -87,14 +96,14 @@ export default function PaymentScreen({ route, navigation }: any) {
       setProcessingPayment(true);
 
       // Check if payment amount exceeds Xendit limit (₱1,000,000)
-      const paymentAmount = isRemainingPayment ? remainingAmount : depositAmount;
-      const xenditAmount = toXenditAmount(paymentAmount);
+      const currentPaymentAmount = isRemainingPayment ? remainingAmount : paymentAmount;
+      const xenditAmount = toXenditAmount(currentPaymentAmount);
       const MAX_AMOUNT = 1000000; // ₱1,000,000 limit for Xendit
       
       if (xenditAmount > MAX_AMOUNT) {
         Alert.alert(
           'Amount Too Large',
-          `Xendit has a maximum transaction limit of ₱1,000,000. Your payment amount is ₱${paymentAmount.toLocaleString()}. Please contact us directly for large bookings.`,
+          `Xendit has a maximum transaction limit of ₱1,000,000. Your payment amount is ₱${currentPaymentAmount.toLocaleString()}. Please contact us directly for large bookings.`,
           [
             {
               text: 'OK',
@@ -114,12 +123,16 @@ export default function PaymentScreen({ route, navigation }: any) {
       }
 
       console.log('Creating payment via Edge Function...');
+      const paymentDescription = isRemainingPayment 
+        ? `Remaining Balance (50%) - ${description || `Booking #${bookingId}`}`
+        : isFullPayment
+        ? `Full Payment - ${description || `Booking #${bookingId}`}`
+        : `Deposit (50%) - ${description || `Booking #${bookingId}`}`;
+      
       const paymentResponse = await createPaymentViaEdgeFunction({
         amount: xenditAmount,
         currency: 'PHP',
-        description: isRemainingPayment 
-          ? `Remaining Balance (50%) - ${description || `Booking #${bookingId}`}`
-          : `Deposit (50%) - ${description || `Booking #${bookingId}`}`,
+        description: paymentDescription,
         bookingId: bookingId.toString(),
         userId: user?.id || '',
         paymentMethod: selectedMethod,
@@ -144,6 +157,10 @@ export default function PaymentScreen({ route, navigation }: any) {
 
         if (isRemainingPayment) {
           // For remaining payment, don't update deposit status
+          updateData.remaining_paid = false; // Will be updated when payment succeeds
+        } else if (isFullPayment) {
+          // For full payment, mark both as paid when payment succeeds
+          updateData.deposit_paid = false; // Will be updated when payment succeeds
           updateData.remaining_paid = false; // Will be updated when payment succeeds
         } else {
           // For deposit payment
@@ -191,20 +208,32 @@ export default function PaymentScreen({ route, navigation }: any) {
           <Text style={styles.summaryAmount}>₱{amount.toLocaleString()}</Text>
           <Text style={styles.summaryDescription}>{description}</Text>
           
-          {/* Deposit Info */}
-          <View style={styles.depositInfo}>
-            <View style={styles.depositRow}>
-              <Text style={styles.depositLabel}>Deposit Required (50%)</Text>
-              <Text style={styles.depositAmount}>₱{depositAmount.toLocaleString()}</Text>
+          {/* Payment Info */}
+          {isFullPayment ? (
+            <View style={styles.depositInfo}>
+              <View style={styles.depositRow}>
+                <Text style={styles.depositLabel}>Full Payment</Text>
+                <Text style={styles.depositAmount}>₱{amount.toLocaleString()}</Text>
+              </View>
+              <Text style={styles.depositNote}>
+                You have selected to pay the full amount upfront.
+              </Text>
             </View>
-            <View style={styles.depositRow}>
-              <Text style={styles.depositLabelSecondary}>Remaining (50%)</Text>
-              <Text style={styles.depositAmountSecondary}>₱{remainingAmount.toLocaleString()}</Text>
+          ) : (
+            <View style={styles.depositInfo}>
+              <View style={styles.depositRow}>
+                <Text style={styles.depositLabel}>Deposit Required (50%)</Text>
+                <Text style={styles.depositAmount}>₱{depositAmount.toLocaleString()}</Text>
+              </View>
+              <View style={styles.depositRow}>
+                <Text style={styles.depositLabelSecondary}>Remaining (50%)</Text>
+                <Text style={styles.depositAmountSecondary}>₱{remainingAmount.toLocaleString()}</Text>
+              </View>
+              <Text style={styles.depositNote}>
+                Pay remaining amount during the event (cash or online)
+              </Text>
             </View>
-            <Text style={styles.depositNote}>
-              Pay remaining amount during the event (cash or online)
-            </Text>
-          </View>
+          )}
         </View>
 
         {/* Payment Methods */}
@@ -243,18 +272,20 @@ export default function PaymentScreen({ route, navigation }: any) {
           <View style={styles.infoCard}>
             <Ionicons name="information-circle" size={20} color={COLORS.primary} />
             <Text style={styles.infoText}>
-              You'll be taken to a secure payment screen to complete your 50% deposit payment via Xendit. Payment will be processed within the app.
+              You'll be taken to a secure payment screen to complete your {isFullPayment ? 'full' : '50% deposit'} payment via Xendit. Payment will be processed within the app.
             </Text>
           </View>
         )}
         
         {/* Important Notice */}
-        <View style={[styles.infoCard, { backgroundColor: COLORS.primary + '10' }]}>
-          <Ionicons name="alert-circle" size={20} color={COLORS.primary} />
-          <Text style={styles.infoText}>
-            <Text style={{ fontWeight: '600' }}>Important:</Text> This is a 50% deposit to confirm your booking. The remaining 50% can be paid during the event.
-          </Text>
-        </View>
+        {!isFullPayment && (
+          <View style={[styles.infoCard, { backgroundColor: COLORS.primary + '10' }]}>
+            <Ionicons name="alert-circle" size={20} color={COLORS.primary} />
+            <Text style={styles.infoText}>
+              <Text style={{ fontWeight: '600' }}>Important:</Text> This is a 50% deposit to confirm your booking. The remaining 50% can be paid during the event.
+            </Text>
+          </View>
+        )}
 
         {/* Terms and Conditions Checkbox */}
         <View style={styles.termsSection}>
@@ -304,6 +335,8 @@ export default function PaymentScreen({ route, navigation }: any) {
               <Text style={styles.payButtonText}>
                 {isRemainingPayment 
                   ? `Pay Remaining (₱${remainingAmount.toLocaleString()})`
+                  : isFullPayment
+                  ? `Pay Full Amount (₱${amount.toLocaleString()})`
                   : `Pay Deposit (₱${depositAmount.toLocaleString()})`
                 }
               </Text>

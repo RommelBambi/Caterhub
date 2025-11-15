@@ -182,6 +182,7 @@ export default function BookingForm({ route, navigation }: any) {
         amount: total,
         depositAmount,
         remainingAmount,
+        paymentOption: d.paymentOption, // Pass the selected payment option
         description: `${service?.name || 'Catering Service'}${pkg ? ` - ${pkg.name}` : ''}`,
         serviceId: service.id,
         packageId: pkg?.id,

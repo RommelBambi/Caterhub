@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Platform, ActivityIndicator, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Platform, ActivityIndicator, RefreshControl, TouchableOpacity } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
@@ -41,12 +41,23 @@ interface Transaction {
   customer_name?: string;
 }
 
+interface WithdrawalRequest {
+  id: number;
+  amount: number;
+  payment_method: string;
+  payment_details: any;
+  status: string;
+  created_at: string;
+  processed_at: string | null;
+}
+
 export default function PartnerWalletScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const [earnings, setEarnings] = useState<EarningsData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -204,6 +215,18 @@ export default function PartnerWalletScreen() {
         });
 
       setTransactions(transactions);
+
+      // Fetch withdrawal requests
+      const { data: withdrawalsData, error: withdrawalsError } = await supabase
+        .from('withdrawal_requests')
+        .select('*')
+        .eq('caterer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!withdrawalsError && withdrawalsData) {
+        setWithdrawals(withdrawalsData as WithdrawalRequest[]);
+      }
     } catch (error: any) {
       console.error('Error fetching wallet data:', error);
     } finally {
@@ -292,7 +315,22 @@ export default function PartnerWalletScreen() {
           {/* Earnings Summary Card */}
           {earnings ? (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Earnings Summary</Text>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>Earnings Summary</Text>
+                {earnings.total_earnings && earnings.total_earnings > 0 && (
+                  <TouchableOpacity
+                    style={styles.withdrawButton}
+                    onPress={() => {
+                      navigation.navigate('PartnerWithdrawal', {
+                        availableBalance: earnings.total_earnings || 0,
+                      });
+                    }}
+                  >
+                    <Ionicons name="arrow-down-circle" size={18} color={COLORS.white} />
+                    <Text style={styles.withdrawButtonText}>Withdraw</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               
               <View style={styles.summaryGrid}>
                 <View style={styles.summaryItem}>
@@ -363,6 +401,61 @@ export default function PartnerWalletScreen() {
             </View>
           )}
 
+          {/* Withdrawal History */}
+          {withdrawals.length > 0 && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Withdrawal History</Text>
+              <View style={styles.withdrawalsList}>
+                {withdrawals.map((withdrawal) => {
+                  const getStatusColor = (status: string) => {
+                    switch (status) {
+                      case 'COMPLETED': return COLORS.success;
+                      case 'PROCESSING': return COLORS.warn;
+                      case 'FAILED': return COLORS.danger;
+                      case 'CANCELLED': return COLORS.textLight;
+                      default: return COLORS.warn;
+                    }
+                  };
+
+                  return (
+                    <View key={withdrawal.id} style={styles.withdrawalItem}>
+                      <View style={styles.withdrawalHeader}>
+                        <View style={styles.withdrawalLeft}>
+                          <Ionicons
+                            name={
+                              withdrawal.status === 'COMPLETED'
+                                ? 'checkmark-circle'
+                                : withdrawal.status === 'FAILED'
+                                ? 'close-circle'
+                                : 'time'
+                            }
+                            size={20}
+                            color={getStatusColor(withdrawal.status)}
+                          />
+                          <View style={styles.withdrawalInfo}>
+                            <Text style={styles.withdrawalTitle}>
+                              {withdrawal.payment_method === 'gcash'
+                                ? 'GCash'
+                                : withdrawal.payment_method === 'paymaya'
+                                ? 'PayMaya'
+                                : 'Bank Transfer'}
+                            </Text>
+                            <Text style={styles.withdrawalSubtitle}>
+                              {formatDate(withdrawal.created_at)} • {withdrawal.status}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={[styles.withdrawalAmount, { color: COLORS.primary }]}>
+                          {formatCurrency(withdrawal.amount)}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
           {/* Transaction History */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Recent Transactions</Text>
@@ -391,7 +484,7 @@ export default function PartnerWalletScreen() {
                           <Ionicons 
                             name={transaction.status === 'COMPLETED' ? 'checkmark-circle' : 'time'} 
                             size={20} 
-                            color={transaction.status === 'COMPLETED' ? COLORS.success : COLORS.warning} 
+                            color={transaction.status === 'COMPLETED' ? COLORS.success : COLORS.warn} 
                           />
                           <View style={styles.transactionInfo}>
                             <Text style={styles.transactionTitle}>
@@ -642,5 +735,63 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 12,
     color: "#9ca3af"
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20
+  },
+  withdrawButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6
+  },
+  withdrawButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: "600"
+  },
+  withdrawalsList: {
+    gap: 12
+  },
+  withdrawalItem: {
+    padding: 16,
+    backgroundColor: "#f9fafb",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb"
+  },
+  withdrawalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start"
+  },
+  withdrawalLeft: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    flex: 1,
+    gap: 12
+  },
+  withdrawalInfo: {
+    flex: 1
+  },
+  withdrawalTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 4
+  },
+  withdrawalSubtitle: {
+    fontSize: 12,
+    color: "#6b7280"
+  },
+  withdrawalAmount: {
+    fontSize: 16,
+    fontWeight: "700"
   }
 });
