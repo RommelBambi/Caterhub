@@ -17,7 +17,7 @@ export interface CreatePaymentRequest {
   description: string;
   bookingId: string;
   userId: string;
-  paymentMethod: 'gcash' | 'paymaya' | 'grabpay' | 'invoice';
+  paymentMethod: 'gcash' | 'paymaya';
   customerInfo?: {
     name?: string;
     email?: string;

@@ -21,6 +21,7 @@ import { supabase } from '../../services/supabase';
 import { checkXenditKeys } from '../../utils/checkXenditKeys';
 import { diagnoseEnvironment } from '../../utils/diagnoseEnv';
 import PaymentWebView from '../../components/payment/PaymentWebView';
+import TermsModal from '../../components/common/TermsModal';
 
 const COLORS = {
   primary: '#FF8000',
@@ -33,7 +34,7 @@ const COLORS = {
   danger: '#dc2626',
 };
 
-type PaymentMethod = 'gcash' | 'paymaya' | 'invoice';
+type PaymentMethod = 'gcash' | 'paymaya';
 
 export default function PaymentScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -50,6 +51,8 @@ export default function PaymentScreen({ route, navigation }: any) {
   const [showPaymentWebView, setShowPaymentWebView] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [paymentResponse, setPaymentResponse] = useState<any>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
 
   // Check Xendit keys and environment on mount (for debugging)
   React.useEffect(() => {
@@ -63,12 +66,16 @@ export default function PaymentScreen({ route, navigation }: any) {
   const paymentMethods = [
     { id: 'gcash', name: 'GCash', icon: 'wallet', color: '#007DFF', description: 'Pay via GCash e-wallet' },
     { id: 'paymaya', name: 'PayMaya', icon: 'card', color: '#00D632', description: 'Pay via PayMaya e-wallet' },
-    { id: 'invoice', name: 'More Options', icon: 'options', color: '#6366f1', description: 'GCash, PayMaya, Bank Transfer & more' },
   ];
 
   const handlePayment = async () => {
     if (!selectedMethod) {
       Alert.alert('Select Payment Method', 'Please select a payment method to continue.');
+      return;
+    }
+
+    if (!termsAccepted) {
+      Alert.alert('Terms & Conditions Required', 'Please read and accept the Terms & Conditions to proceed with payment.');
       return;
     }
 
@@ -128,7 +135,7 @@ export default function PaymentScreen({ route, navigation }: any) {
 
         // Update booking with payment info
         const updateData: any = {
-          payment_method: selectedMethod === 'invoice' ? 'xendit_invoice' : selectedMethod,
+          payment_method: selectedMethod,
           payment_status: 'PENDING',
           xendit_invoice_id: paymentResponse.invoiceId || null,
           xendit_charge_id: paymentResponse.chargeId || null,
@@ -248,6 +255,35 @@ export default function PaymentScreen({ route, navigation }: any) {
             <Text style={{ fontWeight: '600' }}>Important:</Text> This is a 50% deposit to confirm your booking. The remaining 50% can be paid during the event.
           </Text>
         </View>
+
+        {/* Terms and Conditions Checkbox */}
+        <View style={styles.termsSection}>
+          <TouchableOpacity
+            style={styles.termsCheckboxContainer}
+            onPress={() => setTermsAccepted(!termsAccepted)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
+              {termsAccepted && <Ionicons name="checkmark" size={16} color={COLORS.white} />}
+            </View>
+            <View style={styles.termsTextContainer}>
+              <Text style={styles.termsText}>
+                I have read and understand the{' '}
+                <Text
+                  style={styles.termsLink}
+                  onPress={() => setShowTermsModal(true)}
+                >
+                  Terms and Conditions
+                </Text>
+              </Text>
+            </View>
+          </TouchableOpacity>
+          {!termsAccepted && (
+            <Text style={styles.termsWarning}>
+              You must accept the Terms and Conditions to proceed with payment.
+            </Text>
+          )}
+        </View>
       </ScrollView>
 
       {/* Footer */}
@@ -255,10 +291,10 @@ export default function PaymentScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={[
             styles.payButton,
-            (!selectedMethod || loading) && styles.payButtonDisabled,
+            (!selectedMethod || !termsAccepted || loading) && styles.payButtonDisabled,
           ]}
           onPress={handlePayment}
-          disabled={!selectedMethod || loading}
+          disabled={!selectedMethod || !termsAccepted || loading}
           activeOpacity={0.8}
         >
           {loading ? (
@@ -316,6 +352,17 @@ export default function PaymentScreen({ route, navigation }: any) {
             [{ text: 'OK' }]
           );
         }}
+      />
+
+      {/* Terms and Conditions Modal */}
+      <TermsModal
+        visible={showTermsModal}
+        onAccept={() => {
+          setShowTermsModal(false);
+          setTermsAccepted(true);
+        }}
+        onDecline={() => setShowTermsModal(false)}
+        requireAcceptance={false}
       />
     </View>
   );
@@ -516,5 +563,52 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: COLORS.white,
+  },
+  termsSection: {
+    paddingHorizontal: 16,
+    marginBottom: 24,
+  },
+  termsCheckboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.white,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    marginTop: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  termsTextContainer: {
+    flex: 1,
+  },
+  termsText: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
+  termsLink: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  termsWarning: {
+    fontSize: 12,
+    color: COLORS.danger,
+    marginTop: 8,
+    marginLeft: 36,
   },
 });

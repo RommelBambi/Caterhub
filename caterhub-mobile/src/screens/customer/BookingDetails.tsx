@@ -88,6 +88,18 @@ const BookingDetails = ({ route, navigation }: any) => {
     });
   };
 
+  const handlePayDeposit = () => {
+    // Navigate to payment screen for deposit
+    navigation.navigate('Payment', {
+      bookingId: booking.id,
+      amount: totalCost,
+      depositAmount: depositAmount,
+      remainingAmount: remainingAmount,
+      description: `Deposit Payment - ${booking.packages?.business_name || 'Catering Service'}`,
+      isRemainingPayment: false
+    });
+  };
+
   const handleReportIssue = () => {
     setReportIssueModalVisible(true);
   };
@@ -367,17 +379,41 @@ const BookingDetails = ({ route, navigation }: any) => {
                   <Text style={styles.sectionTitle}>Payment Information</Text>
                   
                   {depositAmount > 0 && (
-                    <View style={styles.row}>
-                      <Ionicons 
-                        name={depositPaid ? "checkmark-circle" : "time-outline"} 
-                        size={18} 
-                        color={depositPaid ? "#22c55e" : "#f59e0b"} 
-                      />
-                      <Text style={styles.label}>
-                        Deposit (50%): {formatCurrency(depositAmount)}
-                        {depositPaid && paymentMethod && ` - Paid (${paymentMethod.toUpperCase()})`}
-                        {!depositPaid && ' - Pending'}
-                      </Text>
+                    <View>
+                      <View style={styles.row}>
+                        <Ionicons 
+                          name={depositPaid ? "checkmark-circle" : "time-outline"} 
+                          size={18} 
+                          color={depositPaid ? "#22c55e" : "#f59e0b"} 
+                        />
+                        <Text style={styles.label}>
+                          Deposit (50%): {formatCurrency(depositAmount)}
+                          {depositPaid && paymentMethod && ` - Paid (${paymentMethod.toUpperCase()})`}
+                          {!depositPaid && ' - Pending'}
+                        </Text>
+                      </View>
+                      
+                      {/* Continue Deposit Payment Option */}
+                      {!depositPaid && (
+                        <View style={styles.earlyPaymentCard}>
+                          <View style={styles.earlyPaymentHeader}>
+                            <Ionicons name="card" size={18} color="#FF8000" />
+                            <Text style={styles.earlyPaymentTitle}>Pay Deposit</Text>
+                          </View>
+                          <Text style={styles.earlyPaymentSubtitle}>
+                            Complete your deposit payment to confirm your booking
+                          </Text>
+                          <Button
+                            mode="contained"
+                            buttonColor="#FF8000"
+                            textColor="#fff"
+                            style={styles.earlyPaymentButton}
+                            onPress={() => handlePayDeposit()}
+                          >
+                            Pay Deposit {formatCurrency(depositAmount)}
+                          </Button>
+                        </View>
+                      )}
                     </View>
                   )}
                   
