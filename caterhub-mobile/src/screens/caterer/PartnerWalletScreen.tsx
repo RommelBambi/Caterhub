@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Platform, ActivityIndicator, RefreshControl, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Platform, ActivityIndicator, RefreshControl, TouchableOpacity, Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +8,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
 import BottomNav from "../../components/caterer/BottomNav";
+import WithdrawalMethodModal from "../../components/caterer/WithdrawalMethodModal";
+import WithdrawalDetailsModal from "../../components/caterer/WithdrawalDetailsModal";
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
 import { isWeb } from "../../utils/platform";
@@ -49,6 +51,9 @@ interface WithdrawalRequest {
   status: string;
   created_at: string;
   processed_at: string | null;
+  xendit_payout_id?: string | null;
+  xendit_external_id?: string | null;
+  error_message?: string | null;
 }
 
 export default function PartnerWalletScreen() {
@@ -60,6 +65,11 @@ export default function PartnerWalletScreen() {
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Withdrawal modal states
+  const [showMethodModal, setShowMethodModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'gcash' | 'paymaya' | null>(null);
 
   const fetchWalletData = async () => {
     if (!user) {
@@ -127,35 +137,49 @@ export default function PartnerWalletScreen() {
       const completedBookings = allBookings.filter((b: any) => b.status === 'COMPLETED');
       const confirmedBookings = allBookings.filter((b: any) => b.status === 'CONFIRMED');
       
+      // Get bookings that have payout amounts (for earnings calculation)
+      // Include COMPLETED bookings and any bookings with caterer_payout_amount > 0
+      const bookingsWithEarnings = allBookings.filter((b: any) => {
+        const payout = b.caterer_payout_amount || 0;
+        return b.status === 'COMPLETED' || payout > 0;
+      });
+      
       let totalDeposits = 0;
       let totalRemaining = 0;
       let totalPlatformFees = 0;
       let totalEarnings = 0;
       const feePercentages: number[] = [];
 
-      completedBookings.forEach((booking: any) => {
+      // Calculate earnings from completed bookings and bookings with payouts
+      bookingsWithEarnings.forEach((booking: any) => {
         const deposit = booking.deposit_amount || 0;
         const remaining = booking.remaining_amount || 0;
         const deliveryFee = booking.delivery_fee || 0;
         const platformFee = booking.platform_fee_amount || 0;
         const payout = booking.caterer_payout_amount || (deposit + remaining + deliveryFee - platformFee);
 
-        totalDeposits += deposit;
-        totalRemaining += remaining;
-        totalPlatformFees += platformFee;
-        totalEarnings += payout;
+        // Only count earnings if there's an actual payout amount
+        if (payout > 0) {
+          totalDeposits += deposit;
+          totalRemaining += remaining;
+          totalPlatformFees += platformFee;
+          totalEarnings += payout;
 
-        if (booking.platform_fee_percentage) {
-          feePercentages.push(booking.platform_fee_percentage);
+          if (booking.platform_fee_percentage) {
+            feePercentages.push(booking.platform_fee_percentage);
+          }
         }
       });
 
-      // Also count confirmed bookings for deposits
+      // Also count confirmed bookings for deposits (if not already counted)
       confirmedBookings.forEach((booking: any) => {
         const deposit = booking.deposit_amount || 0;
-        totalDeposits += deposit;
-        if (booking.platform_fee_amount) {
-          totalPlatformFees += booking.platform_fee_amount;
+        // Only add if not already counted in bookingsWithEarnings
+        if (!bookingsWithEarnings.find((b: any) => b.id === booking.id)) {
+          totalDeposits += deposit;
+          if (booking.platform_fee_amount) {
+            totalPlatformFees += booking.platform_fee_amount;
+          }
         }
       });
 
@@ -175,7 +199,42 @@ export default function PartnerWalletScreen() {
 
       const currentTier = gmvData?.next_month_fee_tier || 'BASE';
 
-      // Set calculated earnings
+      // Fetch withdrawal requests to calculate available balance
+      const { data: withdrawalsData, error: withdrawalsError } = await supabase
+        .from('withdrawal_requests')
+        .select('*')
+        .eq('caterer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      // Calculate available balance (total earnings minus pending/processing withdrawals)
+      const pendingWithdrawals = withdrawalsData?.filter(
+        (w: any) => w.status === 'PENDING' || w.status === 'PROCESSING'
+      ) || [];
+      const totalPendingWithdrawals = pendingWithdrawals.reduce(
+        (sum: number, w: any) => sum + (w.amount || 0),
+        0
+      );
+      
+      // Calculate available balance (earnings after platform fees, minus pending withdrawals)
+      const availableBalance = Math.max(0, totalEarnings - totalPendingWithdrawals);
+
+      // Debug logging
+      console.log('[PartnerWalletScreen] Earnings calculation:', {
+        totalBookings: allBookings.length,
+        completedBookings: completedBookings.length,
+        bookingsWithEarnings: bookingsWithEarnings.length,
+        totalEarnings,
+        totalPendingWithdrawals,
+        availableBalance,
+        sampleBooking: bookingsWithEarnings[0] ? {
+          id: bookingsWithEarnings[0].id,
+          status: bookingsWithEarnings[0].status,
+          payout: bookingsWithEarnings[0].caterer_payout_amount,
+        } : null,
+      });
+
+      // Set calculated earnings (total_earnings shows available balance)
       setEarnings({
         caterer_id: user.id,
         caterer_name: null,
@@ -183,11 +242,16 @@ export default function PartnerWalletScreen() {
         completed_bookings: completedBookings.length,
         total_deposits_received: totalDeposits,
         total_remaining_received: totalRemaining,
-        total_earnings: totalEarnings,
+        total_earnings: availableBalance, // This is now the available balance
         total_platform_fees_paid: totalPlatformFees,
         avg_fee_percentage: avgFeePercentage,
         current_tier: currentTier,
       });
+
+      // Set withdrawals for history display
+      if (!withdrawalsError && withdrawalsData) {
+        setWithdrawals(withdrawalsData as WithdrawalRequest[]);
+      }
 
       // Set transactions (all confirmed and completed bookings)
       const transactions: Transaction[] = [...completedBookings, ...confirmedBookings]
@@ -215,18 +279,6 @@ export default function PartnerWalletScreen() {
         });
 
       setTransactions(transactions);
-
-      // Fetch withdrawal requests
-      const { data: withdrawalsData, error: withdrawalsError } = await supabase
-        .from('withdrawal_requests')
-        .select('*')
-        .eq('caterer_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (!withdrawalsError && withdrawalsData) {
-        setWithdrawals(withdrawalsData as WithdrawalRequest[]);
-      }
     } catch (error: any) {
       console.error('Error fetching wallet data:', error);
     } finally {
@@ -239,9 +291,91 @@ export default function PartnerWalletScreen() {
     fetchWalletData();
   }, [user]);
 
+  // Refresh wallet data when screen comes into focus (e.g., after completing a booking)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      console.log('[PartnerWalletScreen] Screen focused, refreshing wallet data');
+      fetchWalletData();
+    });
+
+    return unsubscribe;
+  }, [navigation, user]);
+
   const onRefresh = () => {
     setRefreshing(true);
     fetchWalletData();
+  };
+
+  const handleWithdrawalSubmit = async (data: {
+    amount: number;
+    name: string;
+    accountNumber: string;
+  }) => {
+    if (!user || !selectedPaymentMethod) return;
+
+    try {
+      // Prepare payment details JSON
+      const paymentDetails = {
+        accountName: data.name,
+        mobileNumber: data.accountNumber,
+      };
+
+      // Create withdrawal request first
+      const { data: withdrawalRequest, error: insertError } = await supabase
+        .from('withdrawal_requests')
+        .insert({
+          caterer_id: user.id,
+          amount: data.amount,
+          payment_method: selectedPaymentMethod,
+          payment_details: paymentDetails,
+          status: 'PENDING',
+        })
+        .select()
+        .single();
+
+      if (insertError || !withdrawalRequest) {
+        console.error('Error creating withdrawal request:', insertError);
+        throw new Error('Failed to create withdrawal request. Please try again.');
+      }
+
+      // Import withdrawal edge function service
+      const { createWithdrawalViaEdgeFunction } = await import('../../services/withdrawalEdgeFunction');
+
+      // Create Xendit payout via Edge Function
+      const payoutResponse = await createWithdrawalViaEdgeFunction({
+        withdrawalRequestId: withdrawalRequest.id,
+        amount: data.amount,
+        paymentMethod: selectedPaymentMethod,
+        accountName: data.name,
+        accountNumber: data.accountNumber,
+      });
+
+      if (!payoutResponse.success) {
+        // Update withdrawal request to FAILED
+        await supabase
+          .from('withdrawal_requests')
+          .update({
+            status: 'FAILED',
+            error_message: payoutResponse.error || 'Failed to process payout',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', withdrawalRequest.id);
+
+        throw new Error(payoutResponse.error || 'Failed to process withdrawal payout');
+      }
+
+      // Refresh wallet data to show new withdrawal
+      await fetchWalletData();
+
+      Alert.alert(
+        'Withdrawal Request Submitted',
+        `Your withdrawal request of ${formatCurrency(data.amount)} to ${selectedPaymentMethod === 'gcash' ? 'GCash' : 'PayMaya'} has been submitted successfully. The payout is being processed and will be completed within 1-3 business days.`,
+        [{ text: 'OK' }]
+      );
+    } catch (error: any) {
+      console.error('Error submitting withdrawal:', error);
+      throw error;
+    }
   };
 
   const formatCurrency = (amount: number | null | undefined) => {
@@ -313,24 +447,51 @@ export default function PartnerWalletScreen() {
           </View>
 
           {/* Earnings Summary Card */}
-          {earnings ? (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>Earnings Summary</Text>
-                {earnings.total_earnings && earnings.total_earnings > 0 && (
-                  <TouchableOpacity
-                    style={styles.withdrawButton}
-                    onPress={() => {
-                      navigation.navigate('PartnerWithdrawal', {
-                        availableBalance: earnings.total_earnings || 0,
-                      });
-                    }}
-                  >
-                    <Ionicons name="arrow-down-circle" size={18} color={COLORS.white} />
-                    <Text style={styles.withdrawButtonText}>Withdraw</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Earnings Summary</Text>
+              <TouchableOpacity
+                style={[
+                  styles.withdrawButton,
+                  (!earnings || !earnings.total_earnings || earnings.total_earnings <= 0) && styles.withdrawButtonDisabled
+                ]}
+                onPress={() => {
+                  console.log('[PartnerWalletScreen] Withdraw button clicked', {
+                    earnings: earnings?.total_earnings,
+                    hasEarnings: earnings && earnings.total_earnings && earnings.total_earnings > 0,
+                  });
+                  if (earnings && earnings.total_earnings && earnings.total_earnings > 0) {
+                    console.log('[PartnerWalletScreen] Opening method modal');
+                    setShowMethodModal(true);
+                  } else {
+                    console.log('[PartnerWalletScreen] No earnings available');
+                    Alert.alert(
+                      'No Available Balance',
+                      'You need to have completed bookings with earnings before you can withdraw funds.',
+                      [{ text: 'OK' }]
+                    );
+                  }
+                }}
+                disabled={!earnings || !earnings.total_earnings || earnings.total_earnings <= 0}
+                activeOpacity={0.8}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons 
+                  name="arrow-down-circle" 
+                  size={Platform.OS === 'web' ? 20 : 18} 
+                  color={(!earnings || !earnings.total_earnings || earnings.total_earnings <= 0) ? (Platform.OS === 'web' ? '#9ca3af' : COLORS.textLight) : COLORS.white} 
+                />
+                <Text style={[
+                  styles.withdrawButtonText,
+                  (!earnings || !earnings.total_earnings || earnings.total_earnings <= 0) && styles.withdrawButtonTextDisabled
+                ]}>
+                  Withdraw Money
+                </Text>
+              </TouchableOpacity>
+            </View>
+            
+            {earnings ? (
+              <>
               
               <View style={styles.summaryGrid}>
                 <View style={styles.summaryItem}>
@@ -388,15 +549,43 @@ export default function PartnerWalletScreen() {
                   </View>
                 )}
               </View>
-            </View>
-          ) : (
-            <View style={styles.card}>
+            </>
+            ) : (
               <View style={styles.emptyState}>
                 <Ionicons name="wallet-outline" size={48} color={COLORS.textLight} />
                 <Text style={styles.emptyStateText}>No earnings data yet</Text>
                 <Text style={styles.emptyStateSubText}>
                   Earnings will appear here once you have completed bookings
                 </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Prominent Withdrawal Section */}
+          {earnings && earnings.total_earnings && earnings.total_earnings > 0 && (
+            <View style={styles.withdrawalCard}>
+              <View style={styles.withdrawalCardContent}>
+                <View style={styles.withdrawalCardLeft}>
+                  <Ionicons name="cash-outline" size={Platform.OS === 'web' ? 32 : 28} color={COLORS.primary} />
+                  <View style={styles.withdrawalCardText}>
+                    <Text style={styles.withdrawalCardTitle}>Ready to Withdraw</Text>
+                    <Text style={styles.withdrawalCardSubtitle}>
+                      Available balance: {formatCurrency(earnings.total_earnings)}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.withdrawButtonLarge}
+                  onPress={() => {
+                    console.log('[PartnerWalletScreen] Withdraw Now button clicked');
+                    setShowMethodModal(true);
+                  }}
+                  activeOpacity={0.8}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="arrow-down-circle" size={22} color={COLORS.white} />
+                  <Text style={styles.withdrawButtonLargeText}>Withdraw Now</Text>
+                </TouchableOpacity>
               </View>
             </View>
           )}
@@ -519,6 +708,32 @@ export default function PartnerWalletScreen() {
         </ScrollView>
       </View>
       {!isWeb && <BottomNav />}
+
+      {/* Withdrawal Modals */}
+      <WithdrawalMethodModal
+        visible={showMethodModal}
+        onClose={() => {
+          console.log('[PartnerWalletScreen] Closing method modal');
+          setShowMethodModal(false);
+        }}
+        onSelectMethod={(method) => {
+          console.log('[PartnerWalletScreen] Method selected:', method);
+          setSelectedPaymentMethod(method);
+          setShowMethodModal(false);
+          setShowDetailsModal(true);
+        }}
+      />
+
+      <WithdrawalDetailsModal
+        visible={showDetailsModal}
+        onClose={() => {
+          setShowDetailsModal(false);
+          setSelectedPaymentMethod(null);
+        }}
+        paymentMethod={selectedPaymentMethod}
+        availableBalance={earnings?.total_earnings || 0}
+        onSubmit={handleWithdrawalSubmit}
+      />
     </View>
   );
 }
@@ -731,15 +946,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: Platform.OS === 'web' ? 20 : 16,
+    paddingVertical: Platform.OS === 'web' ? 12 : 8,
     borderRadius: 8,
-    gap: 6
-  },
+    gap: 6,
+    shadowColor: Platform.OS === 'web' ? COLORS.shadow : 'transparent',
+    shadowOffset: Platform.OS === 'web' ? { width: 0, height: 2 } : { width: 0, height: 0 },
+    shadowOpacity: Platform.OS === 'web' ? 0.1 : 0,
+    shadowRadius: Platform.OS === 'web' ? 4 : 0,
+    elevation: Platform.OS === 'web' ? 2 : 0,
+    zIndex: Platform.OS === 'web' ? 10 : 0,
+    ...(Platform.OS === 'web' && {
+      cursor: 'pointer',
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      pointerEvents: 'auto',
+    }),
+  } as any,
+  withdrawButtonDisabled: {
+    backgroundColor: Platform.OS === 'web' ? '#e5e7eb' : COLORS.textLight,
+    opacity: Platform.OS === 'web' ? 1 : 0.6,
+  } as any,
   withdrawButtonText: {
     color: COLORS.white,
-    fontSize: 14,
+    fontSize: Platform.OS === 'web' ? 15 : 14,
     fontWeight: "600"
+  },
+  withdrawButtonTextDisabled: {
+    color: Platform.OS === 'web' ? '#9ca3af' : COLORS.textLight
   },
   withdrawalsList: {
     gap: 12
@@ -778,5 +1012,70 @@ const styles = StyleSheet.create({
   withdrawalAmount: {
     fontSize: 16,
     fontWeight: "700"
-  }
+  },
+  withdrawalCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: Platform.OS === 'web' ? 12 : 16,
+    padding: Platform.OS === 'web' ? 24 : 20,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 4 : 6 },
+    shadowOpacity: Platform.OS === 'web' ? 0.15 : 0.2,
+    shadowRadius: Platform.OS === 'web' ? 12 : 16,
+    elevation: Platform.OS === 'web' ? 4 : 8,
+  },
+  withdrawalCardContent: {
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    justifyContent: "space-between",
+    alignItems: Platform.OS === 'web' ? "center" : "flex-start",
+    gap: Platform.OS === 'web' ? 0 : 16,
+  },
+  withdrawalCardLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    flex: 1,
+  },
+  withdrawalCardText: {
+    flex: 1,
+  },
+  withdrawalCardTitle: {
+    fontSize: Platform.OS === 'web' ? 20 : 18,
+    fontWeight: "700",
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  withdrawalCardSubtitle: {
+    fontSize: Platform.OS === 'web' ? 15 : 14,
+    color: COLORS.textLight,
+    fontWeight: "500",
+  },
+  withdrawButtonLarge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: Platform.OS === 'web' ? 24 : 20,
+    paddingVertical: Platform.OS === 'web' ? 14 : 12,
+    borderRadius: 8,
+    gap: 8,
+    shadowColor: Platform.OS === 'web' ? COLORS.shadow : 'transparent',
+    shadowOffset: Platform.OS === 'web' ? { width: 0, height: 2 } : { width: 0, height: 0 },
+    shadowOpacity: Platform.OS === 'web' ? 0.2 : 0,
+    shadowRadius: Platform.OS === 'web' ? 4 : 0,
+    elevation: Platform.OS === 'web' ? 3 : 0,
+    zIndex: Platform.OS === 'web' ? 10 : 0,
+    ...(Platform.OS === 'web' && {
+      cursor: 'pointer',
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      pointerEvents: 'auto',
+    }),
+  } as any,
+  withdrawButtonLargeText: {
+    color: COLORS.white,
+    fontSize: Platform.OS === 'web' ? 16 : 15,
+    fontWeight: "700",
+  },
 });

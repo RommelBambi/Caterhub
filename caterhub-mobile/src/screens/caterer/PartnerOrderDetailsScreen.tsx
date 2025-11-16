@@ -133,6 +133,26 @@ export default function PartnerOrderDetailsScreen() {
         updateData.notes = JSON.stringify(notesData);
       }
 
+      // When marking as COMPLETED, ensure amounts are calculated
+      // The database trigger should handle this, but we'll trigger a recalculation
+      if (newStatus === 'COMPLETED') {
+        // Fetch current booking to get amounts
+        const { data: currentBooking } = await supabase
+          .from('bookings')
+          .select('deposit_amount, remaining_amount, delivery_fee, platform_fee_percentage, platform_fee_amount, caterer_payout_amount')
+          .eq('id', order.id)
+          .single();
+
+        // If amounts aren't calculated yet, trigger recalculation by updating a field
+        // The trigger_calculate_booking_amounts should handle this
+        if (currentBooking && (!currentBooking.platform_fee_amount || !currentBooking.caterer_payout_amount)) {
+          console.log('[PartnerOrderDetailsScreen] Triggering amount recalculation for completed booking');
+          // Update a field to trigger the calculate_booking_amounts trigger
+          // We'll update updated_at which should trigger the BEFORE INSERT/UPDATE trigger
+          updateData.updated_at = new Date().toISOString();
+        }
+      }
+
       const { data, error } = await supabase
         .from('bookings')
         .update(updateData)
@@ -149,6 +169,26 @@ export default function PartnerOrderDetailsScreen() {
 
       console.log('[PartnerOrderDetailsScreen] Booking updated successfully:', data);
       console.log('[PartnerOrderDetailsScreen] New status:', data?.status);
+      
+      // If marked as COMPLETED, wait a moment for database triggers to process
+      if (newStatus === 'COMPLETED') {
+        console.log('[PartnerOrderDetailsScreen] Booking marked as COMPLETED, waiting for triggers to process...');
+        // Small delay to allow database triggers to calculate amounts
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Verify amounts were calculated
+        const { data: updatedBooking } = await supabase
+          .from('bookings')
+          .select('platform_fee_amount, caterer_payout_amount, status')
+          .eq('id', order.id)
+          .single();
+        
+        console.log('[PartnerOrderDetailsScreen] Booking amounts after completion:', {
+          platform_fee_amount: updatedBooking?.platform_fee_amount,
+          caterer_payout_amount: updatedBooking?.caterer_payout_amount,
+          status: updatedBooking?.status,
+        });
+      }
       
       // Update local state immediately with the actual status from database
       const updatedStatus = data?.status || newStatus;

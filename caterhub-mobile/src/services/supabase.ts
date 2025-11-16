@@ -555,6 +555,50 @@ export interface Database {
           updated_at?: string | null;
         };
       };
+      withdrawal_requests: {
+        Row: {
+          id: number; // bigserial
+          caterer_id: string; // uuid, not null
+          amount: number; // numeric(10, 2), not null
+          payment_method: string; // varchar(50), not null
+          payment_details: any; // jsonb, not null, default '{}'::jsonb
+          status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'; // varchar(20), not null, default 'PENDING'
+          xendit_payout_id: string | null; // varchar(255), nullable
+          xendit_external_id: string | null; // varchar(255), nullable
+          error_message: string | null; // text, nullable
+          created_at: string; // timestamp with time zone, not null, default now()
+          updated_at: string; // timestamp with time zone, not null, default now()
+          processed_at: string | null; // timestamp with time zone, nullable
+        };
+        Insert: {
+          id?: number;
+          caterer_id: string; // required
+          amount: number; // required
+          payment_method: string; // required ('gcash', 'paymaya', 'bank_transfer')
+          payment_details?: any; // jsonb, default '{}'::jsonb
+          status?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'; // default 'PENDING'
+          xendit_payout_id?: string | null;
+          xendit_external_id?: string | null;
+          error_message?: string | null;
+          created_at?: string; // default now()
+          updated_at?: string; // default now()
+          processed_at?: string | null;
+        };
+        Update: {
+          id?: number;
+          caterer_id?: string;
+          amount?: number;
+          payment_method?: string;
+          payment_details?: any;
+          status?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+          xendit_payout_id?: string | null;
+          xendit_external_id?: string | null;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          processed_at?: string | null;
+        };
+      };
     };
     Views: {
       caterer_earnings: {
