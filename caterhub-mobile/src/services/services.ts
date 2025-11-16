@@ -32,6 +32,7 @@ export type CatererProfile = {
   about?: string;
   facebook?: string;
   instagram?: string;
+  sampleImages?: string[]; // Array of sample image URLs
 };
 
 export type ServiceLocation = {
@@ -261,8 +262,24 @@ export async function fetchServices(): Promise<Service[]> {
   const servicesWithProfiles = await Promise.all(
     servicesToReturn.map(async (svc: any) => {
       let catererProfile: CatererProfile | undefined;
+      let userLogoUrl: string | null = null;
       
       if (svc.user_id) {
+        // Fetch user's profile_image_url to use as logo
+        try {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('profile_image_url')
+            .eq('id', svc.user_id)
+            .maybeSingle();
+          
+          if (userData?.profile_image_url) {
+            userLogoUrl = userData.profile_image_url;
+          }
+        } catch (e) {
+          console.warn(`[fetchServices] Could not fetch user logo for ${svc.user_id}:`, e);
+        }
+        
         // Fetch caterer profile
         try {
           console.log(`[fetchServices] Fetching caterer profile for user_id: ${svc.user_id}`);
@@ -288,8 +305,14 @@ export async function fetchServices(): Promise<Service[]> {
               about: profile.about,
               facebook: profile.facebook,
               instagram: profile.instagram,
+              sampleImages: profile.sample_images && Array.isArray(profile.sample_images) && profile.sample_images.length > 0
+                ? (profile.sample_images as string[])
+                : undefined,
             };
             console.log(`[fetchServices] ✅ Successfully fetched caterer profile for ${svc.user_id}`);
+            if (catererProfile.sampleImages) {
+              console.log(`[fetchServices] Found ${catererProfile.sampleImages.length} sample images for ${svc.user_id}`);
+            }
           } else {
             console.warn(`[fetchServices] ⚠️ No caterer profile found for user_id: ${svc.user_id} (business: ${svc.name})`);
             
@@ -344,7 +367,7 @@ export async function fetchServices(): Promise<Service[]> {
     name: svc.name,
     description: svc.description,
         imageUrl: svc.image_url || null,
-        logoUrl: svc.logo_url || null,
+        logoUrl: userLogoUrl || svc.logo_url || null, // Use user's profile_image_url as logo
         rating: svc.rating || 0,
         reviewsCount: svc.reviews_count || 0,
         pricePerHead: svc.price_per_head || null,
@@ -542,6 +565,9 @@ export async function fetchService(id: number): Promise<Service> {
           about: profile.about,
           facebook: profile.facebook,
           instagram: profile.instagram,
+          sampleImages: profile.sample_images && Array.isArray(profile.sample_images) && profile.sample_images.length > 0 
+            ? (profile.sample_images as string[]) 
+            : undefined,
         };
         console.log(`[fetchService] ✅ Successfully fetched caterer profile directly`);
     } else {
@@ -611,7 +637,11 @@ export async function fetchService(id: number): Promise<Service> {
       website: result.catererProfile.website ? 'Yes' : 'No',
       facebook: result.catererProfile.facebook ? 'Yes' : 'No',
       instagram: result.catererProfile.instagram ? 'Yes' : 'No',
+      sampleImages: result.catererProfile.sampleImages ? `${result.catererProfile.sampleImages.length} images` : 'No',
     });
+    if (result.catererProfile.sampleImages) {
+      console.log(`[fetchService] Sample images URLs:`, result.catererProfile.sampleImages);
+    }
   }
   return result;
 }

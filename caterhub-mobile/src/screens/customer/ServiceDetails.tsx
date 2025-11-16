@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Image, StyleSheet, ScrollView, TouchableOpacity, Linking, Modal } from 'react-native';
+import { View, Image, StyleSheet, ScrollView, TouchableOpacity, Linking, Modal, Dimensions } from 'react-native';
 import { Text, Button, Card, ActivityIndicator, Divider } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,6 +33,7 @@ export default function ServiceDetails({ route, navigation }: any) {
   const [rating, setRating] = React.useState({ averageRating: 0, totalReviews: 0 });
   const [loadingReviews, setLoadingReviews] = React.useState(false);
   const [showCatererModal, setShowCatererModal] = React.useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
 
   React.useEffect(() => {
     if (!id) {
@@ -53,6 +54,9 @@ export default function ServiceDetails({ route, navigation }: any) {
           packageCount: data?.packages?.length || 0,
           userId: (data as any)?.user_id,
           hasCatererProfile: !!(data as any)?.catererProfile,
+          hasSampleImages: !!(data as any)?.catererProfile?.sampleImages,
+          sampleImagesCount: (data as any)?.catererProfile?.sampleImages?.length || 0,
+          sampleImages: (data as any)?.catererProfile?.sampleImages,
           catererProfileDetails: (data as any)?.catererProfile ? {
             hasAbout: !!(data as any).catererProfile.about,
             hasContact: !!(data as any).catererProfile.contactNumber,
@@ -64,6 +68,7 @@ export default function ServiceDetails({ route, navigation }: any) {
           } : null,
         });
         setService(data ?? null);
+        setCurrentImageIndex(0); // Reset to first image when service changes
         
         // Fetch reviews for this caterer
         if (data && (data as any)?.user_id) {
@@ -142,10 +147,54 @@ export default function ServiceDetails({ route, navigation }: any) {
         ) : (
           <>
             <View style={styles.header}>
-              <Image
-                source={{ uri: service.logoUrl || service.imageUrl || 'https://picsum.photos/800/400' }}
-                style={styles.logo}
-              />
+              <ScrollView
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                style={styles.imageCarousel}
+                contentContainerStyle={styles.imageCarouselContent}
+                onScroll={(event) => {
+                  const scrollPosition = event.nativeEvent.contentOffset.x;
+                  const imageWidth = Dimensions.get('window').width - 32;
+                  const currentIndex = Math.round(scrollPosition / imageWidth);
+                  setCurrentImageIndex(currentIndex);
+                }}
+                scrollEventThrottle={16}
+              >
+                {/* Logo as first image */}
+                <Image
+                  source={{ uri: service.logoUrl || service.imageUrl || 'https://picsum.photos/800/400' }}
+                  style={styles.carouselImage}
+                />
+                {/* Sample images */}
+                {service.catererProfile?.sampleImages?.map((imageUrl, index) => (
+                  <Image
+                    key={index}
+                    source={{ uri: imageUrl }}
+                    style={styles.carouselImage}
+                  />
+                ))}
+              </ScrollView>
+              {/* Page Navigation Dots */}
+              {(() => {
+                const totalImages = 1 + (service.catererProfile?.sampleImages?.length || 0);
+                if (totalImages > 1) {
+                  return (
+                    <View style={styles.dotsContainer}>
+                      {Array.from({ length: totalImages }).map((_, index) => (
+                        <View
+                          key={index}
+                          style={[
+                            styles.dot,
+                            index === currentImageIndex && styles.dotActive,
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  );
+                }
+                return null;
+              })()}
               {/* Caterer Information Icon */}
               {(service.catererProfile || service.user_id) && (
                 <TouchableOpacity
@@ -183,7 +232,6 @@ export default function ServiceDetails({ route, navigation }: any) {
                 />
               </TouchableOpacity>
             </View>
-
 
 
             <Text style={[styles.sectionTitle, { paddingHorizontal: 16, marginTop: 16 }]}>
@@ -224,7 +272,7 @@ export default function ServiceDetails({ route, navigation }: any) {
                   </Card.Content>
                 </Card>
               )}
-              {(service.packages ?? []).length > 0 ? (
+              {(service.packages ?? []).length > 0 && (
                 service.packages!.map((pkg) => {
                   // Display sections (from database packages) or categories (from old format)
                   const sections = (pkg as any)._raw?.sections || [];
@@ -291,8 +339,6 @@ export default function ServiceDetails({ route, navigation }: any) {
                     </Card>
                   );
                 })
-              ) : (
-                <Text style={[styles.muted, { paddingHorizontal: 2 }]}>No packages available yet.</Text>
               )}
             </View>
           </>
@@ -497,6 +543,40 @@ const styles = StyleSheet.create({
   backTap: { padding: 6, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.04)' },
 
   header: { paddingTop: 8, alignItems: 'center', position: 'relative' },
+  imageCarousel: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    borderWidth: 3,
+    borderColor: '#e5e7eb',
+    overflow: 'hidden',
+  },
+  imageCarouselContent: {
+    alignItems: 'center',
+  },
+  carouselImage: {
+    width: Dimensions.get('window').width - 32, // Full width minus padding
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#f3f4f6',
+  },
+  dotsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 8,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#d1d5db',
+  },
+  dotActive: {
+    width: 24,
+    backgroundColor: '#FF8000',
+  },
   logo: { width: '100%', height: 180, borderRadius: 12, backgroundColor: '#f3f4f6' },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 },

@@ -389,8 +389,8 @@ export default function HomeScreen({ navigation }: any) {
                       <Image
                         source={{
                           uri:
-                            svc.imageUrl ||
                             svc.logoUrl ||
+                            svc.imageUrl ||
                             'https://picsum.photos/300/200',
                         }}
                         style={styles.serviceImg}

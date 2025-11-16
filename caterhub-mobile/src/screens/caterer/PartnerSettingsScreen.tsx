@@ -47,6 +47,7 @@ type CatererProfile = {
   facebook?: string;
   instagram?: string;
   profileImageUrl?: string;
+  sampleImages?: string[]; // Array of sample image URLs
 };
 
 // Load profile data from Supabase
@@ -70,6 +71,7 @@ async function loadProfileFromSupabase(userId: string): Promise<CatererProfile |
       about: data.about || "",
       facebook: data.facebook || undefined,
       instagram: data.instagram || undefined,
+      sampleImages: (data.sample_images as string[]) || undefined,
     };
   } catch (e) {
     console.warn("loadProfileFromSupabase error", e);
@@ -99,6 +101,7 @@ async function saveProfileToSupabase(userId: string, data: CatererProfile): Prom
           about: data.about,
           facebook: data.facebook || null,
           instagram: data.instagram || null,
+          sample_images: data.sampleImages || null,
         })
         .eq('user_id', userId);
 
@@ -116,6 +119,7 @@ async function saveProfileToSupabase(userId: string, data: CatererProfile): Prom
           about: data.about,
           facebook: data.facebook || null,
           instagram: data.instagram || null,
+          sample_images: data.sampleImages || null,
         });
 
       if (error) throw error;
@@ -221,6 +225,10 @@ export default function PartnerSettingsScreen() {
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  
+  // Sample images state
+  const [sampleImages, setSampleImages] = useState<string[]>([]);
+  const [uploadingSampleImage, setUploadingSampleImage] = useState(false);
 
   // Load current user + profile + application data when screen is focused
   useFocusEffect(
@@ -251,6 +259,7 @@ export default function PartnerSettingsScreen() {
               setAbout(prof.about ?? "");
               setFacebook(prof.facebook ?? "");
               setInstagram(prof.instagram ?? "");
+              setSampleImages(prof.sampleImages || []);
             } else {
               // Default values if no profile exists
               setContactNumber("");
@@ -259,6 +268,7 @@ export default function PartnerSettingsScreen() {
               setAbout("");
               setFacebook("");
               setInstagram("");
+              setSampleImages([]);
             }
           }
 
@@ -763,7 +773,8 @@ export default function PartnerSettingsScreen() {
         address: address.trim(),
         about: about.trim(),
         facebook: facebook.trim() || undefined,
-        instagram: instagram.trim() || undefined
+        instagram: instagram.trim() || undefined,
+        sampleImages: sampleImages.length > 0 ? sampleImages : undefined
       };
       await saveProfileToSupabase(user.id, newProfile);
 
@@ -1210,31 +1221,436 @@ export default function PartnerSettingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              if (profileImage) {
-                // Extract path from URL - format: .../avatars/profiles/userId/filename
-                const urlParts = profileImage.split('/');
-                const bucketIndex = urlParts.findIndex(part => part === 'avatars');
-                if (bucketIndex >= 0 && bucketIndex < urlParts.length - 1) {
-                  // Get path after bucket name
-                  const oldPath = urlParts.slice(bucketIndex + 1).join('/');
-                  await supabase.storage.from('avatars').remove([oldPath]);
+              if (!profileImage) {
+                Alert.alert("Error", "No profile image to remove.");
+                return;
+              }
+
+              // Verify session
+              const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+              if (sessionError || !session) {
+                const { data: { user: authUser } } = await supabase.auth.getUser();
+                if (!authUser) {
+                  Alert.alert("Error", "Please log in again to delete images.");
+                  return;
                 }
               }
+
+              const currentUserId = session?.user?.id || user?.id;
+              if (!currentUserId) {
+                Alert.alert("Error", "User ID not found. Please log in again.");
+                return;
+              }
+
+              // Extract path from URL - format: .../avatars/profiles/userId/filename
+              let oldPath: string | null = null;
+              
+              console.log('[DELETE LOGO] Attempting to extract path from URL:', profileImage);
+              console.log('[DELETE LOGO] Current user ID:', currentUserId);
+              
+              const urlParts = profileImage.split('/');
+              const avatarsIndex = urlParts.findIndex(part => part === 'avatars');
+              
+              if (avatarsIndex >= 0 && avatarsIndex < urlParts.length - 1) {
+                oldPath = urlParts.slice(avatarsIndex + 1).join('/');
+                console.log('[DELETE LOGO] Extracted path:', oldPath);
+              } else {
+                // Try finding 'profiles' directly
+                const profilesIndex = urlParts.findIndex(part => part === 'profiles');
+                if (profilesIndex >= 0 && profilesIndex < urlParts.length - 1) {
+                  oldPath = urlParts.slice(profilesIndex).join('/');
+                  console.log('[DELETE LOGO] Extracted path (method 2):', oldPath);
+                }
+              }
+
+              if (!oldPath) {
+                console.error('[DELETE LOGO] Could not extract path from URL:', profileImage);
+                Alert.alert("Error", `Could not determine file path from URL.\n\nPlease check the browser console for details.`);
+                return;
+              }
+
+              // Remove query parameters
+              oldPath = oldPath.split('?')[0].split('#')[0];
+              console.log('[DELETE LOGO] Final path to delete:', oldPath);
+              console.log('[DELETE LOGO] Expected pattern: profiles/' + currentUserId + '/%');
+
+              // Delete from storage
+              console.log('[DELETE LOGO] Calling supabase.storage.from("avatars").remove([...])');
+              const { data: deleteData, error: deleteError } = await supabase.storage
+                .from('avatars')
+                .remove([oldPath]);
+
+              if (deleteError) {
+                console.error('[DELETE LOGO] Storage delete error:', deleteError);
+                console.error('[DELETE LOGO] Delete error details:', JSON.stringify(deleteError, null, 2));
+                console.error('[DELETE LOGO] Attempted path:', oldPath);
+                
+                const errorMessage = deleteError.message || '';
+                const errorCode = (deleteError as any)?.code || '';
+                
+                if (errorMessage.includes('row-level security') || 
+                    errorMessage.includes('RLS') ||
+                    errorMessage.includes('permission') ||
+                    errorCode === 'PGRST301' ||
+                    errorCode === '42501') {
+                  Alert.alert(
+                    "Permission Denied", 
+                    `Cannot delete logo. The file path may not match the RLS policy.\n\nPath: ${oldPath}\n\nExpected: profiles/${currentUserId}/%\n\nPlease check your Supabase storage RLS policies for DELETE operations on profiles folder.`
+                  );
+                  return;
+                }
+                
+                if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
+                  console.log('[DELETE LOGO] File not found, assuming already deleted');
+                  // Continue to update database
+                } else {
+                  throw deleteError;
+                }
+              } else {
+                console.log('[DELETE LOGO] File deleted successfully:', deleteData);
+              }
+              
+              // Update database
               setProfileImage(null);
-              // Remove from Supabase users table
               const { error: updateError } = await supabase
                 .from('users')
                 .update({ profile_image_url: null })
-                .eq('id', user?.id);
+                .eq('id', currentUserId);
 
               if (updateError) {
-                console.error('Error removing profile image URL:', updateError);
+                console.error('[DELETE LOGO] Error removing profile image URL:', updateError);
                 Alert.alert("Error", "Failed to remove profile image URL. Please try again.");
               } else {
+                console.log('[DELETE LOGO] Database updated successfully');
                 Alert.alert("Success", "Profile image removed successfully.");
               }
             } catch (error: any) {
-              Alert.alert("Error", "Failed to remove profile image. Please try again.");
+              console.error('[DELETE LOGO] Error removing profile image:', error);
+              console.error('[DELETE LOGO] Error stack:', error?.stack);
+              const errorMessage = error?.message || 'Failed to remove profile image. Please try again.';
+              Alert.alert("Error", errorMessage);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Sample images functions
+  const uploadSampleImageToStorage = async (
+    imageUri: string,
+    userId: string,
+    mimeType?: string
+  ): Promise<string | null> => {
+    try {
+      // Refresh session before upload to fix "Invalid Refresh Token" error
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        // Try to refresh the session
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          throw new Error('Please log in again to upload images.');
+        }
+      }
+      
+      // Ensure we have a valid session
+      if (!session) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          throw new Error('Please log in again to upload images.');
+        }
+      }
+
+      const timestamp = Date.now();
+      const uniqueFileName = `sample-${timestamp}.jpg`;
+      const storagePath = `sample-images/${userId}/${uniqueFileName}`;
+
+      let imageData: Blob | { uri: string; type: string; name: string };
+
+      if (Platform.OS === 'web') {
+        // Web: Use fetch().blob()
+        const response = await fetch(imageUri);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.statusText}`);
+        }
+        imageData = await response.blob();
+      } else {
+        // Mobile: Supabase storage accepts file objects with uri property
+        imageData = {
+          uri: imageUri,
+          type: mimeType || 'image/jpeg',
+          name: uniqueFileName,
+        } as any;
+      }
+
+      // Upload with upsert: false to prevent overwriting
+      const { error, data: uploadData } = await supabase.storage
+        .from('avatars')
+        .upload(storagePath, imageData as any, {
+          contentType: mimeType || 'image/jpeg',
+          upsert: false, // Don't overwrite existing files
+        });
+
+      if (error) {
+        console.error('Upload error:', error);
+        console.error('Upload error details:', JSON.stringify(error, null, 2));
+        
+        // Check if it's an RLS policy error
+        if (error.message?.includes('row-level security') || error.message?.includes('RLS')) {
+          throw new Error('Storage permission denied. Please check your storage bucket RLS policies. Users should be able to upload to their own sample-images folder.');
+        }
+        
+        throw error;
+      }
+
+      // Get public URL
+      const { data } = supabase.storage.from('avatars').getPublicUrl(storagePath);
+      return data.publicUrl;
+    } catch (error: any) {
+      console.error('Error uploading sample image:', error);
+      throw error;
+    }
+  };
+
+  const pickSampleImage = async () => {
+    try {
+      if (Platform.OS !== 'web') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Please grant camera roll permissions to upload images.');
+          return;
+        }
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images' as any,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      if (!user?.id) {
+        Alert.alert('Error', 'User not found. Please log in again.');
+        return;
+      }
+
+      setUploadingSampleImage(true);
+      const imageUrl = await uploadSampleImageToStorage(result.assets[0].uri, user.id);
+      
+      if (imageUrl) {
+        const newSampleImages = [...sampleImages, imageUrl];
+        setSampleImages(newSampleImages);
+        
+        console.log('Saving sample images to database:', newSampleImages);
+        
+        // Save to database
+        const prof = await loadProfileFromSupabase(user.id);
+        if (prof) {
+          const updatedProfile = {
+            ...prof,
+            sampleImages: newSampleImages,
+          };
+          console.log('Updating profile with sample images:', updatedProfile);
+          await saveProfileToSupabase(user.id, updatedProfile);
+          
+          // Verify it was saved
+          const verifyProf = await loadProfileFromSupabase(user.id);
+          console.log('Verified saved profile sample images:', verifyProf?.sampleImages);
+        } else {
+          // Create new profile if it doesn't exist
+          await saveProfileToSupabase(user.id, {
+            contactNumber: contactNumber || '',
+            address: address || '',
+            about: about || '',
+            sampleImages: newSampleImages,
+          });
+        }
+        
+        Alert.alert("Success", "Sample image uploaded successfully.");
+      }
+    } catch (error: any) {
+      console.error('Error picking sample image:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      
+      // Provide more detailed error message
+      let errorMessage = 'Failed to upload sample image. Please try again.';
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.error?.message) {
+        errorMessage = error.error.message;
+      }
+      
+      // Check for specific error types
+      if (errorMessage.includes('row-level security') || errorMessage.includes('RLS')) {
+        errorMessage = 'Storage permission denied. Please check your Supabase storage bucket RLS policies. You may need to run the FIX_STORAGE_SAMPLE_IMAGES_RLS.sql script.';
+      } else if (errorMessage.includes('permission') || errorMessage.includes('denied')) {
+        errorMessage = 'Permission denied. Please ensure your Supabase storage bucket allows uploads to the sample-images folder.';
+      }
+      
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setUploadingSampleImage(false);
+    }
+  };
+
+  const removeSampleImage = async (index: number) => {
+    Alert.alert(
+      "Remove Sample Image",
+      "Are you sure you want to remove this sample image?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const imageUrl = sampleImages[index];
+              if (!imageUrl) {
+                Alert.alert("Error", "Image URL not found.");
+                return;
+              }
+
+              // Verify session and get user ID
+              const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+              if (sessionError || !session) {
+                const { data: { user: authUser } } = await supabase.auth.getUser();
+                if (!authUser) {
+                  Alert.alert("Error", "Please log in again to delete images.");
+                  return;
+                }
+              }
+
+              const currentUserId = session?.user?.id || user?.id;
+              if (!currentUserId) {
+                Alert.alert("Error", "User ID not found. Please log in again.");
+                return;
+              }
+
+              // Extract path from URL - handle different URL formats
+              let oldPath: string | null = null;
+              
+              console.log('[DELETE] Attempting to extract path from URL:', imageUrl);
+              console.log('[DELETE] Current user ID:', currentUserId);
+              
+              const urlParts = imageUrl.split('/');
+              const avatarsIndex = urlParts.findIndex(part => part === 'avatars');
+              
+              if (avatarsIndex >= 0 && avatarsIndex < urlParts.length - 1) {
+                // Get path after 'avatars' - this is the storage path we need
+                oldPath = urlParts.slice(avatarsIndex + 1).join('/');
+                console.log('[DELETE] Extracted path (method 1):', oldPath);
+              } else {
+                // If URL doesn't contain 'avatars', check if it's already a relative path
+                if (imageUrl.startsWith('sample-images/')) {
+                  oldPath = imageUrl;
+                  console.log('[DELETE] Using URL as direct path:', oldPath);
+                } else {
+                  // Try to find 'public' and get path after it
+                  const publicIndex = urlParts.findIndex(part => part === 'public');
+                  if (publicIndex >= 0 && publicIndex < urlParts.length - 1) {
+                    // Skip 'public' and get everything after
+                    oldPath = urlParts.slice(publicIndex + 1).join('/');
+                    console.log('[DELETE] Extracted path (method 2):', oldPath);
+                  }
+                }
+              }
+
+              if (!oldPath) {
+                console.error('[DELETE] Could not extract path from URL:', imageUrl);
+                console.error('[DELETE] URL parts:', urlParts);
+                Alert.alert("Error", `Could not determine file path from URL.\n\nURL: ${imageUrl.substring(0, 100)}...\n\nPlease check the browser console for details.`);
+                return;
+              }
+              
+              // Ensure the path doesn't have query parameters or fragments
+              oldPath = oldPath.split('?')[0].split('#')[0];
+              
+              // Verify the path contains the user's ID (security check)
+              if (!oldPath.includes(currentUserId)) {
+                console.warn('[DELETE] Path does not contain user ID. Path:', oldPath, 'User ID:', currentUserId);
+                // Still try to delete, but log the warning
+              }
+              
+              console.log('[DELETE] Final path to delete:', oldPath);
+              console.log('[DELETE] Expected pattern: sample-images/' + currentUserId + '/%');
+
+              // Delete from storage
+              console.log('[DELETE] Calling supabase.storage.from("avatars").remove([...])');
+              const { data: deleteData, error: deleteError } = await supabase.storage
+                .from('avatars')
+                .remove([oldPath]);
+
+              if (deleteError) {
+                console.error('[DELETE] Storage delete error:', deleteError);
+                console.error('[DELETE] Delete error details:', JSON.stringify(deleteError, null, 2));
+                console.error('[DELETE] Attempted path:', oldPath);
+                console.error('[DELETE] User ID:', currentUserId);
+                console.error('[DELETE] Expected pattern: sample-images/' + currentUserId + '/%');
+                
+                // Check if it's an RLS policy error
+                const errorMessage = deleteError.message || '';
+                const errorCode = (deleteError as any)?.code || '';
+                
+                if (errorMessage.includes('row-level security') || 
+                    errorMessage.includes('RLS') ||
+                    errorMessage.includes('permission') ||
+                    errorCode === 'PGRST301' ||
+                    errorCode === '42501') {
+                  Alert.alert(
+                    "Permission Denied", 
+                    `Cannot delete image. The file path may not match the RLS policy.\n\nPath: ${oldPath}\n\nExpected: sample-images/${currentUserId}/%\n\nPlease check your Supabase storage RLS policies.`
+                  );
+                  return;
+                }
+                
+                // Check for file not found
+                if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
+                  // File might already be deleted, just update the UI
+                  console.log('[DELETE] File not found, assuming already deleted');
+                  const newSampleImages = sampleImages.filter((_, i) => i !== index);
+                  setSampleImages(newSampleImages);
+                  
+                  // Save to database
+                  const prof = await loadProfileFromSupabase(user?.id || '');
+                  if (prof && user?.id) {
+                    await saveProfileToSupabase(user.id, {
+                      ...prof,
+                      sampleImages: newSampleImages,
+                    });
+                  }
+                  
+                  Alert.alert("Success", "Sample image removed successfully.");
+                  return;
+                }
+                
+                throw deleteError;
+              }
+              
+              console.log('[DELETE] File deleted successfully:', deleteData);
+              
+              // Update local state
+              const newSampleImages = sampleImages.filter((_, i) => i !== index);
+              setSampleImages(newSampleImages);
+              
+              // Save to database
+              const prof = await loadProfileFromSupabase(user?.id || '');
+              if (prof && user?.id) {
+                await saveProfileToSupabase(user.id, {
+                  ...prof,
+                  sampleImages: newSampleImages,
+                });
+                console.log('[DELETE] Database updated successfully');
+              }
+              
+              Alert.alert("Success", "Sample image removed successfully.");
+            } catch (error: any) {
+              console.error('[DELETE] Error removing sample image:', error);
+              console.error('[DELETE] Error stack:', error?.stack);
+              const errorMessage = error?.message || 'Failed to remove sample image. Please try again.';
+              Alert.alert("Error", errorMessage);
             }
           }
         }
@@ -1408,11 +1824,11 @@ export default function PartnerSettingsScreen() {
           {/* Tab Content */}
           {activeTab === 'profile' && (
             <>
-              {/* Profile Image Card */}
+              {/* Business Logo Card */}
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Business Profile Image</Text>
+                <Text style={styles.cardTitle}>Business Logo</Text>
                 <Text style={styles.cardSubtitle}>
-                  Upload a profile image for your business. This will be shown to customers.
+                  Upload a logo for your business.
                 </Text>
 
                 <View style={styles.profileImageSection}>
@@ -1479,6 +1895,53 @@ export default function PartnerSettingsScreen() {
                       </Pressable>
                     )}
                   </View>
+                </View>
+              </View>
+
+              {/* Sample Images Card */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Sample Images</Text>
+                <Text style={styles.cardSubtitle}>
+                  Upload sample images of your catering work. These will appear in the image carousel on your service details page for customers to browse.
+                </Text>
+
+                <View style={styles.sampleImagesSection}>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.sampleImagesScroll}
+                    contentContainerStyle={styles.sampleImagesContainer}
+                  >
+                    {sampleImages.map((imageUrl, index) => (
+                      <View key={index} style={styles.sampleImageWrapper}>
+                        <Image
+                          source={{ uri: imageUrl }}
+                          style={styles.sampleImage}
+                          resizeMode="cover"
+                        />
+                        <Pressable
+                          style={styles.sampleImageRemoveButton}
+                          onPress={() => removeSampleImage(index)}
+                        >
+                          <Ionicons name="close-circle" size={24} color="#ef4444" />
+                        </Pressable>
+                      </View>
+                    ))}
+                    <Pressable
+                      style={styles.sampleImageAddButton}
+                      onPress={pickSampleImage}
+                      disabled={uploadingSampleImage}
+                    >
+                      {uploadingSampleImage ? (
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                      ) : (
+                        <>
+                          <Ionicons name="add" size={32} color={COLORS.primary} />
+                          <Text style={styles.sampleImageAddText}>Add Image</Text>
+                        </>
+                      )}
+                    </Pressable>
+                  </ScrollView>
                 </View>
               </View>
 
@@ -3450,6 +3913,55 @@ const styles = StyleSheet.create({
   },
   imageActionButtonTextDanger: {
     color: COLORS.danger || "#ef4444"
+  },
+  sampleImagesSection: {
+    marginTop: Platform.OS === 'web' ? 16 : 14,
+  },
+  sampleImagesScroll: {
+    marginHorizontal: Platform.OS === 'web' ? -16 : -14,
+  },
+  sampleImagesContainer: {
+    paddingHorizontal: Platform.OS === 'web' ? 16 : 14,
+    gap: 12,
+    alignItems: 'center',
+  },
+  sampleImageWrapper: {
+    position: 'relative',
+    width: 120,
+    height: 120,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  sampleImage: {
+    width: '100%',
+    height: '100%',
+  },
+  sampleImageRemoveButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 2,
+  },
+  sampleImageAddButton: {
+    width: 120,
+    height: 120,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderStyle: 'dashed',
+    backgroundColor: COLORS.bg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sampleImageAddText: {
+    fontSize: Platform.OS === 'web' ? 12 : 11,
+    color: COLORS.primary,
+    fontWeight: '600',
   },
   previewAvatarImage: {
     width: Platform.OS === 'web' ? 56 : 64,
