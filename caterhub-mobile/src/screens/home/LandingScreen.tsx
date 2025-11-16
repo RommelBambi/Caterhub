@@ -77,7 +77,7 @@ export default function LandingScreen() {
             <View style={styles.logoContainer}>
               <Image
                 source={require('../../../assets/blacklogo.png')}
-                style={styles.logo}
+                style={styles.logo as any}
                 resizeMode="contain"
               />
               <Text style={styles.logoText}>CaterHub</Text>
@@ -435,7 +435,7 @@ export default function LandingScreen() {
                   <View style={styles.footerLogoContainer}>
                     <Image
                       source={require('../../../assets/blacklogo.png')}
-                      style={styles.footerLogo}
+                      style={styles.footerLogo as any}
                       resizeMode="contain"
                     />
                     <Text style={styles.footerLogoText}>CaterHub</Text>
@@ -515,9 +515,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
     paddingVertical: 16,
-    position: 'sticky',
-    top: 0,
-    zIndex: 100,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
