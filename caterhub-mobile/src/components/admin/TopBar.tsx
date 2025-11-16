@@ -1,10 +1,8 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
-import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../store/auth";
 import { isWeb } from "../../utils/platform";
-import NotificationBell from "../common/NotificationBell";
 
 type TopBarProps = {
   title?: string;
@@ -13,13 +11,10 @@ type TopBarProps = {
 export default function TopBar({ title }: TopBarProps) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<any>();
 
   function handleProfilePress() {
     // TODO: Navigate to admin profile/settings
   }
-
-  // Notification bell handles its own dropdown now
 
   const adminName = user?.username || "Admin";
 
@@ -30,14 +25,6 @@ export default function TopBar({ title }: TopBarProps) {
       </View>
 
       <View style={styles.rightCol}>
-        <View style={styles.iconBtn}>
-          <NotificationBell 
-            color="#111827"
-            size={Platform.OS === 'web' ? 20 : 22}
-            userRole="admin"
-            navigation={navigation}
-          />
-        </View>
         {isWeb ? (
           <Pressable style={styles.profileBtn} onPress={handleProfilePress}>
             <View style={styles.avatarCircle}>
@@ -94,10 +81,7 @@ const styles = StyleSheet.create({
   rightCol: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Platform.OS === 'web' ? 12 : 8
-  },
-  iconBtn: {
-    marginRight: Platform.OS === 'web' ? 0 : 0
+    gap: Platform.OS === 'web' ? 0 : 8
   },
   profileBtn: {
     flexDirection: "row",

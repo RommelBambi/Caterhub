@@ -301,7 +301,7 @@ export default function BookingsPage() {
                   filter === filterOption && styles.filterButtonTextActive,
                 ]}
               >
-                {filterOption === 'ON_THE_WAY' ? 'On The Way' : filterOption}
+                {filterOption === 'ON_THE_WAY' ? 'ON THE WAY' : filterOption}
               </Text>
             </Pressable>
           ))}

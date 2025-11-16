@@ -526,7 +526,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 4,
     gap: 12,
-    transition: "all 0.2s"
   },
   sidebarItemCollapsed: {
     justifyContent: "center",
