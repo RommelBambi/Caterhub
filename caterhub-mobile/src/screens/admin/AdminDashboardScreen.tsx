@@ -444,13 +444,6 @@ export default function AdminDashboardScreen() {
           contentContainerStyle={styles.scrollContent}
         >
           {renderPageContent()}
-          
-          {/* Footer */}
-          {isWeb && (
-            <View style={styles.footerArea}>
-              <Text style={styles.footerText}>© 2025 CaterHub • Admin Panel</Text>
-            </View>
-          )}
         </ScrollView>
       </View>
 
@@ -755,15 +748,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: Platform.OS === 'web' ? 20 : 4,
     elevation: 2
-  },
-  footerArea: {
-    alignItems: "center",
-    marginTop: 16,
-    paddingBottom: 40
-  },
-  footerText: {
-    fontSize: 12,
-    color: "#6b7280"
   },
   placeholderText: {
     color: COLORS.textLight,

@@ -485,9 +485,6 @@ export default function LandingScreen() {
                 </View>
               </View>
               <View style={styles.footerBottom}>
-                <Text style={styles.footerBottomText}>
-                  © {new Date().getFullYear()} CaterHub. All rights reserved.
-                </Text>
                 <View style={styles.footerSocial}>
                   <Pressable onPress={() => Alert.alert("Facebook", "Follow us on Facebook")}>
                     <Ionicons name="logo-facebook" size={20} color={COLORS.textLight} />
@@ -944,11 +941,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
     flexWrap: 'wrap',
-  },
-  footerBottomText: {
-    color: COLORS.textLight,
-    fontSize: 13,
-    marginBottom: 12,
   },
   footerSocial: {
     flexDirection: 'row',

@@ -516,12 +516,6 @@ export default function PartnerWalletScreen() {
             )}
           </View>
 
-          {/* Footer */}
-          {isWeb && (
-            <View style={styles.footerArea}>
-              <Text style={styles.footerText}>© 2025 CaterHub • Partner</Text>
-            </View>
-          )}
         </ScrollView>
       </View>
       {!isWeb && <BottomNav />}
@@ -726,15 +720,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6b7280",
     textAlign: "center"
-  },
-  footerArea: {
-    paddingTop: 24,
-    paddingBottom: 16,
-    alignItems: "center"
-  },
-  footerText: {
-    fontSize: 12,
-    color: "#9ca3af"
   },
   cardHeader: {
     flexDirection: "row",

@@ -401,7 +401,7 @@ export default function BookingsPage() {
                         style={[styles.actionButton, styles.completeButton]}
                         onPress={() => updateBookingStatus(booking.id, 'COMPLETED')}
                       >
-                        <Text style={styles.actionButtonText}>Complete</Text>
+                        <Text style={styles.actionButtonText}>✓ Complete</Text>
                       </Pressable>
                     )}
                   </View>
@@ -735,7 +735,7 @@ const styles = StyleSheet.create({
   colGuests: { width: 70, textAlign: 'center' },
   colTotal: { width: 100, textAlign: 'right' },
   colStatus: { width: 110 },
-  colActions: { width: 120 },
+  colActions: { width: 180, minWidth: 180 },
   statusBadge: {
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -759,6 +759,9 @@ const styles = StyleSheet.create({
   actionButtons: {
     flexDirection: 'row',
     gap: 6,
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   actionButton: {
     paddingVertical: 6,

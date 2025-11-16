@@ -61,10 +61,6 @@ export default function PartnerHomeScreen() {
             </Pressable>
           </View>
         </View>
-
-        <Text style={styles.footerNote}>
-          © 2025 CaterHub • Partner Console
-        </Text>
       </ScrollView>
     </View>
   );
@@ -148,11 +144,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14
   },
-  footerNote: {
-    fontSize: 12,
-    color: "#9ca3af",
-    textAlign: "center",
-    marginTop: 24
-  }
 });
 

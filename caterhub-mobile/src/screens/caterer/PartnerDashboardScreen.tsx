@@ -465,12 +465,6 @@ export default function PartnerDashboardScreen() {
             )}
           </View>
 
-          {/* Footer */}
-          {isWeb && (
-            <View style={styles.footerArea}>
-              <Text style={styles.footerText}>© 2025 CaterHub • Partner</Text>
-            </View>
-          )}
         </ScrollView>
       </View>
       {!isWeb && <BottomNav />}
@@ -695,15 +689,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6b7280",
     fontWeight: "500"
-  },
-  footerArea: {
-    alignItems: "center",
-    marginTop: 16,
-    paddingBottom: 40
-  },
-  footerText: {
-    fontSize: 12,
-    color: "#6b7280"
   },
   loadingWrap: {
     flex: 1,
