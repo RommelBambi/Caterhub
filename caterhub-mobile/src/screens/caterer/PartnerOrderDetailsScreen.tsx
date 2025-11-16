@@ -15,6 +15,7 @@ import { useRoute, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { supabase } from "../../services/supabase";
+import { Ionicons } from "@expo/vector-icons";
 
 import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
@@ -578,6 +579,12 @@ export default function PartnerOrderDetailsScreen() {
         >
           {/* Header */}
           <View style={styles.headerRow}>
+            <Pressable 
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="arrow-back" size={24} color="#111827" />
+            </Pressable>
             <View style={{ flex: 1 }}>
               <Text style={styles.pageTitle}>
                 {order.customerName}'s Order
@@ -1105,9 +1112,15 @@ const styles = StyleSheet.create({
   },
 
   headerRow: {
-    flexDirection: "column",
+    flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 16
+    marginBottom: 16,
+    gap: 12
+  },
+  backButton: {
+    padding: 8,
+    marginTop: -4,
+    marginRight: 4
   },
 
   pageTitle: {

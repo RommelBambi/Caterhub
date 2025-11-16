@@ -271,45 +271,48 @@ export default function PartnerDashboardScreen() {
             {/* Stats Grid */}
             <View style={styles.statsGrid}>
               <View style={[styles.statCard, styles.statCardPrimary]}>
-                <View style={styles.statCardHeader}>
-                  <View style={[styles.statIconContainer, { backgroundColor: COLORS.primary + '15' }]}>
+                <View style={styles.statCardContent}>
+                  <View style={styles.statCardLeft}>
+                    <Text style={styles.statLabel}>NEW ORDERS (7D)</Text>
+                    <Text style={[styles.statValue, { color: COLORS.primary }]}>
+                      {kpis[0]?.value || '0'}
+                    </Text>
+                    <Text style={styles.statSub}>Last 7 days</Text>
+                  </View>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#FFF5E6' }]}>
                     <Ionicons name="receipt" size={24} color={COLORS.primary} />
                   </View>
-                  <Ionicons name="trending-up-outline" size={16} color={COLORS.success} />
                 </View>
-                <Text style={styles.statLabel}>New Orders (7d)</Text>
-                <Text style={[styles.statValue, { color: COLORS.primary }]}>
-                  {kpis[0]?.value || '0'}
-                </Text>
-                <Text style={styles.statSub}>Last 7 days</Text>
               </View>
 
               <View style={[styles.statCard, styles.statCardSuccess]}>
-                <View style={styles.statCardHeader}>
-                  <View style={[styles.statIconContainer, { backgroundColor: COLORS.success + '15' }]}>
+                <View style={styles.statCardContent}>
+                  <View style={styles.statCardLeft}>
+                    <Text style={styles.statLabel}>REVENUE (₱)</Text>
+                    <Text style={[styles.statValue, { color: COLORS.success }]}>
+                      {kpis[1]?.value ? `₱${kpis[1].value}` : '₱0'}
+                    </Text>
+                    <Text style={styles.statSub}>Last 30 days</Text>
+                  </View>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#E6F7ED' }]}>
                     <Ionicons name="cash" size={24} color={COLORS.success} />
                   </View>
-                  <Ionicons name="trending-up-outline" size={16} color={COLORS.success} />
                 </View>
-                <Text style={styles.statLabel}>Revenue (₱)</Text>
-                <Text style={[styles.statValue, { color: COLORS.success }]}>
-                  {kpis[1]?.value ? `₱${kpis[1].value}` : '₱0'}
-                </Text>
-                <Text style={styles.statSub}>Last 30 days</Text>
               </View>
 
               <View style={[styles.statCard, styles.statCardWarning]}>
-                <View style={styles.statCardHeader}>
-                  <View style={[styles.statIconContainer, { backgroundColor: '#f59e0b15' }]}>
-                    <Ionicons name="time" size={24} color="#f59e0b" />
+                <View style={styles.statCardContent}>
+                  <View style={styles.statCardLeft}>
+                    <Text style={styles.statLabel}>PENDING ORDERS</Text>
+                    <Text style={[styles.statValue, { color: COLORS.primary }]}>
+                      {kpis[2]?.value || '0'}
+                    </Text>
+                    <Text style={styles.statSub}>Awaiting action</Text>
                   </View>
-                  <Ionicons name="alert-circle-outline" size={16} color="#f59e0b" />
+                  <View style={[styles.statIconContainer, { backgroundColor: '#FFF5E6' }]}>
+                    <Ionicons name="time" size={24} color={COLORS.primary} />
+                  </View>
                 </View>
-                <Text style={styles.statLabel}>Pending Orders</Text>
-                <Text style={[styles.statValue, { color: '#f59e0b' }]}>
-                  {kpis[2]?.value || '0'}
-                </Text>
-                <Text style={styles.statSub}>Awaiting action</Text>
               </View>
             </View>
 
@@ -324,8 +327,8 @@ export default function PartnerDashboardScreen() {
                   ]}
                   onPress={() => navigation.navigate("PartnerOrders")}
                 >
-                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.primary + '10' }]}>
-                    <Ionicons name="list" size={28} color={COLORS.primary} />
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: '#FFF5E6' }]}>
+                    <Ionicons name="list" size={26} color={COLORS.primary} />
                   </View>
                   <Text style={styles.quickActionLabel}>View All Orders</Text>
                 </Pressable>
@@ -336,8 +339,8 @@ export default function PartnerDashboardScreen() {
                   ]}
                   onPress={() => navigation.navigate("PartnerManagePackages")}
                 >
-                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.success + '10' }]}>
-                    <Ionicons name="restaurant" size={28} color={COLORS.success} />
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: '#E6F7ED' }]}>
+                    <Ionicons name="restaurant" size={26} color={COLORS.success} />
                   </View>
                   <Text style={styles.quickActionLabel}>Manage Packages</Text>
                 </Pressable>
@@ -348,8 +351,8 @@ export default function PartnerDashboardScreen() {
                   ]}
                   onPress={() => navigation.navigate("PartnerWallet")}
                 >
-                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.info + '10' }]}>
-                    <Ionicons name="wallet" size={28} color={COLORS.info} />
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: '#E0F2FE' }]}>
+                    <Ionicons name="wallet" size={26} color={COLORS.info} />
                   </View>
                   <Text style={styles.quickActionLabel}>View Wallet</Text>
                 </Pressable>
@@ -360,8 +363,8 @@ export default function PartnerDashboardScreen() {
                   ]}
                   onPress={() => navigation.navigate("PartnerSettings")}
                 >
-                  <View style={[styles.quickActionIconContainer, { backgroundColor: '#6b728010' }]}>
-                    <Ionicons name="settings" size={28} color="#6b7280" />
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: '#F3F4F6' }]}>
+                    <Ionicons name="settings" size={26} color="#6b7280" />
                   </View>
                   <Text style={styles.quickActionLabel}>Settings</Text>
                 </Pressable>
@@ -500,14 +503,15 @@ const styles = StyleSheet.create({
     gap: 16
   },
   welcomeTitle: {
-    fontSize: Platform.OS === 'web' ? 28 : 24,
-    fontWeight: "800",
+    fontSize: Platform.OS === 'web' ? 26 : 22,
+    fontWeight: "700",
     color: "#111827",
-    marginBottom: 4
+    marginBottom: 6
   },
   welcomeSubtitle: {
     color: "#6b7280",
-    fontSize: Platform.OS === 'web' ? 15 : 14
+    fontSize: Platform.OS === 'web' ? 14 : 13,
+    fontWeight: "400"
   },
   dateBadge: {
     flexDirection: "row",
@@ -518,7 +522,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#e5e7eb"
+    borderColor: "#f0f0f0"
   },
   dateText: {
     fontSize: 13,
@@ -556,69 +560,72 @@ const styles = StyleSheet.create({
     flexBasis: Platform.OS === 'web' ? 'auto' : '48%',
     minWidth: Platform.OS === 'web' ? 240 : '48%',
     backgroundColor: "#fff",
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: "#f3f4f6"
+    borderColor: "#f0f0f0"
   },
   statCardPrimary: {
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary
+    borderLeftWidth: 0
   },
   statCardSuccess: {
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.success
+    borderLeftWidth: 0
   },
   statCardWarning: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#f59e0b'
+    borderLeftWidth: 0
   },
-  statCardHeader: {
+  statCardContent: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16
+    alignItems: "flex-start",
+    flex: 1
+  },
+  statCardLeft: {
+    flex: 1,
+    marginRight: 12
   },
   statIconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center"
   },
   statLabel: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "600",
     color: "#6b7280",
     marginBottom: 8,
     textTransform: "uppercase",
-    letterSpacing: 0.5
+    letterSpacing: 0.8
   },
   statValue: {
-    fontSize: Platform.OS === 'web' ? 32 : 28,
-    fontWeight: "800",
+    fontSize: Platform.OS === 'web' ? 30 : 26,
+    fontWeight: "700",
     color: "#111827",
-    marginBottom: 4
+    marginBottom: 6
   },
   statSub: {
     fontSize: 12,
     color: "#9ca3af",
-    marginTop: 4
+    marginTop: 2,
+    fontWeight: "400"
   },
   quickActionsSection: {
     marginTop: 8,
     marginBottom: 24
   },
   sectionTitle: {
-    fontSize: Platform.OS === 'web' ? 20 : 18,
-    fontWeight: "700",
+    fontSize: Platform.OS === 'web' ? 18 : 16,
+    fontWeight: "600",
     color: "#111827",
-    marginBottom: 16
+    marginBottom: 16,
+    letterSpacing: -0.2
   },
   quickActionsGrid: {
     flexDirection: "row",
@@ -630,60 +637,55 @@ const styles = StyleSheet.create({
     flexBasis: Platform.OS === 'web' ? 'auto' : '48%',
     minWidth: Platform.OS === 'web' ? 180 : '48%',
     backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
+    borderRadius: 10,
+    padding: 24,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: "#f0f0f0",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    gap: 12
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+    gap: 10
   },
   quickActionCardPressed: {
     backgroundColor: "#f9fafb",
     transform: [{ scale: 0.98 }]
   },
   quickActionIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
+    width: 52,
+    height: 52,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 4
+    marginBottom: 2
   },
   quickActionLabel: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "500",
     color: "#374151",
     textAlign: "center"
   },
   sectionCard: {
     backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: Platform.OS === 'web' ? 8 : 12,
+    borderColor: "#f0f0f0",
+    borderRadius: Platform.OS === 'web' ? 8 : 10,
     padding: Platform.OS === 'web' ? 16 : 12,
     marginBottom: 24,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 10 : 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: Platform.OS === 'web' ? 20 : 4,
-    elevation: 2
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 2 : 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: Platform.OS === 'web' ? 4 : 3,
+    elevation: 1
   },
   sectionHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 12,
     alignItems: "center"
-  },
-  sectionTitle: {
-    fontSize: Platform.OS === 'web' ? 16 : 18,
-    fontWeight: "700",
-    color: "#111827"
   },
   smallMuted: {
     fontSize: 12,

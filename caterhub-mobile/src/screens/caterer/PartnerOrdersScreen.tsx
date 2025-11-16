@@ -809,9 +809,10 @@ const styles = StyleSheet.create({
     marginBottom: 16
   },
   pageTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827"
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 8
   },
   pageSubTitle: {
     color: "#6b7280",

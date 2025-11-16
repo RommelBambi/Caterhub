@@ -53,16 +53,20 @@ export default function Sidebar() {
       </View>
 
       <View style={styles.navList}>
-        {NAV_ITEMS.map((item) => (
-          <SidebarItem
-            key={item.key}
-            label={item.label}
-            icon={item.icon}
-            active={current === item.key}
-            collapsed={collapsed}
-            onPress={() => go(item.key)}
-          />
-        ))}
+        {NAV_ITEMS.map((item) => {
+          // Keep Orders highlighted when viewing order details
+          const isActive = current === item.key || (current === "PartnerOrderDetails" && item.key === "PartnerOrders");
+          return (
+            <SidebarItem
+              key={item.key}
+              label={item.label}
+              icon={item.icon}
+              active={isActive}
+              collapsed={collapsed}
+              onPress={() => go(item.key)}
+            />
+          );
+        })}
       </View>
 
       <Pressable style={styles.logoutRow} onPress={handleLogout}>

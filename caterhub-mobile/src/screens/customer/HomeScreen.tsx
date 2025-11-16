@@ -453,15 +453,6 @@ export default function HomeScreen({ navigation }: any) {
           </>
         ) : (
           <>
-            {/* Debug Info (only in development) */}
-            {__DEV__ && all.length > 0 && (
-              <View style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#f3f4f6', marginBottom: 8 }}>
-                <Text style={{ fontSize: 11, color: '#6b7280' }}>
-                  Debug: {all.length} services from {new Set(all.filter(s => s.user_id).map(s => s.user_id)).size} caterers
-                </Text>
-              </View>
-            )}
-            
             {/* Featured */}
             <Text style={styles.sectionTitle}>Featured</Text>
             <ScrollView

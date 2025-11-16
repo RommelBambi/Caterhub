@@ -237,45 +237,48 @@ export default function AdminDashboardScreen() {
             {/* Stats Grid */}
             <View style={styles.statsGrid}>
               <View style={[styles.statCard, styles.statCardPrimary]}>
-                <View style={styles.statCardHeader}>
-                  <View style={[styles.statIconContainer, { backgroundColor: COLORS.primary + '15' }]}>
+                <View style={styles.statCardContent}>
+                  <View style={styles.statCardLeft}>
+                    <Text style={styles.statLabel}>TOTAL USERS</Text>
+                    <Text style={[styles.statValue, { color: COLORS.primary }]}>
+                      {dashboardStats.loading ? '...' : dashboardStats.totalUsers.toLocaleString()}
+                    </Text>
+                    <Text style={styles.statSub}>Registered users</Text>
+                  </View>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#FFF5E6' }]}>
                     <Ionicons name="people" size={24} color={COLORS.primary} />
                   </View>
-                  <Ionicons name="trending-up-outline" size={16} color={COLORS.success} />
                 </View>
-                <Text style={styles.statLabel}>Total Users</Text>
-                <Text style={[styles.statValue, { color: COLORS.primary }]}>
-                  {dashboardStats.loading ? '...' : dashboardStats.totalUsers.toLocaleString()}
-                </Text>
-                <Text style={styles.statSub}>Registered users</Text>
               </View>
 
               <View style={[styles.statCard, styles.statCardSuccess]}>
-                <View style={styles.statCardHeader}>
-                  <View style={[styles.statIconContainer, { backgroundColor: COLORS.success + '15' }]}>
+                <View style={styles.statCardContent}>
+                  <View style={styles.statCardLeft}>
+                    <Text style={styles.statLabel}>ACTIVE BOOKINGS</Text>
+                    <Text style={[styles.statValue, { color: COLORS.success }]}>
+                      {dashboardStats.loading ? '...' : dashboardStats.activeBookings.toLocaleString()}
+                    </Text>
+                    <Text style={styles.statSub}>This month</Text>
+                  </View>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#E6F7ED' }]}>
                     <Ionicons name="calendar" size={24} color={COLORS.success} />
                   </View>
-                  <Ionicons name="trending-up-outline" size={16} color={COLORS.success} />
                 </View>
-                <Text style={styles.statLabel}>Active Bookings</Text>
-                <Text style={[styles.statValue, { color: COLORS.success }]}>
-                  {dashboardStats.loading ? '...' : dashboardStats.activeBookings.toLocaleString()}
-                </Text>
-                <Text style={styles.statSub}>This month</Text>
               </View>
 
               <View style={[styles.statCard, styles.statCardInfo]}>
-                <View style={styles.statCardHeader}>
-                  <View style={[styles.statIconContainer, { backgroundColor: COLORS.info + '15' }]}>
+                <View style={styles.statCardContent}>
+                  <View style={styles.statCardLeft}>
+                    <Text style={styles.statLabel}>REVENUE</Text>
+                    <Text style={[styles.statValue, { color: COLORS.info }]}>
+                      {dashboardStats.loading ? '...' : `₱${dashboardStats.revenue.toLocaleString()}`}
+                    </Text>
+                    <Text style={styles.statSub}>Last 30 days</Text>
+                  </View>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#E0F2FE' }]}>
                     <Ionicons name="cash" size={24} color={COLORS.info} />
                   </View>
-                  <Ionicons name="trending-up-outline" size={16} color={COLORS.success} />
                 </View>
-                <Text style={styles.statLabel}>Revenue</Text>
-                <Text style={[styles.statValue, { color: COLORS.info }]}>
-                  {dashboardStats.loading ? '...' : `₱${dashboardStats.revenue.toLocaleString()}`}
-                </Text>
-                <Text style={styles.statSub}>Last 30 days</Text>
               </View>
             </View>
 
@@ -290,8 +293,8 @@ export default function AdminDashboardScreen() {
                   ]}
                   onPress={() => setCurrentPage('recruitment')}
                 >
-                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.primary + '10' }]}>
-                    <Ionicons name="person-add" size={28} color={COLORS.primary} />
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: '#FFF5E6' }]}>
+                    <Ionicons name="person-add" size={26} color={COLORS.primary} />
                   </View>
                   <Text style={styles.quickActionLabel}>Review Applications</Text>
                 </Pressable>
@@ -302,8 +305,8 @@ export default function AdminDashboardScreen() {
                   ]}
                   onPress={() => setCurrentPage('bookings')}
                 >
-                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.success + '10' }]}>
-                    <Ionicons name="calendar" size={28} color={COLORS.success} />
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: '#E6F7ED' }]}>
+                    <Ionicons name="calendar" size={26} color={COLORS.success} />
                   </View>
                   <Text style={styles.quickActionLabel}>Manage Bookings</Text>
                 </Pressable>
@@ -314,8 +317,8 @@ export default function AdminDashboardScreen() {
                   ]}
                   onPress={() => setCurrentPage('tickets')}
                 >
-                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.info + '10' }]}>
-                    <Ionicons name="help-circle" size={28} color={COLORS.info} />
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: '#E0F2FE' }]}>
+                    <Ionicons name="help-circle" size={26} color={COLORS.info} />
                   </View>
                   <Text style={styles.quickActionLabel}>Support Tickets</Text>
                 </Pressable>
@@ -326,8 +329,8 @@ export default function AdminDashboardScreen() {
                   ]}
                   onPress={() => setCurrentPage('analytics')}
                 >
-                  <View style={[styles.quickActionIconContainer, { backgroundColor: COLORS.danger + '10' }]}>
-                    <Ionicons name="bar-chart" size={28} color={COLORS.danger} />
+                  <View style={[styles.quickActionIconContainer, { backgroundColor: '#FEE2E2' }]}>
+                    <Ionicons name="bar-chart" size={26} color={COLORS.danger} />
                   </View>
                   <Text style={styles.quickActionLabel}>View Analytics</Text>
                 </Pressable>
@@ -576,14 +579,15 @@ const styles = StyleSheet.create({
     gap: 16
   },
   welcomeTitle: {
-    fontSize: Platform.OS === 'web' ? 28 : 24,
-    fontWeight: "800",
+    fontSize: Platform.OS === 'web' ? 26 : 22,
+    fontWeight: "700",
     color: "#111827",
-    marginBottom: 4
+    marginBottom: 6
   },
   welcomeSubtitle: {
     color: "#6b7280",
-    fontSize: Platform.OS === 'web' ? 15 : 14
+    fontSize: Platform.OS === 'web' ? 14 : 13,
+    fontWeight: "400"
   },
   dateBadge: {
     flexDirection: "row",
@@ -594,7 +598,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#e5e7eb"
+    borderColor: "#f0f0f0"
   },
   dateText: {
     fontSize: 13,
@@ -632,68 +636,71 @@ const styles = StyleSheet.create({
     flexBasis: Platform.OS === 'web' ? 'auto' : '48%',
     minWidth: Platform.OS === 'web' ? 240 : '48%',
     backgroundColor: "#fff",
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: "#f3f4f6"
+    borderColor: "#f0f0f0"
   },
   statCardPrimary: {
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary
+    borderLeftWidth: 0
   },
   statCardSuccess: {
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.success
+    borderLeftWidth: 0
   },
   statCardInfo: {
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.info
+    borderLeftWidth: 0
   },
-  statCardHeader: {
+  statCardContent: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16
+    alignItems: "flex-start",
+    flex: 1
+  },
+  statCardLeft: {
+    flex: 1,
+    marginRight: 12
   },
   statIconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center"
   },
   statLabel: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "600",
     color: "#6b7280",
     marginBottom: 8,
     textTransform: "uppercase",
-    letterSpacing: 0.5
+    letterSpacing: 0.8
   },
   statValue: {
-    fontSize: Platform.OS === 'web' ? 32 : 28,
-    fontWeight: "800",
+    fontSize: Platform.OS === 'web' ? 30 : 26,
+    fontWeight: "700",
     color: "#111827",
-    marginBottom: 4
+    marginBottom: 6
   },
   statSub: {
     fontSize: 12,
     color: "#9ca3af",
-    marginTop: 4
+    marginTop: 2,
+    fontWeight: "400"
   },
   quickActionsSection: {
     marginTop: 8
   },
   sectionTitle: {
-    fontSize: Platform.OS === 'web' ? 20 : 18,
-    fontWeight: "700",
+    fontSize: Platform.OS === 'web' ? 18 : 16,
+    fontWeight: "600",
     color: "#111827",
-    marginBottom: 16
+    marginBottom: 16,
+    letterSpacing: -0.2
   },
   quickActionsGrid: {
     flexDirection: "row",
@@ -705,34 +712,34 @@ const styles = StyleSheet.create({
     flexBasis: Platform.OS === 'web' ? 'auto' : '48%',
     minWidth: Platform.OS === 'web' ? 180 : '48%',
     backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
+    borderRadius: 10,
+    padding: 24,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: "#f0f0f0",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    gap: 12
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+    gap: 10
   },
   quickActionCardPressed: {
     backgroundColor: "#f9fafb",
     transform: [{ scale: 0.98 }]
   },
   quickActionIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
+    width: 52,
+    height: 52,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 4
+    marginBottom: 2
   },
   quickActionLabel: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "500",
     color: "#374151",
     textAlign: "center"
   },

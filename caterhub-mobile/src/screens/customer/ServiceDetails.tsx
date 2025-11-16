@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Image, StyleSheet, ScrollView, TouchableOpacity, Linking } from 'react-native';
+import { View, Image, StyleSheet, ScrollView, TouchableOpacity, Linking, Modal } from 'react-native';
 import { Text, Button, Card, ActivityIndicator, Divider } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,6 +32,7 @@ export default function ServiceDetails({ route, navigation }: any) {
   const [reviews, setReviews] = React.useState<ReviewWithUser[]>([]);
   const [rating, setRating] = React.useState({ averageRating: 0, totalReviews: 0 });
   const [loadingReviews, setLoadingReviews] = React.useState(false);
+  const [showCatererModal, setShowCatererModal] = React.useState(false);
 
   React.useEffect(() => {
     if (!id) {
@@ -145,6 +146,15 @@ export default function ServiceDetails({ route, navigation }: any) {
                 source={{ uri: service.logoUrl || service.imageUrl || 'https://picsum.photos/800/400' }}
                 style={styles.logo}
               />
+              {/* Caterer Information Icon */}
+              {(service.catererProfile || service.user_id) && (
+                <TouchableOpacity
+                  onPress={() => setShowCatererModal(true)}
+                  style={styles.catererInfoButton}
+                >
+                  <Ionicons name="information-circle" size={24} color="#FF8000" />
+                </TouchableOpacity>
+              )}
             </View>
 
             <View style={styles.titleRow}>
@@ -174,181 +184,7 @@ export default function ServiceDetails({ route, navigation }: any) {
               </TouchableOpacity>
             </View>
 
-            {service.description ? (
-              <View style={{ paddingHorizontal: 16, marginTop: 4 }}>
-                <Text style={styles.sectionTitle}>About</Text>
-                <Text style={styles.muted}>{service.description}</Text>
-              </View>
-            ) : null}
 
-            {/* Caterer Profile Information */}
-            {service.catererProfile ? (
-              <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
-                <Text style={styles.sectionTitle}>Caterer Information</Text>
-                
-                {/* About from caterer profile */}
-                {service.catererProfile.about ? (
-                  <View style={{ marginBottom: 12 }}>
-                    <Text style={[styles.muted, { marginBottom: 4 }]}>{service.catererProfile.about}</Text>
-                  </View>
-                ) : null}
-                
-                {/* Contact Information */}
-                <Card style={[styles.infoCard, { marginBottom: 12 }]}>
-                  <Card.Content>
-                    <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Contact</Text>
-                    
-                    {service.catererProfile.contactNumber && (
-                      <View style={styles.infoRow}>
-                        <Ionicons name="call-outline" size={18} color="#FF8000" />
-                        <Text style={styles.infoText}>{service.catererProfile.contactNumber}</Text>
-                      </View>
-                    )}
-                    
-                    {service.catererProfile.email && (
-                      <View style={styles.infoRow}>
-                        <Ionicons name="mail-outline" size={18} color="#FF8000" />
-                        <Text style={styles.infoText}>{service.catererProfile.email}</Text>
-                      </View>
-                    )}
-                    
-                    {service.catererProfile.website && (
-                      <TouchableOpacity 
-                        style={styles.infoRow}
-                        onPress={async () => {
-                          try {
-                            const url = service.catererProfile!.website!.startsWith('http') 
-                              ? service.catererProfile!.website 
-                              : `https://${service.catererProfile!.website}`;
-                            const canOpen = await Linking.canOpenURL(url);
-                            if (canOpen) {
-                              await Linking.openURL(url);
-                            }
-                          } catch (e) {
-                            console.error('Error opening website:', e);
-                          }
-                        }}
-                      >
-                        <Ionicons name="globe-outline" size={18} color="#FF8000" />
-                        <Text style={[styles.infoText, { color: '#3b82f6', textDecorationLine: 'underline' }]}>
-                          {service.catererProfile.website}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </Card.Content>
-                </Card>
-                
-                {/* Address */}
-                {service.catererProfile.address && (
-                  <Card style={[styles.infoCard, { marginBottom: 12 }]}>
-                    <Card.Content>
-                      <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Address</Text>
-                      <View style={styles.infoRow}>
-                        <Ionicons name="location-outline" size={18} color="#FF8000" />
-                        <Text style={styles.infoText}>{service.catererProfile.address}</Text>
-                      </View>
-                    </Card.Content>
-                  </Card>
-                )}
-                
-                {/* Service Locations */}
-                {service.locations && service.locations.length > 0 && (
-                  <Card style={[styles.infoCard, { marginBottom: 12 }]}>
-                    <Card.Content>
-                      <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Service Areas</Text>
-                      {service.locations.map((loc, idx) => (
-                        <View key={loc.id || idx} style={{ marginBottom: 8 }}>
-                          <View style={styles.infoRow}>
-                            <Ionicons name="map-outline" size={18} color="#FF8000" />
-                            <View style={{ flex: 1 }}>
-                              {loc.address && (
-                                <Text style={styles.infoText}>{loc.address}</Text>
-                              )}
-                              {(loc.city || loc.province) && (
-                                <Text style={[styles.muted, { fontSize: 12, marginTop: 2 }]}>
-                                  {[loc.city, loc.province, loc.country].filter(Boolean).join(', ')}
-                                </Text>
-                              )}
-                              {loc.serviceRadiusKm && (
-                                <Text style={[styles.muted, { fontSize: 11, marginTop: 2, fontStyle: 'italic' }]}>
-                                  Service radius: {loc.serviceRadiusKm} km
-                                </Text>
-                              )}
-                            </View>
-                          </View>
-                        </View>
-                      ))}
-                    </Card.Content>
-                  </Card>
-                )}
-                
-                {/* Social Media */}
-                {(service.catererProfile.facebook || service.catererProfile.instagram) && (
-                  <Card style={styles.infoCard}>
-                    <Card.Content>
-                      <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Follow Us</Text>
-                      <View style={{ flexDirection: 'row', gap: 16 }}>
-                        {service.catererProfile.facebook && (
-                          <TouchableOpacity 
-                            style={styles.socialButton}
-                            onPress={async () => {
-                              try {
-                                const url = service.catererProfile!.facebook!.startsWith('http')
-                                  ? service.catererProfile!.facebook
-                                  : `https://facebook.com/${service.catererProfile!.facebook}`;
-                                const canOpen = await Linking.canOpenURL(url);
-                                if (canOpen) {
-                                  await Linking.openURL(url);
-                                }
-                              } catch (e) {
-                                console.error('Error opening Facebook:', e);
-                              }
-                            }}
-                          >
-                            <Ionicons name="logo-facebook" size={24} color="#1877f2" />
-                            <Text style={[styles.infoText, { marginLeft: 4 }]}>Facebook</Text>
-                          </TouchableOpacity>
-                        )}
-                        {service.catererProfile.instagram && (
-                          <TouchableOpacity 
-                            style={styles.socialButton}
-                            onPress={async () => {
-                              try {
-                                const url = service.catererProfile!.instagram!.startsWith('http')
-                                  ? service.catererProfile!.instagram
-                                  : `https://instagram.com/${service.catererProfile!.instagram}`;
-                                const canOpen = await Linking.canOpenURL(url);
-                                if (canOpen) {
-                                  await Linking.openURL(url);
-                                }
-                              } catch (e) {
-                                console.error('Error opening Instagram:', e);
-                              }
-                            }}
-                          >
-                            <Ionicons name="logo-instagram" size={24} color="#e4405f" />
-                            <Text style={[styles.infoText, { marginLeft: 4 }]}>Instagram</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </Card.Content>
-                  </Card>
-                )}
-              </View>
-            ) : service.user_id ? (
-              <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
-                <Card style={[styles.infoCard, { backgroundColor: '#fef3c7' }]}>
-                  <Card.Content>
-                    <Text style={[styles.infoSectionTitle, { marginBottom: 8, color: '#92400e' }]}>
-                      Caterer Information
-                    </Text>
-                    <Text style={[styles.muted, { color: '#92400e' }]}>
-                      Caterer profile information is not available yet. Please check back later.
-                    </Text>
-                  </Card.Content>
-                </Card>
-              </View>
-            ) : null}
 
             <Text style={[styles.sectionTitle, { paddingHorizontal: 16, marginTop: 16 }]}>
               Packages
@@ -462,6 +298,195 @@ export default function ServiceDetails({ route, navigation }: any) {
           </>
         )}
       </ScrollView>
+
+      {/* Caterer Information Modal */}
+      <Modal
+        visible={showCatererModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowCatererModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Caterer Information</Text>
+              <TouchableOpacity
+                onPress={() => setShowCatererModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+          <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: 24 }}>
+            {service?.catererProfile ? (
+              <>
+                {/* Contact Information */}
+                <Card style={[styles.infoCard, { marginHorizontal: 16, marginBottom: 12 }]}>
+                  <Card.Content>
+                    <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Contact</Text>
+                    
+                    {service.catererProfile.contactNumber && (
+                      <View style={styles.infoRow}>
+                        <Ionicons name="call-outline" size={18} color="#FF8000" />
+                        <Text style={styles.infoText}>{service.catererProfile.contactNumber}</Text>
+                      </View>
+                    )}
+                    
+                    {service.catererProfile.email && (
+                      <View style={styles.infoRow}>
+                        <Ionicons name="mail-outline" size={18} color="#FF8000" />
+                        <Text style={styles.infoText}>{service.catererProfile.email}</Text>
+                      </View>
+                    )}
+                    
+                    {service.catererProfile.website && (
+                      <TouchableOpacity 
+                        style={styles.infoRow}
+                        onPress={async () => {
+                          try {
+                            const website = service.catererProfile?.website;
+                            if (!website) return;
+                            const url = website.startsWith('http') 
+                              ? website 
+                              : `https://${website}`;
+                            const canOpen = await Linking.canOpenURL(url);
+                            if (canOpen) {
+                              await Linking.openURL(url);
+                            }
+                          } catch (e) {
+                            console.error('Error opening website:', e);
+                          }
+                        }}
+                      >
+                        <Ionicons name="globe-outline" size={18} color="#FF8000" />
+                        <Text style={[styles.infoText, { color: '#3b82f6', textDecorationLine: 'underline' }]}>
+                          {service.catererProfile.website}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </Card.Content>
+                </Card>
+                
+                {/* Address */}
+                {service.catererProfile.address && (
+                  <Card style={[styles.infoCard, { marginHorizontal: 16, marginBottom: 12 }]}>
+                    <Card.Content>
+                      <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Address</Text>
+                      <View style={styles.infoRow}>
+                        <Ionicons name="location-outline" size={18} color="#FF8000" />
+                        <Text style={styles.infoText}>{service.catererProfile.address}</Text>
+                      </View>
+                    </Card.Content>
+                  </Card>
+                )}
+                
+                {/* Service Locations */}
+                {service.locations && service.locations.length > 0 && (
+                  <Card style={[styles.infoCard, { marginHorizontal: 16, marginBottom: 12 }]}>
+                    <Card.Content>
+                      <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Service Areas</Text>
+                      {service.locations.map((loc, idx) => (
+                        <View key={loc.id || idx} style={{ marginBottom: 8 }}>
+                          <View style={styles.infoRow}>
+                            <Ionicons name="map-outline" size={18} color="#FF8000" />
+                            <View style={{ flex: 1 }}>
+                              {loc.address && (
+                                <Text style={styles.infoText}>{loc.address}</Text>
+                              )}
+                              {(loc.city || loc.province) && (
+                                <Text style={[styles.muted, { fontSize: 12, marginTop: 2 }]}>
+                                  {[loc.city, loc.province, loc.country].filter(Boolean).join(', ')}
+                                </Text>
+                              )}
+                              {loc.serviceRadiusKm && (
+                                <Text style={[styles.muted, { fontSize: 11, marginTop: 2, fontStyle: 'italic' }]}>
+                                  Service radius: {loc.serviceRadiusKm} km
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </Card.Content>
+                  </Card>
+                )}
+                
+                {/* Social Media */}
+                {(service.catererProfile.facebook || service.catererProfile.instagram) && (
+                  <Card style={[styles.infoCard, { marginHorizontal: 16 }]}>
+                    <Card.Content>
+                      <Text style={[styles.infoSectionTitle, { marginBottom: 8 }]}>Follow Us</Text>
+                      <View style={{ flexDirection: 'row', gap: 16 }}>
+                        {service.catererProfile.facebook && (
+                          <TouchableOpacity 
+                            style={styles.socialButton}
+                            onPress={async () => {
+                              try {
+                                const facebook = service.catererProfile?.facebook;
+                                if (!facebook) return;
+                                const url = facebook.startsWith('http')
+                                  ? facebook
+                                  : `https://facebook.com/${facebook}`;
+                                const canOpen = await Linking.canOpenURL(url);
+                                if (canOpen) {
+                                  await Linking.openURL(url);
+                                }
+                              } catch (e) {
+                                console.error('Error opening Facebook:', e);
+                              }
+                            }}
+                          >
+                            <Ionicons name="logo-facebook" size={24} color="#1877f2" />
+                            <Text style={[styles.infoText, { marginLeft: 4 }]}>Facebook</Text>
+                          </TouchableOpacity>
+                        )}
+                        {service.catererProfile.instagram && (
+                          <TouchableOpacity 
+                            style={styles.socialButton}
+                            onPress={async () => {
+                              try {
+                                const instagram = service.catererProfile?.instagram;
+                                if (!instagram) return;
+                                const url = instagram.startsWith('http')
+                                  ? instagram
+                                  : `https://instagram.com/${instagram}`;
+                                const canOpen = await Linking.canOpenURL(url);
+                                if (canOpen) {
+                                  await Linking.openURL(url);
+                                }
+                              } catch (e) {
+                                console.error('Error opening Instagram:', e);
+                              }
+                            }}
+                          >
+                            <Ionicons name="logo-instagram" size={24} color="#e4405f" />
+                            <Text style={[styles.infoText, { marginLeft: 4 }]}>Instagram</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </Card.Content>
+                  </Card>
+                )}
+              </>
+            ) : service?.user_id ? (
+              <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+                <Card style={[styles.infoCard, { backgroundColor: '#fef3c7' }]}>
+                  <Card.Content>
+                    <Text style={[styles.infoSectionTitle, { marginBottom: 8, color: '#92400e' }]}>
+                      Caterer Information
+                    </Text>
+                    <Text style={[styles.muted, { color: '#92400e' }]}>
+                      Caterer profile information is not available yet. Please check back later.
+                    </Text>
+                  </Card.Content>
+                </Card>
+              </View>
+            ) : null}
+          </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -471,7 +496,7 @@ const styles = StyleSheet.create({
   topRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   backTap: { padding: 6, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.04)' },
 
-  header: { paddingTop: 8, alignItems: 'center' },
+  header: { paddingTop: 8, alignItems: 'center', position: 'relative' },
   logo: { width: '100%', height: 180, borderRadius: 12, backgroundColor: '#f3f4f6' },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 },
@@ -498,4 +523,63 @@ const styles = StyleSheet.create({
   dishRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginLeft: 4 },
   dishText: { color: '#4b5563', fontSize: 14 },
   inclusionsTitle: { fontSize: 14, fontWeight: '600', color: '#6b7280', marginTop: 12, marginBottom: 6 },
+  catererInfoButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#FF8000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    backgroundColor: '#fff',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  modalContent: {
+    maxHeight: 400,
+  },
 });

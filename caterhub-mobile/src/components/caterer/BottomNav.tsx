@@ -42,7 +42,8 @@ export default function BottomNav() {
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       {navItems.map((item) => {
-        const isActive = current === item.key;
+        // Keep Orders highlighted when viewing order details
+        const isActive = current === item.key || (current === "PartnerOrderDetails" && item.key === "PartnerOrders");
         return (
           <Pressable
             key={item.key}

@@ -146,6 +146,8 @@ export default function RecruitmentPage({ onViewDetails, refreshTrigger }: Recru
 
   return (
     <View style={styles.container}>
+      <Text style={styles.pageTitle}>Recruitment Management</Text>
+
       {/* Stats */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
@@ -255,6 +257,12 @@ export default function RecruitmentPage({ onViewDetails, refreshTrigger }: Recru
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  pageTitle: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: COLORS_ADMIN.text,
+    marginBottom: 24,
   },
   loadingContainer: {
     flex: 1,

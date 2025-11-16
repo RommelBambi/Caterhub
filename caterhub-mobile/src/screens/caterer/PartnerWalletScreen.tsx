@@ -777,9 +777,10 @@ const styles = StyleSheet.create({
     flex: 1
   },
   pageTitle: {
-    fontSize: Platform.OS === 'web' ? 24 : 28,
-    fontWeight: "700",
-    color: "#111827"
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 8
   },
   pageSubTitle: {
     color: "#6b7280",

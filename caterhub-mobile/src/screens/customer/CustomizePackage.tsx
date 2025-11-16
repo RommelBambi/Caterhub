@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
-import { Text, Button, Divider, Card, RadioButton, TextInput } from 'react-native-paper';
+import { Text, Button, Divider, Card, RadioButton, TextInput, Checkbox } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Service, ServicePackage, PackageCategory, DishOption } from '../../services/services';
@@ -13,6 +13,8 @@ export default function CustomizePackage({ route, navigation }: any) {
   const pkg = route.params.pkg as ServicePackage & { _raw?: any };
   const [choices, setChoices] = React.useState<ChoiceMap>({});
   const [notes, setNotes] = React.useState('');
+  const [hasAllergies, setHasAllergies] = React.useState(false);
+  const [allergyDetails, setAllergyDetails] = React.useState('');
 
   // Get sections from raw package data (database format) or categories (legacy format)
   const sections = pkg._raw?.sections || [];
@@ -51,7 +53,13 @@ export default function CustomizePackage({ route, navigation }: any) {
       };
     });
 
-    navigation.navigate('BookingForm', { service, pkg, picks: picked, notes });
+    navigation.navigate('BookingForm', { 
+      service, 
+      pkg, 
+      picks: picked, 
+      notes,
+      allergies: hasAllergies ? allergyDetails : ''
+    });
   };
 
   return (
@@ -107,6 +115,48 @@ export default function CustomizePackage({ route, navigation }: any) {
           </Card>
         )}
 
+        {/* Allergies and Dietary Restrictions Section */}
+        <Card style={styles.catCard}>
+          <Card.Content>
+            <Text style={styles.catTitle}>
+              Do any guests have allergies or dietary restrictions?
+            </Text>
+
+            <View style={styles.checkboxContainer}>
+              <Checkbox
+                status={hasAllergies ? 'checked' : 'unchecked'}
+                onPress={() => {
+                  setHasAllergies(!hasAllergies);
+                  if (hasAllergies) {
+                    setAllergyDetails('');
+                  }
+                }}
+                color="#FF8000"
+              />
+              <Text style={styles.checkboxLabel}>Yes — please specify</Text>
+            </View>
+
+            {hasAllergies && (
+              <View style={styles.allergyInputContainer}>
+                <TextInput
+                  mode="outlined"
+                  placeholder="List the allergy or restriction and any details (e.g., 'allergic to shellfish,' 'no pork')"
+                  value={allergyDetails}
+                  onChangeText={setAllergyDetails}
+                  multiline
+                  numberOfLines={4}
+                  style={styles.allergyInput}
+                  outlineColor="#e5e7eb"
+                  activeOutlineColor="#FF8000"
+                />
+                <Text style={styles.helperText}>
+                  Note: We can only remove side ingredients or optional components. We cannot remove core ingredients of a listed dish (for example, if a dish is pork-based, we cannot remove the pork).
+                </Text>
+              </View>
+            )}
+          </Card.Content>
+        </Card>
+
       </ScrollView>
 
       {/* Sticky footer */}
@@ -135,6 +185,30 @@ const styles = StyleSheet.create({
   radioItem: { paddingHorizontal: 0, marginLeft: -6 },
   radioLabel: { fontSize: 14 },
   muted: { color: '#6b7280', fontSize: 14 },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: '#111827',
+    marginLeft: 8,
+  },
+  allergyInputContainer: {
+    marginTop: 12,
+  },
+  allergyInput: {
+    backgroundColor: '#fff',
+    marginBottom: 8,
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#6b7280',
+    lineHeight: 16,
+    marginTop: 4,
+  },
   footer: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,

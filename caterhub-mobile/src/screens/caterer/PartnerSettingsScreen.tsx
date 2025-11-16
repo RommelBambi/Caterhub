@@ -2820,10 +2820,10 @@ const styles = StyleSheet.create({
     flex: 1
   },
   pageTitle: {
-    fontSize: Platform.OS === 'web' ? 24 : 22,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
     color: "#111827",
-    marginBottom: 4
+    marginBottom: 8
   },
   pageSubTitle: {
     color: "#6b7280",

@@ -24,7 +24,7 @@ type FormVals = {
 export default function BookingForm({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { user, token, logout } = useAuth();
-  const { service, pkg, picks, notes: initialNotes } = route.params || {};
+  const { service, pkg, picks, notes: initialNotes, allergies } = route.params || {};
 
   // Check authentication
   React.useEffect(() => {
@@ -226,6 +226,7 @@ export default function BookingForm({ route, navigation }: any) {
         picks,
         address: d.address, // Store in notes until migration is run
         extra: d.notes,
+        allergies: allergies || '', // Include allergy/dietary restriction information
       });
 
       console.log('[BookingForm] Creating booking with payload:', {
