@@ -21,7 +21,6 @@ import { supabase } from '../../services/supabase';
 import { checkXenditKeys } from '../../utils/checkXenditKeys';
 import { diagnoseEnvironment } from '../../utils/diagnoseEnv';
 import PaymentWebView from '../../components/payment/PaymentWebView';
-import TermsModal from '../../components/common/TermsModal';
 
 const COLORS = {
   primary: '#FF8000',
@@ -61,7 +60,8 @@ export default function PaymentScreen({ route, navigation }: any) {
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [paymentResponse, setPaymentResponse] = useState<any>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [paymentAgreementAccepted, setPaymentAgreementAccepted] = useState(false);
+  const [remainingBalanceAccepted, setRemainingBalanceAccepted] = useState(false);
 
   // Check Xendit keys and environment on mount (for debugging)
   React.useEffect(() => {
@@ -83,8 +83,21 @@ export default function PaymentScreen({ route, navigation }: any) {
       return;
     }
 
-    if (!termsAccepted) {
-      Alert.alert('Terms & Conditions Required', 'Please read and accept the Terms & Conditions to proceed with payment.');
+    // Only require terms acceptance when paying deposit (not when paying remaining balance)
+    if (!isRemainingPayment && !termsAccepted) {
+      Alert.alert('Confirmation Required', 'Please confirm that you understand the booking terms to proceed with payment.');
+      return;
+    }
+
+    // Only require payment agreement when paying deposit (not when paying remaining balance)
+    if (!isRemainingPayment && !paymentAgreementAccepted) {
+      Alert.alert('Payment Agreement Required', 'Please confirm your payment agreement to proceed.');
+      return;
+    }
+
+    // Require remaining balance confirmation when paying remaining balance
+    if (isRemainingPayment && !remainingBalanceAccepted) {
+      Alert.alert('Confirmation Required', 'Please confirm that you are paying the remaining balance to proceed.');
       return;
     }
 
@@ -277,44 +290,83 @@ export default function PaymentScreen({ route, navigation }: any) {
           </View>
         )}
         
-        {/* Important Notice */}
-        {!isFullPayment && (
-          <View style={[styles.infoCard, { backgroundColor: COLORS.primary + '10' }]}>
-            <Ionicons name="alert-circle" size={20} color={COLORS.primary} />
-            <Text style={styles.infoText}>
-              <Text style={{ fontWeight: '600' }}>Important:</Text> This is a 50% deposit to confirm your booking. The remaining 50% can be paid during the event.
-            </Text>
+
+        {/* Booking Confirmation Checkbox - Only show when paying deposit (not remaining balance) */}
+        {!isRemainingPayment && (
+          <View style={styles.termsSection}>
+            <TouchableOpacity
+              style={styles.termsCheckboxContainer}
+              onPress={() => setTermsAccepted(!termsAccepted)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
+                {termsAccepted && <Ionicons name="checkmark" size={16} color={COLORS.white} />}
+              </View>
+              <View style={styles.termsTextContainer}>
+                <Text style={styles.termsText}>
+                  Once I have paid, the booking will be confirmed and can no longer be cancelled. I may change my selected dishes, but I cannot change the entire menu.
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {!termsAccepted && (
+              <Text style={styles.termsWarning}>
+                You must confirm your understanding to proceed with payment.
+              </Text>
+            )}
           </View>
         )}
 
-        {/* Terms and Conditions Checkbox */}
-        <View style={styles.termsSection}>
-          <TouchableOpacity
-            style={styles.termsCheckboxContainer}
-            onPress={() => setTermsAccepted(!termsAccepted)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
-              {termsAccepted && <Ionicons name="checkmark" size={16} color={COLORS.white} />}
-            </View>
-            <View style={styles.termsTextContainer}>
-              <Text style={styles.termsText}>
-                I have read and understand the{' '}
-                <Text
-                  style={styles.termsLink}
-                  onPress={() => setShowTermsModal(true)}
-                >
-                  Terms and Conditions
+        {/* Payment Agreement Checkbox - Only show when paying deposit (not remaining balance) */}
+        {!isRemainingPayment && (
+          <View style={styles.termsSection}>
+            <TouchableOpacity
+              style={styles.termsCheckboxContainer}
+              onPress={() => setPaymentAgreementAccepted(!paymentAgreementAccepted)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, paymentAgreementAccepted && styles.checkboxChecked]}>
+                {paymentAgreementAccepted && <Ionicons name="checkmark" size={16} color={COLORS.white} />}
+              </View>
+              <View style={styles.termsTextContainer}>
+                <Text style={styles.termsText}>
+                  {isFullPayment 
+                    ? 'I agree to pay the full amount.'
+                    : 'I agree to pay the remaining balance before or during the event.'}
                 </Text>
+              </View>
+            </TouchableOpacity>
+            {!paymentAgreementAccepted && (
+              <Text style={styles.termsWarning}>
+                You must confirm your payment agreement to proceed with payment.
               </Text>
-            </View>
-          </TouchableOpacity>
-          {!termsAccepted && (
-            <Text style={styles.termsWarning}>
-              You must accept the Terms and Conditions to proceed with payment.
-            </Text>
-          )}
-        </View>
+            )}
+          </View>
+        )}
+
+        {/* Remaining Balance Confirmation Checkbox - Only show when paying remaining balance */}
+        {isRemainingPayment && (
+          <View style={styles.termsSection}>
+            <TouchableOpacity
+              style={styles.termsCheckboxContainer}
+              onPress={() => setRemainingBalanceAccepted(!remainingBalanceAccepted)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, remainingBalanceAccepted && styles.checkboxChecked]}>
+                {remainingBalanceAccepted && <Ionicons name="checkmark" size={16} color={COLORS.white} />}
+              </View>
+              <View style={styles.termsTextContainer}>
+                <Text style={styles.termsText}>
+                  I confirm that I am paying the remaining balance.
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {!remainingBalanceAccepted && (
+              <Text style={styles.termsWarning}>
+                You must confirm that you are paying the remaining balance to proceed with payment.
+              </Text>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {/* Footer */}
@@ -322,10 +374,10 @@ export default function PaymentScreen({ route, navigation }: any) {
         <TouchableOpacity
           style={[
             styles.payButton,
-            (!selectedMethod || !termsAccepted || loading) && styles.payButtonDisabled,
+            (!selectedMethod || (!isRemainingPayment && (!termsAccepted || !paymentAgreementAccepted)) || (isRemainingPayment && !remainingBalanceAccepted) || loading) && styles.payButtonDisabled,
           ]}
           onPress={handlePayment}
-          disabled={!selectedMethod || !termsAccepted || loading}
+          disabled={!selectedMethod || (!isRemainingPayment && (!termsAccepted || !paymentAgreementAccepted)) || (isRemainingPayment && !remainingBalanceAccepted) || loading}
           activeOpacity={0.8}
         >
           {loading ? (
@@ -387,16 +439,6 @@ export default function PaymentScreen({ route, navigation }: any) {
         }}
       />
 
-      {/* Terms and Conditions Modal */}
-      <TermsModal
-        visible={showTermsModal}
-        onAccept={() => {
-          setShowTermsModal(false);
-          setTermsAccepted(true);
-        }}
-        onDecline={() => setShowTermsModal(false)}
-        requireAcceptance={false}
-      />
     </View>
   );
 }
@@ -632,11 +674,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text,
     lineHeight: 20,
-  },
-  termsLink: {
-    color: COLORS.primary,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
   },
   termsWarning: {
     fontSize: 12,
