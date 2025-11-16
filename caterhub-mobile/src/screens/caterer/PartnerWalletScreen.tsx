@@ -450,44 +450,6 @@ export default function PartnerWalletScreen() {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Earnings Summary</Text>
-              <TouchableOpacity
-                style={[
-                  styles.withdrawButton,
-                  (!earnings || !earnings.total_earnings || earnings.total_earnings <= 0) && styles.withdrawButtonDisabled
-                ]}
-                onPress={() => {
-                  console.log('[PartnerWalletScreen] Withdraw button clicked', {
-                    earnings: earnings?.total_earnings,
-                    hasEarnings: earnings && earnings.total_earnings && earnings.total_earnings > 0,
-                  });
-                  if (earnings && earnings.total_earnings && earnings.total_earnings > 0) {
-                    console.log('[PartnerWalletScreen] Opening method modal');
-                    setShowMethodModal(true);
-                  } else {
-                    console.log('[PartnerWalletScreen] No earnings available');
-                    Alert.alert(
-                      'No Available Balance',
-                      'You need to have completed bookings with earnings before you can withdraw funds.',
-                      [{ text: 'OK' }]
-                    );
-                  }
-                }}
-                disabled={!earnings || !earnings.total_earnings || earnings.total_earnings <= 0}
-                activeOpacity={0.8}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons 
-                  name="arrow-down-circle" 
-                  size={Platform.OS === 'web' ? 20 : 18} 
-                  color={(!earnings || !earnings.total_earnings || earnings.total_earnings <= 0) ? (Platform.OS === 'web' ? '#9ca3af' : COLORS.textLight) : COLORS.white} 
-                />
-                <Text style={[
-                  styles.withdrawButtonText,
-                  (!earnings || !earnings.total_earnings || earnings.total_earnings <= 0) && styles.withdrawButtonTextDisabled
-                ]}>
-                  Withdraw Money
-                </Text>
-              </TouchableOpacity>
             </View>
             
             {earnings ? (
