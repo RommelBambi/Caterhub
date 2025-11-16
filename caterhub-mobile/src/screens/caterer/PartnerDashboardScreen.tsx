@@ -423,7 +423,7 @@ export default function PartnerDashboardScreen() {
                           return `₱${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                         })() : undefined,
                         selectedDishes: [], // Will be populated from booking data if available
-                        venue: '', // Will be populated from booking data if available
+                        venue: bookingData.address || '', // Use address from booking
                         inclusions: [], // Will be populated from booking data if available
                         status: bookingData.status as "PENDING" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED",
                         eventDate: bookingData.event_date,
@@ -433,7 +433,16 @@ export default function PartnerDashboardScreen() {
                           const amount = (parseFloat(priceStr) || 0) * (bookingData.guests || 0);
                           return `₱${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                         })() : '₱0',
-                        notes: bookingData.notes || undefined
+                        notes: bookingData.notes || undefined,
+                        // Payment fields
+                        deposit_amount: bookingData.deposit_amount,
+                        remaining_amount: bookingData.remaining_amount,
+                        deposit_paid: bookingData.deposit_paid,
+                        remaining_paid: bookingData.remaining_paid,
+                        remaining_paid_method: bookingData.remaining_paid_method,
+                        payment_method: bookingData.payment_method,
+                        payment_status: bookingData.payment_status,
+                        delivery_fee: bookingData.delivery_fee || 0
                       };
 
                       navigation.navigate("PartnerOrderDetails", { order } as any);

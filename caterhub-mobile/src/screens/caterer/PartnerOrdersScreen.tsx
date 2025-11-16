@@ -8,7 +8,8 @@ import {
   Alert,
   ActivityIndicator,
   TouchableOpacity,
-  RefreshControl
+  RefreshControl,
+  TextInput
 } from "react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -36,11 +37,20 @@ type Order = {
   }>;
   venue: string;
   inclusions: string[];
-  status: "PENDING" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED";
+  status: "PENDING" | "CONFIRMED" | "ON_THE_WAY" | "DECLINED" | "COMPLETED" | "CANCELLED";
   eventDate: string;
   guests: number;
   totalPrice: string;
   notes?: string;
+  // Payment fields
+  deposit_amount?: number;
+  remaining_amount?: number;
+  deposit_paid?: boolean;
+  remaining_paid?: boolean;
+  remaining_paid_method?: string;
+  payment_method?: string;
+  payment_status?: string;
+  delivery_fee?: number;
 };
 
 export default function PartnerOrdersScreen() {
@@ -51,6 +61,7 @@ export default function PartnerOrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Fetch orders from Supabase - Optimized for faster loading
   const fetchOrders = async () => {
@@ -209,7 +220,16 @@ export default function PartnerOrdersScreen() {
             eventDate: formatEventDate(booking.event_date),
             guests: booking.guests,
             totalPrice: `₱${total.toLocaleString()}`,
-            notes: notesData.extra || ''
+            notes: notesData.extra || '',
+            // Payment fields
+            deposit_amount: booking.deposit_amount,
+            remaining_amount: booking.remaining_amount,
+            deposit_paid: booking.deposit_paid,
+            remaining_paid: booking.remaining_paid,
+            remaining_paid_method: booking.remaining_paid_method,
+            payment_method: booking.payment_method,
+            payment_status: booking.payment_status,
+            delivery_fee: booking.delivery_fee || 0
           };
         });
 
@@ -485,9 +505,23 @@ export default function PartnerOrdersScreen() {
     fetchOrders();
   };
 
-  const filteredOrders = statusFilter === "ALL"
-    ? orders
-    : orders.filter(order => order.status === statusFilter);
+  const filteredOrders = orders.filter(order => {
+    const matchesStatus = statusFilter === "ALL" || order.status === statusFilter;
+    const matchesSearch = !searchQuery.trim()
+      ? true
+      : order.customerName.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        order.customerEmail.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        order.serviceName.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+        order.bookingId.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
+  // Calculate stats
+  const totalBookings = orders.length;
+  const pendingCount = orders.filter(o => o.status === "PENDING").length;
+  const confirmedCount = orders.filter(o => o.status === "CONFIRMED").length;
+  const onTheWayCount = orders.filter(o => o.status === "ON_THE_WAY").length;
+  const completedCount = orders.filter(o => o.status === "COMPLETED").length;
 
   if (!user) {
     return (
@@ -516,34 +550,62 @@ export default function PartnerOrdersScreen() {
                 View bookings, accept or decline orders from customers.
               </Text>
             </View>
-            <View style={styles.metaInfoBox}>
-              <Text style={styles.metaInfoText}>
-                {filteredOrders.length} order{filteredOrders.length === 1 ? "" : "s"}
-              </Text>
+          </View>
+
+          {/* Stats */}
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Total Bookings</Text>
+              <Text style={styles.statValue}>{totalBookings}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Pending</Text>
+              <Text style={[styles.statValue, { color: "#1D4ED8" }]}>{pendingCount}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Confirmed</Text>
+              <Text style={[styles.statValue, { color: "#22c55e" }]}>{confirmedCount}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>On the Way</Text>
+              <Text style={[styles.statValue, { color: "#f59e0b" }]}>{onTheWayCount}</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>Completed</Text>
+              <Text style={[styles.statValue, { color: "#0ea5e9" }]}>{completedCount}</Text>
             </View>
           </View>
 
-          {/* Status Filter */}
-          <View style={styles.filterRow}>
-            {["ALL", "PENDING", "CONFIRMED", "COMPLETED", "DECLINED", "CANCELLED"].map((status) => (
-              <TouchableOpacity
-                key={status}
-                style={[
-                  styles.filterChip,
-                  statusFilter === status && styles.filterChipActive
-                ]}
-                onPress={() => setStatusFilter(status)}
-              >
-                <Text
+          {/* Search Bar and Filters */}
+          <View style={styles.toolbar}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by customer, email, service, or order ID..."
+              placeholderTextColor="#9ca3af"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            <View style={styles.filterGroup}>
+              {["ALL", "PENDING", "CONFIRMED", "ON_THE_WAY", "COMPLETED", "DECLINED", "CANCELLED"].map((status) => (
+                <TouchableOpacity
+                  key={status}
                   style={[
-                    styles.filterChipText,
-                    statusFilter === status && styles.filterChipTextActive
+                    styles.filterChip,
+                    statusFilter === status && styles.filterChipActive
                   ]}
+                  onPress={() => setStatusFilter(status)}
                 >
-                  {status}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      statusFilter === status && styles.filterChipTextActive
+                    ]}
+                  >
+                    {status === 'ON_THE_WAY' ? 'ON THE WAY' : status}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
           {loading ? (
@@ -607,12 +669,13 @@ export default function PartnerOrdersScreen() {
                         styles.statusChip,
                         order.status === "PENDING" && styles.statusPending,
                         order.status === "CONFIRMED" && styles.statusConfirmed,
+                        order.status === "ON_THE_WAY" && styles.statusOnTheWay,
                         order.status === "COMPLETED" && styles.statusCompleted,
                         order.status === "DECLINED" && styles.statusDeclined,
                         order.status === "CANCELLED" && styles.statusCancelled
                       ]}
                     >
-                      {order.status}
+                      {order.status === "ON_THE_WAY" ? "ON THE WAY" : order.status}
                     </Text>
                   </View>
                   <Text style={[styles.cell, { flex: 1, fontSize: 11 }]} numberOfLines={2}>
@@ -647,12 +710,13 @@ export default function PartnerOrdersScreen() {
                         styles.mobileStatusChip,
                         order.status === "PENDING" && styles.statusPending,
                         order.status === "CONFIRMED" && styles.statusConfirmed,
+                        order.status === "ON_THE_WAY" && styles.statusOnTheWay,
                         order.status === "COMPLETED" && styles.statusCompleted,
                         order.status === "DECLINED" && styles.statusDeclined,
                         order.status === "CANCELLED" && styles.statusCancelled
                       ]}
                     >
-                      {order.status}
+                      {order.status === "ON_THE_WAY" ? "ON THE WAY" : order.status}
                     </Text>
                   </View>
 
@@ -825,6 +889,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#D1FAE5",
     color: "#065F46"
   },
+  statusOnTheWay: {
+    backgroundColor: "#FEF3C7",
+    color: "#92400E"
+  },
   statusCompleted: {
     backgroundColor: "#E5E7EB",
     color: "#374151"
@@ -879,6 +947,64 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: "#fff"
+  },
+  statsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 20,
+    paddingHorizontal: Platform.OS === 'web' ? 0 : 4
+  },
+  statCard: {
+    flex: 1,
+    minWidth: Platform.OS === 'web' ? 140 : 100,
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6b7280",
+    marginBottom: 8
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#111827"
+  },
+  toolbar: {
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 20,
+    flexWrap: "wrap"
+  },
+  searchInput: {
+    flex: Platform.OS === 'web' ? 1 : undefined,
+    minWidth: Platform.OS === 'web' ? 200 : undefined,
+    width: Platform.OS === 'web' ? 'auto' : '100%',
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'web' ? 10 : 12,
+    fontSize: 14,
+    color: "#111827"
+  },
+  filterGroup: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8
   },
   loadingContainer: {
     padding: 40,

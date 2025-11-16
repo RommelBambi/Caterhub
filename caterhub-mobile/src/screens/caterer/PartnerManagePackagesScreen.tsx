@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, memo } from "react";
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from "react";
 import {
   View,
   Text,
@@ -155,7 +155,11 @@ export default function PartnerManagePackagesScreen() {
     setNewSectionCategory("pork");
     setNewInclusionName("");
     setNewInclusionPrice("");
+    setOriginalPackage(null); // Clear original package state
   }, []);
+
+  // Store original package state for comparison
+  const [originalPackage, setOriginalPackage] = useState<CateringPackage | null>(null);
 
   // load an existing package into the editor for editing
   const handleEditPackage = useCallback((pkg: CateringPackage) => {
@@ -167,6 +171,14 @@ export default function PartnerManagePackagesScreen() {
     setNewSectionCategory("pork");
     setNewInclusionName("");
     setNewInclusionPrice("");
+    // Store original state for comparison
+    setOriginalPackage({
+      id: pkg.id,
+      name: pkg.name,
+      price: pkg.price,
+      sections: JSON.parse(JSON.stringify(pkg.sections || [])), // Deep copy
+      inclusions: JSON.parse(JSON.stringify(pkg.inclusions || [])) // Deep copy
+    });
   }, []);
 
   // delete a saved package
@@ -282,14 +294,17 @@ export default function PartnerManagePackagesScreen() {
   }
 
   // save package to Supabase
-  async function handleSavePackage() {
+  async function handleSavePackage(overrideName?: string, overridePrice?: string) {
     if (!user) return;
 
-    if (!pkgName.trim()) {
+    const nameToUse = overrideName !== undefined ? overrideName : pkgName;
+    const priceToUse = overridePrice !== undefined ? overridePrice : pkgPrice;
+
+    if (!nameToUse.trim()) {
       Alert.alert("Missing name", "Please enter a package name.");
       return;
     }
-    if (!pkgPrice.trim()) {
+    if (!priceToUse.trim()) {
       Alert.alert("Missing price", "Please enter a package price.");
       return;
     }
@@ -313,11 +328,13 @@ export default function PartnerManagePackagesScreen() {
       return;
     }
 
+    console.log('[handleSavePackage] Starting save process...', { editingPackageId });
+
     try {
       const packageData = {
         caterer_id: user.id,
-        name: pkgName.trim(),
-        price: pkgPrice.trim(),
+        name: nameToUse.trim(),
+        price: priceToUse.trim(),
         sections: sections,
         inclusions: inclusions,
         is_active: true,
@@ -357,6 +374,10 @@ export default function PartnerManagePackagesScreen() {
         inclusions: savedPackage.inclusions || [],
       };
 
+      // Update local state - sync parent state with saved values
+      setPkgName(savedPackage.name);
+      setPkgPrice(savedPackage.price);
+
       // Update local state
       let updated: CateringPackage[];
       if (editingPackageId) {
@@ -368,15 +389,27 @@ export default function PartnerManagePackagesScreen() {
       }
       setPackages(updated);
 
+      // Store whether we were editing before resetting
+      const wasEditing = !!editingPackageId;
+
+      console.log('[handleSavePackage] Package saved successfully, clearing editor...');
+
+      // Reset editor to "Create New Package" mode immediately after saving
+      // This clears all fields, sections, and inclusions
+      handleNewPackage();
+
+      // Reload packages to show the updated list
+      await loadPackagesFromSupabase();
+
+      console.log('[handleSavePackage] Editor cleared and packages refreshed');
+
+      // Show success message
       Alert.alert(
         "Saved",
-        editingPackageId
-          ? "Package updated successfully."
-          : "New package created successfully."
+        wasEditing
+          ? "Package updated successfully. The editor has been cleared."
+          : "New package created successfully. The editor has been cleared."
       );
-
-      // stay in edit mode with the same id
-      setEditingPackageId(pkgToSave.id);
     } catch (error: any) {
       console.error('Error saving package:', error);
       Alert.alert('Error', error?.message || 'Failed to save package');
@@ -588,7 +621,13 @@ export default function PartnerManagePackagesScreen() {
   });
 
   // Package editor card on the right / bottom
-  const PackageEditor = memo(function PackageEditor() {
+  const PackageEditor = memo(function PackageEditor({ 
+    onSave,
+    originalPackage 
+  }: { 
+    onSave: (name: string, price: string) => void;
+    originalPackage: CateringPackage | null;
+  }) {
     const [localName, setLocalName] = useState(pkgName);
     const [localPrice, setLocalPrice] = useState(pkgPrice);
     const [localIncName, setLocalIncName] = useState("");
@@ -615,12 +654,55 @@ export default function PartnerManagePackagesScreen() {
       setLocalIncPrice("");
     }, [localIncName, localIncPrice]);
 
+    // Check if there are any changes compared to original package
+    const hasChanges = useMemo(() => {
+      if (!editingPackageId || !originalPackage) {
+        // For new packages, check if there's any content
+        return localName.trim().length > 0 || localPrice.trim().length > 0 || sections.length > 0 || inclusions.length > 0;
+      }
+
+      // Compare name
+      if (localName.trim() !== originalPackage.name.trim()) return true;
+      
+      // Compare price
+      if (localPrice.trim() !== originalPackage.price.trim()) return true;
+
+      // Compare sections (deep comparison)
+      if (sections.length !== originalPackage.sections.length) return true;
+      for (let i = 0; i < sections.length; i++) {
+        const current = sections[i];
+        const original = originalPackage.sections[i];
+        if (!original) return true;
+        if (current.category !== original.category) return true;
+        if (current.dishes.length !== original.dishes.length) return true;
+        for (let j = 0; j < current.dishes.length; j++) {
+          if (current.dishes[j] !== original.dishes[j]) return true;
+        }
+      }
+
+      // Compare inclusions (deep comparison)
+      if (inclusions.length !== originalPackage.inclusions.length) return true;
+      for (let i = 0; i < inclusions.length; i++) {
+        const current = inclusions[i];
+        const original = originalPackage.inclusions[i];
+        if (!original) return true;
+        if (current.name !== original.name || current.price !== original.price) return true;
+      }
+
+      return false;
+    }, [editingPackageId, originalPackage, localName, localPrice, sections, inclusions]);
+
     const saveWithDrafts = useCallback(() => {
-      // push local drafts to parent, then call existing save
-      setPkgName(localName);
-      setPkgPrice(localPrice);
-      handleSavePackage();
-    }, [localName, localPrice]);
+      // Pass local drafts directly to save function to avoid async state update issues
+      console.log('[saveWithDrafts] Button clicked!', { localName, localPrice, editingPackageId });
+      try {
+        // Call the onSave prop function passed from parent
+        onSave(localName, localPrice);
+      } catch (error) {
+        console.error('[saveWithDrafts] Error calling onSave:', error);
+        Alert.alert('Error', 'Failed to save package. Please try again.');
+      }
+    }, [localName, localPrice, editingPackageId, onSave]);
 
     return (
       <View style={styles.sectionCard}>
@@ -851,11 +933,22 @@ export default function PartnerManagePackagesScreen() {
         </Pressable>
 
         {/* Save final package */}
-        <Pressable style={styles.saveBtn} onPress={saveWithDrafts}>
-          <Text style={styles.saveBtnText}>
+        <TouchableOpacity 
+          style={[
+            styles.saveBtn,
+            (!hasChanges && editingPackageId) && styles.saveBtnDisabled
+          ]} 
+          onPress={saveWithDrafts}
+          activeOpacity={0.8}
+          disabled={!hasChanges && !!editingPackageId}
+        >
+          <Text style={[
+            styles.saveBtnText,
+            (!hasChanges && editingPackageId) && styles.saveBtnTextDisabled
+          ]}>
             {editingPackageId ? "Save Changes" : "Save Package"}
           </Text>
-        </Pressable>
+        </TouchableOpacity>
       </View>
     );
   });
@@ -918,7 +1011,7 @@ export default function PartnerManagePackagesScreen() {
               <SavedPackagesList />
             </View>
 
-            <PackageEditor />
+            <PackageEditor onSave={handleSavePackage} originalPackage={originalPackage} />
           </View>
         </ScrollView>
       </View>
@@ -1369,12 +1462,23 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
     marginTop: 24,
-    marginBottom: 8
+    marginBottom: 8,
+    minWidth: 120,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  saveBtnDisabled: {
+    backgroundColor: "#d1d5db",
+    shadowOpacity: 0,
+    elevation: 0
   },
   saveBtnText: {
     color: "#fff",
     fontWeight: "600",
     fontSize: 14
+  },
+  saveBtnTextDisabled: {
+    color: "#9ca3af"
   },
 
   emptyBox: {

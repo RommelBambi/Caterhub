@@ -10,6 +10,7 @@ import DateTimePicker, {
   DateTimePickerAndroid,
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { calculateDeliveryFeeFromAddresses, getClosestCatererLocation } from '../../services/deliveryFee';
 
 type FormVals = {
   date: string;
@@ -67,6 +68,11 @@ export default function BookingForm({ route, navigation }: any) {
   const [pickerDate, setPickerDate] = React.useState<Date>(new Date());
   const iosOnChangeRef = React.useRef<((value: string) => void) | null>(null);
 
+  // Delivery fee state
+  const [deliveryFee, setDeliveryFee] = React.useState<number>(0);
+  const [calculatingDeliveryFee, setCalculatingDeliveryFee] = React.useState(false);
+  const [deliveryFeeError, setDeliveryFeeError] = React.useState<string | null>(null);
+
   const date = watch('date')?.trim() ?? '';
   const guestsStr = watch('guests')?.trim() ?? '';
   const address = watch('address')?.trim() ?? '';
@@ -91,7 +97,8 @@ export default function BookingForm({ route, navigation }: any) {
     price = service.pricePerHead;
   }
   
-  const total = guests * price;
+  const packageSubtotal = guests * price;
+  const total = packageSubtotal + deliveryFee;
   const depositAmount = Math.round(total / 2);
   const remainingAmount = total - depositAmount;
 
@@ -107,6 +114,74 @@ export default function BookingForm({ route, navigation }: any) {
 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // Calculate delivery fee when address or guests change
+  React.useEffect(() => {
+    const calculateFee = async () => {
+      // Only calculate if we have address, guests, and service locations
+      if (!address || guests <= 0 || !service?.locations || service.locations.length === 0) {
+        setDeliveryFee(0);
+        setDeliveryFeeError(null);
+        return;
+      }
+
+      setCalculatingDeliveryFee(true);
+      setDeliveryFeeError(null);
+
+      try {
+        // Get caterer locations from service
+        const catererLocations = service.locations
+          .filter((loc: any) => loc.latitude && loc.longitude)
+          .map((loc: any) => ({
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            address: loc.address,
+          }));
+
+        if (catererLocations.length === 0) {
+          setDeliveryFee(0);
+          setDeliveryFeeError('No valid caterer locations found');
+          return;
+        }
+
+        // Get closest caterer location
+        const closestLocation = await getClosestCatererLocation(address, catererLocations);
+
+        if (!closestLocation) {
+          setDeliveryFee(0);
+          setDeliveryFeeError('Could not determine distance');
+          return;
+        }
+
+        // Calculate delivery fee
+        const fee = await calculateDeliveryFeeFromAddresses(
+          address,
+          closestLocation.location.latitude,
+          closestLocation.location.longitude,
+          guests
+        );
+
+        if (fee === null) {
+          setDeliveryFee(0);
+          setDeliveryFeeError('Failed to calculate delivery fee');
+          return;
+        }
+
+        setDeliveryFee(fee);
+        setDeliveryFeeError(null);
+      } catch (err: any) {
+        console.error('[BookingForm] Error calculating delivery fee:', err);
+        setDeliveryFee(0);
+        setDeliveryFeeError('Error calculating delivery fee');
+      } finally {
+        setCalculatingDeliveryFee(false);
+      }
+    };
+
+    // Debounce calculation to avoid too many API calls
+    const timeoutId = setTimeout(calculateFee, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [address, guests, service?.locations]);
 
   const onSubmit = async (d: FormVals) => {
     if (!valid) {
@@ -172,6 +247,7 @@ export default function BookingForm({ route, navigation }: any) {
         address: d.address,
         depositAmount,
         remainingAmount,
+        deliveryFee: deliveryFee, // Include calculated delivery fee
       });
 
       console.log('[BookingForm] Booking created successfully, navigating to payment...');
@@ -490,8 +566,27 @@ export default function BookingForm({ route, navigation }: any) {
           </View>
           
           <View style={styles.paymentSummary}>
+            <View style={styles.paymentRow}>
+              <Text style={styles.paymentLabel}>Package Subtotal:</Text>
+              <Text style={styles.paymentValue}>₱{packageSubtotal.toLocaleString()}</Text>
+            </View>
+            <View style={styles.paymentRow}>
+              <Text style={styles.paymentLabel}>
+                Delivery Fee
+                {calculatingDeliveryFee && <Text style={{ fontSize: 12, color: '#666' }}> (calculating...)</Text>}
+                {deliveryFeeError && <Text style={{ fontSize: 12, color: '#ef4444' }}> (error)</Text>}
+                :
+              </Text>
+              <Text style={styles.paymentValue}>
+                {calculatingDeliveryFee ? '...' : `₱${deliveryFee.toLocaleString()}`}
+              </Text>
+            </View>
             {paymentOption === 'deposit' ? (
               <>
+                <View style={[styles.paymentRow, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e5e7eb' }]}>
+                  <Text style={styles.paymentLabel}>Subtotal:</Text>
+                  <Text style={styles.paymentValue}>₱{total.toLocaleString()}</Text>
+                </View>
                 <View style={styles.paymentRow}>
                   <Text style={styles.paymentLabel}>Deposit (50%):</Text>
                   <Text style={styles.paymentValue}>₱{depositAmount.toLocaleString()}</Text>
@@ -506,8 +601,9 @@ export default function BookingForm({ route, navigation }: any) {
                 </View>
               </>
             ) : (
-              <View style={[styles.paymentRow, { justifyContent: 'flex-end' }]}>
-                <Text style={styles.paymentTotalValue}>Total: ₱{total.toLocaleString()}</Text>
+              <View style={[styles.paymentRow, styles.paymentTotal, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e5e7eb' }]}>
+                <Text style={styles.paymentTotalLabel}>Total:</Text>
+                <Text style={styles.paymentTotalValue}>₱{total.toLocaleString()}</Text>
               </View>
             )}
           </View>

@@ -626,6 +626,7 @@ export async function createBooking(payload: {
   address?: string;
   depositAmount?: number;
   remainingAmount?: number;
+  deliveryFee?: number; // Calculated delivery fee
   catererUserId?: string; // user_id of the caterer (needed since we don't use services table)
 }) {
   const { data: { user } } = await supabase.auth.getUser();
@@ -654,6 +655,10 @@ export async function createBooking(payload: {
   }
   if (payload.remainingAmount !== undefined) {
     insertData.remaining_amount = payload.remainingAmount;
+  }
+  if (payload.deliveryFee !== undefined) {
+    insertData.delivery_fee = payload.deliveryFee;
+    insertData.delivery_fee_set_by_caterer = false; // Auto-calculated, not set by caterer
   }
   
   const { data, error } = await supabase

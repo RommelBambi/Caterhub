@@ -20,6 +20,7 @@ import Sidebar from "../../components/caterer/Sidebar";
 import TopBar from "../../components/caterer/TopBar";
 import BottomNav from "../../components/caterer/BottomNav";
 import { isWeb } from "../../utils/platform";
+import { calculateDeliveryFeeFromAddresses, getClosestCatererLocation } from "../../services/deliveryFee";
 
 type OrderDetailsRouteParams = {
   order: {
@@ -82,6 +83,8 @@ export default function PartnerOrderDetailsScreen() {
   // ----- DELIVERY FEE MODAL STATE -----
   const [showDeliveryFeeModal, setShowDeliveryFeeModal] = useState(false);
   const [deliveryFee, setDeliveryFee] = useState("");
+  const [calculatingFee, setCalculatingFee] = useState(false);
+  const [calculatedFee, setCalculatedFee] = useState<number | null>(null);
 
   function openReasonModal(mode: "cancel" | "decline") {
     setModalMode(mode);
@@ -139,11 +142,25 @@ export default function PartnerOrderDetailsScreen() {
 
       if (error) {
         console.error('[PartnerOrderDetailsScreen] Error updating booking:', error);
+        console.error('[PartnerOrderDetailsScreen] Update data:', updateData);
+        console.error('[PartnerOrderDetailsScreen] Booking ID:', order.id);
         throw error;
       }
 
       console.log('[PartnerOrderDetailsScreen] Booking updated successfully:', data);
-      setCurrentStatus(newStatus as any);
+      console.log('[PartnerOrderDetailsScreen] New status:', data?.status);
+      
+      // Update local state immediately with the actual status from database
+      const updatedStatus = data?.status || newStatus;
+      setCurrentStatus(updatedStatus as any);
+      console.log('[PartnerOrderDetailsScreen] Updated currentStatus state to:', updatedStatus);
+      
+      // Also update the order object if data is returned
+      if (data && data.status) {
+        // Update the order status in the route params (if possible)
+        // The state update above should be sufficient for UI re-render
+      }
+      
       closeReasonModal();
       
       // Only navigate back if not staying on page
@@ -169,10 +186,13 @@ export default function PartnerOrderDetailsScreen() {
         }
       } else {
         // Just show success message without navigating
-        if (Platform.OS === 'web') {
-          window.alert(`Order ${newStatus.toLowerCase()} successfully.`);
-        } else {
-          Alert.alert('Success', `Order ${newStatus.toLowerCase()} successfully.`);
+        // Don't show alert for ON_THE_WAY to avoid interrupting workflow
+        if (newStatus !== 'ON_THE_WAY') {
+          if (Platform.OS === 'web') {
+            window.alert(`Order ${newStatus.toLowerCase()} successfully.`);
+          } else {
+            Alert.alert('Success', `Order ${newStatus.toLowerCase()} successfully.`);
+          }
         }
       }
     } catch (error: any) {
@@ -195,9 +215,102 @@ export default function PartnerOrderDetailsScreen() {
 
   async function handleAccept() {
     console.log('[PartnerOrderDetailsScreen] handleAccept called');
-    // Show delivery fee modal first
+    
+    // Calculate delivery fee automatically
+    setCalculatingFee(true);
     setDeliveryFee("");
-    setShowDeliveryFeeModal(true);
+    setCalculatedFee(null);
+    
+    try {
+      // Get full booking data to access address
+      const { data: booking, error: bookingError } = await supabase
+        .from('bookings')
+        .select('address, guests, package_id')
+        .eq('id', order.id)
+        .single();
+      
+      if (bookingError || !booking) {
+        throw new Error('Failed to fetch booking details');
+      }
+      
+      // Get caterer's locations from partner_applications
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+      
+      const { data: application, error: appError } = await supabase
+        .from('partner_applications')
+        .select('locations')
+        .eq('user_id', user.id)
+        .eq('status', 'APPROVED')
+        .single();
+      
+      if (appError || !application) {
+        throw new Error('Failed to fetch caterer locations');
+      }
+      
+      // Parse locations
+      let catererLocations: Array<{ latitude: number; longitude: number; address?: string }> = [];
+      try {
+        const locs = typeof application.locations === 'string' 
+          ? JSON.parse(application.locations) 
+          : application.locations;
+        
+        if (Array.isArray(locs)) {
+          catererLocations = locs.filter((loc: any) => loc.latitude && loc.longitude);
+        }
+      } catch (e) {
+        console.warn('[PartnerOrderDetailsScreen] Error parsing locations:', e);
+      }
+      
+      if (catererLocations.length === 0) {
+        throw new Error('No valid caterer locations found. Please add locations in settings.');
+      }
+      
+      // Get customer address from booking
+      const customerAddress = booking.address || order.venue;
+      if (!customerAddress) {
+        throw new Error('Customer address not found in booking');
+      }
+      
+      // Get closest caterer location
+      const closestLocation = await getClosestCatererLocation(customerAddress, catererLocations);
+      
+      if (!closestLocation) {
+        throw new Error('Could not determine distance to customer location');
+      }
+      
+      // Calculate delivery fee
+      const fee = await calculateDeliveryFeeFromAddresses(
+        customerAddress,
+        closestLocation.location.latitude,
+        closestLocation.location.longitude,
+        booking.guests || order.guests
+      );
+      
+      if (fee === null) {
+        throw new Error('Failed to calculate delivery fee. Please enter manually.');
+      }
+      
+      setCalculatedFee(fee);
+      setDeliveryFee(fee.toString());
+      console.log('[PartnerOrderDetailsScreen] Calculated delivery fee:', {
+        distance: closestLocation.distance.toFixed(2) + 'km',
+        guests: booking.guests || order.guests,
+        fee: fee
+      });
+    } catch (error: any) {
+      console.error('[PartnerOrderDetailsScreen] Error calculating delivery fee:', error);
+      // Still show modal, but with error message
+      if (Platform.OS === 'web') {
+        alert(`Could not auto-calculate delivery fee: ${error.message}. Please enter manually.`);
+      } else {
+        Alert.alert('Auto-calculation Failed', error.message || 'Please enter delivery fee manually.');
+      }
+      setCalculatedFee(null);
+    } finally {
+      setCalculatingFee(false);
+      setShowDeliveryFeeModal(true);
+    }
   }
 
   async function confirmAcceptWithDeliveryFee() {
@@ -258,12 +371,46 @@ export default function PartnerOrderDetailsScreen() {
 
   async function handleOnTheWay() {
     console.log('[PartnerOrderDetailsScreen] handleOnTheWay called');
-    // Update status immediately without confirmation, stay on page
-    updateBookingStatus('ON_THE_WAY', undefined, true);
+    
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Mark this order as on the way?');
+      if (!confirmed) return;
+    } else {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          'Mark as On the Way',
+          'Mark this order as on the way?',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Confirm', onPress: () => resolve(true) }
+          ]
+        );
+      });
+      if (!confirmed) return;
+    }
+    
+    // Update status and stay on page
+    await updateBookingStatus('ON_THE_WAY', undefined, true);
   }
 
   async function handleComplete() {
     console.log('[PartnerOrderDetailsScreen] handleComplete called');
+    
+    // Check if remaining balance has been paid
+    if (order.remaining_amount && order.remaining_amount > 0 && !remainingPaid) {
+      const errorMessage = 'Cannot mark as completed. The customer must pay the remaining balance first.';
+      
+      if (Platform.OS === 'web') {
+        window.alert(errorMessage);
+      } else {
+        Alert.alert(
+          'Payment Required',
+          errorMessage,
+          [{ text: 'OK' }]
+        );
+      }
+      return;
+    }
     
     if (Platform.OS === 'web') {
       const confirmed = window.confirm('Mark this booking as completed?');
@@ -419,30 +566,32 @@ export default function PartnerOrderDetailsScreen() {
             <Text style={styles.cardTitle}>Summary</Text>
 
             <View style={styles.rowLine}>
-              <Text style={styles.labelText}>Order ID</Text>
+              <Text style={styles.labelText}>Order ID:</Text>
               <Text style={styles.valueText}>{order.bookingId}</Text>
             </View>
 
             <View style={styles.rowLine}>
-              <Text style={styles.labelText}>Customer</Text>
+              <Text style={styles.labelText}>Customer Name:</Text>
               <Text style={styles.valueText}>{order.customerName}</Text>
-              <Text style={[styles.valueText, { fontSize: 12, color: '#6b7280' }]}>
-                {order.customerEmail}
-              </Text>
             </View>
 
             <View style={styles.rowLine}>
-              <Text style={styles.labelText}>Event Date</Text>
+              <Text style={styles.labelText}>Customer Email:</Text>
+              <Text style={styles.valueText}>{order.customerEmail}</Text>
+            </View>
+
+            <View style={styles.rowLine}>
+              <Text style={styles.labelText}>Event Date:</Text>
               <Text style={styles.valueText}>{order.eventDate}</Text>
             </View>
 
             <View style={styles.rowLine}>
-              <Text style={styles.labelText}>Number of Guests</Text>
+              <Text style={styles.labelText}>Number of Guests:</Text>
               <Text style={styles.valueText}>{order.guests} guests</Text>
             </View>
 
             <View style={styles.rowLine}>
-              <Text style={styles.labelText}>Venue / Location</Text>
+              <Text style={styles.labelText}>Venue / Location:</Text>
               <Text style={styles.valueText}>{order.venue}</Text>
             </View>
 
@@ -455,22 +604,54 @@ export default function PartnerOrderDetailsScreen() {
               </View>
             )}
 
-            <View style={styles.rowLine}>
-              <Text style={styles.labelText}>Total Price</Text>
-              <Text style={[styles.valueText, styles.priceText]}>
-                {order.totalPrice}
-              </Text>
+            {/* Price Breakdown */}
+            <View style={[styles.rowLine, { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#e5e7eb' }]}>
+              <Text style={[styles.labelText, { fontWeight: '600', fontSize: 15 }]}>Price Breakdown</Text>
             </View>
 
-            {/* Show delivery fee if set */}
-            {order.delivery_fee && order.delivery_fee > 0 && (
-              <View style={styles.rowLine}>
-                <Text style={styles.labelText}>Delivery Fee</Text>
-                <Text style={[styles.valueText, styles.priceText]}>
-                  ₱{order.delivery_fee.toLocaleString()}
-                </Text>
-              </View>
-            )}
+            {/* Calculate package subtotal */}
+            {(() => {
+              let packageSubtotal = 0;
+              if (order.packagePrice) {
+                const priceMatch = order.packagePrice.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+                if (priceMatch) {
+                  const pricePerHead = parseFloat(priceMatch[1].replace(/,/g, ''));
+                  packageSubtotal = pricePerHead * order.guests;
+                }
+              } else {
+                // Try to extract from totalPrice if packagePrice not available
+                const totalMatch = order.totalPrice.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+                if (totalMatch) {
+                  const total = parseFloat(totalMatch[1].replace(/,/g, ''));
+                  packageSubtotal = total - (order.delivery_fee || 0);
+                }
+              }
+              const deliveryFee = order.delivery_fee || 0;
+              const total = packageSubtotal + deliveryFee;
+
+              return (
+                <>
+                  <View style={[styles.rowLine, { marginTop: 12 }]}>
+                    <Text style={[styles.labelText, { fontSize: 14 }]}>Package Subtotal:</Text>
+                    <Text style={[styles.valueText, { fontSize: 14 }]}>
+                      ₱{packageSubtotal.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.rowLine}>
+                    <Text style={[styles.labelText, { fontSize: 14 }]}>Delivery Fee:</Text>
+                    <Text style={[styles.valueText, { fontSize: 14, color: deliveryFee > 0 ? '#111827' : '#6b7280' }]}>
+                      ₱{deliveryFee.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={[styles.rowLine, { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e5e7eb' }]}>
+                    <Text style={[styles.labelText, { fontWeight: '700', fontSize: 16 }]}>Total Price:</Text>
+                    <Text style={[styles.valueText, styles.priceText, { fontWeight: '700', fontSize: 18, color: '#22c55e' }]}>
+                      ₱{total.toLocaleString()}
+                    </Text>
+                  </View>
+                </>
+              );
+            })()}
           </View>
 
           {/* Payment Information card */}
@@ -480,7 +661,7 @@ export default function PartnerOrderDetailsScreen() {
 
               {order.deposit_amount && (
                 <View style={styles.rowLine}>
-                  <Text style={styles.labelText}>Deposit (50%)</Text>
+                  <Text style={styles.labelText}>Deposit (50%):</Text>
                   <View>
                     <Text style={[styles.valueText, styles.priceText]}>
                       ₱{order.deposit_amount.toLocaleString()}
@@ -499,7 +680,7 @@ export default function PartnerOrderDetailsScreen() {
 
               {order.remaining_amount && (
                 <View style={styles.rowLine}>
-                  <Text style={styles.labelText}>Remaining (50%)</Text>
+                  <Text style={styles.labelText}>Remaining (50%):</Text>
                   <View>
                     <Text style={[styles.valueText, styles.priceText]}>
                       ₱{order.remaining_amount.toLocaleString()}
@@ -538,22 +719,24 @@ export default function PartnerOrderDetailsScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Package Booked</Text>
 
-            <View style={styles.rowLine}>
-              <Text style={styles.labelText}>Service</Text>
-              <Text style={styles.valueText}>{order.serviceName}</Text>
-            </View>
-
             {order.packageName && (
               <View style={styles.rowLine}>
-                <Text style={styles.labelText}>Package</Text>
+                <Text style={styles.labelText}>Package:</Text>
                 <Text style={styles.valueText}>{order.packageName}</Text>
-                {order.packagePrice && (
-                  <Text style={[styles.valueText, { fontSize: 13, color: '#6b7280', marginTop: 2 }]}>
-                    Package Price: {order.packagePrice}
-                  </Text>
-                )}
               </View>
             )}
+
+            {order.packagePrice && (() => {
+              // Extract numeric price from packagePrice string (e.g., "₱12,500" or "250")
+              const priceMatch = order.packagePrice.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+              const numericPrice = priceMatch ? priceMatch[1].replace(/,/g, '') : order.packagePrice;
+              return (
+                <View style={styles.rowLine}>
+                  <Text style={styles.labelText}>Package Price:</Text>
+                  <Text style={styles.valueText}>{numericPrice}</Text>
+                </View>
+              );
+            })()}
 
             <Text style={[styles.subHeader, { marginTop: 12 }]}>
               Selected Dishes
@@ -709,15 +892,23 @@ export default function PartnerOrderDetailsScreen() {
                 )}
                 
                 <TouchableOpacity
-                  style={[styles.actionBtn, styles.completeBtn]}
+                  style={[
+                    styles.actionBtn, 
+                    styles.completeBtn,
+                    (order.remaining_amount && order.remaining_amount > 0 && !remainingPaid) && styles.disabledBtn
+                  ]}
                   onPress={handleComplete}
-                  disabled={updating}
+                  disabled={updating || (order.remaining_amount && order.remaining_amount > 0 && !remainingPaid)}
                   activeOpacity={0.7}
                 >
                   {updating ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.actionBtnText}>Mark as Completed</Text>
+                    <Text style={styles.actionBtnText}>
+                      {order.remaining_amount && order.remaining_amount > 0 && !remainingPaid
+                        ? 'Complete (Payment Required)'
+                        : 'Mark as Completed'}
+                    </Text>
                   )}
                 </TouchableOpacity>
               </>
@@ -782,19 +973,46 @@ export default function PartnerOrderDetailsScreen() {
       {showDeliveryFeeModal && (
         <View style={styles.reasonOverlay}>
           <View style={styles.reasonCard}>
-            <Text style={styles.reasonTitle}>Set Delivery Fee</Text>
-            <Text style={styles.reasonPrompt}>
-              Enter the delivery fee for this booking. You can set it to 0 if there's no delivery fee.
-            </Text>
-
-            <TextInput
-              style={styles.reasonInput}
-              placeholder="Enter delivery fee (e.g., 500)"
-              placeholderTextColor="#9ca3af"
-              keyboardType="numeric"
-              value={deliveryFee}
-              onChangeText={setDeliveryFee}
-            />
+            <Text style={styles.reasonTitle}>Delivery Fee</Text>
+            
+            {calculatingFee ? (
+              <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                <ActivityIndicator size="large" color="#FF8000" />
+                <Text style={[styles.reasonPrompt, { marginTop: 12, textAlign: 'center' }]}>
+                  Calculating delivery fee based on distance and number of guests...
+                </Text>
+              </View>
+            ) : (
+              <>
+                {calculatedFee !== null ? (
+                  <View style={{ marginBottom: 16, padding: 12, backgroundColor: '#f0fdf4', borderRadius: 8 }}>
+                    <Text style={[styles.reasonPrompt, { marginBottom: 8, color: '#166534', fontWeight: '600' }]}>
+                      ✓ Auto-calculated Delivery Fee
+                    </Text>
+                    <Text style={[styles.reasonPrompt, { fontSize: 14, color: '#166534' }]}>
+                      Based on distance and {order.guests} guest{order.guests !== 1 ? 's' : ''}
+                    </Text>
+                    <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#166534', marginTop: 8 }}>
+                      ₱{calculatedFee.toLocaleString()}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.reasonPrompt}>
+                    Enter the delivery fee for this booking. You can set it to 0 if there's no delivery fee.
+                  </Text>
+                )}
+                
+                <TextInput
+                  style={styles.reasonInput}
+                  placeholder="Enter delivery fee (e.g., 500)"
+                  placeholderTextColor="#9ca3af"
+                  keyboardType="numeric"
+                  value={deliveryFee}
+                  onChangeText={setDeliveryFee}
+                  editable={!calculatingFee}
+                />
+              </>
+            )}
 
             <View style={styles.reasonBtnRow}>
               <Pressable
@@ -805,9 +1023,9 @@ export default function PartnerOrderDetailsScreen() {
               </Pressable>
 
               <TouchableOpacity
-                style={[styles.reasonBtn, styles.reasonConfirm]}
+                style={[styles.reasonBtn, styles.reasonConfirm, (updating || calculatingFee) && { opacity: 0.5 }]}
                 onPress={confirmAcceptWithDeliveryFee}
-                disabled={updating}
+                disabled={updating || calculatingFee}
                 activeOpacity={0.7}
               >
                 {updating ? (
@@ -1031,6 +1249,10 @@ const styles = StyleSheet.create({
   },
   completeBtn: {
     backgroundColor: "#10b981"
+  },
+  disabledBtn: {
+    backgroundColor: "#9ca3af",
+    opacity: 0.6
   },
   markPaidBtn: {
     backgroundColor: "#22c55e"

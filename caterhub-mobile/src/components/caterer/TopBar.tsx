@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PartnerStackParamList } from "../../navigation/caterer/PartnerNav";
 import { useAuth } from "../../store/auth";
 import { isWeb } from "../../utils/platform";
+import NotificationBell from "../common/NotificationBell";
 
 type TopBarProps = {
   title?: string;
@@ -22,9 +23,7 @@ export default function TopBar({ title }: TopBarProps) {
     navigation.navigate("PartnerSettings" as any);
   }
 
-  function handleNotifPress() {
-    // TODO: notifications
-  }
+  // Notification bell handles its own dropdown now
 
   const businessName = user?.username || "Your Catering";
 
@@ -35,11 +34,14 @@ export default function TopBar({ title }: TopBarProps) {
       </View>
 
       <View style={styles.rightCol}>
-        <Pressable style={styles.iconBtn} onPress={handleNotifPress}>
-          <View style={styles.iconCircle}>
-            <Text style={styles.iconEmoji}>🔔</Text>
-          </View>
-        </Pressable>
+        <View style={styles.iconBtn}>
+          <NotificationBell 
+            color="#111827"
+            size={Platform.OS === 'web' ? 20 : 22}
+            userRole="caterer"
+            navigation={navigation}
+          />
+        </View>
 
         {isWeb ? (
           <Pressable style={styles.profileBtn} onPress={handleProfilePress}>

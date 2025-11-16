@@ -2,15 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getUnreadCount, subscribeToNotifications } from '../../services/notifications';
+import NotificationsDropdown from './NotificationsDropdown';
 
 interface NotificationBellProps {
-  onPress: () => void;
   color?: string;
   size?: number;
+  userRole?: 'admin' | 'caterer' | 'customer';
+  navigation?: any;
 }
 
-export default function NotificationBell({ onPress, color = '#111827', size = 24 }: NotificationBellProps) {
+export default function NotificationBell({ 
+  color = '#111827', 
+  size = 24,
+  userRole = 'customer',
+  navigation,
+}: NotificationBellProps) {
   const [unreadCount, setUnreadCount] = useState(0);
+  const [dropdownVisible, setDropdownVisible] = useState(false);
 
   useEffect(() => {
     loadUnreadCount();
@@ -34,15 +42,27 @@ export default function NotificationBell({ onPress, color = '#111827', size = 24
     }
   };
 
+  const handlePress = () => {
+    setDropdownVisible(true);
+  };
+
   return (
-    <TouchableOpacity onPress={onPress} style={styles.container} activeOpacity={0.7}>
-      <Ionicons name={unreadCount > 0 ? 'notifications' : 'notifications-outline'} size={size} color={color} />
-      {unreadCount > 0 && (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-        </View>
-      )}
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity onPress={handlePress} style={styles.container} activeOpacity={0.7}>
+        <Ionicons name={unreadCount > 0 ? 'notifications' : 'notifications-outline'} size={size} color={color} />
+        {unreadCount > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+      <NotificationsDropdown
+        visible={dropdownVisible}
+        onClose={() => setDropdownVisible(false)}
+        userRole={userRole}
+        navigation={navigation}
+      />
+    </>
   );
 }
 

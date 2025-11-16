@@ -259,8 +259,12 @@ export default function HomeScreen({ navigation }: any) {
                 loc.longitude
               );
               
-              // Use service radius if available, otherwise default to 50km
-              const maxRadius = loc.serviceRadiusKm || 50;
+              // Use service radius if available, otherwise skip this location (caterer must set radius)
+              if (!loc.serviceRadiusKm) {
+                console.warn(`[HomeScreen] Service ${svc.name} location has no serviceRadiusKm set, skipping`);
+                continue; // Skip locations without radius
+              }
+              const maxRadius = loc.serviceRadiusKm;
               
               console.log(`[HomeScreen] Service ${svc.name} location check:`, {
                 serviceLocation: { lat: loc.latitude, lng: loc.longitude },
@@ -283,15 +287,9 @@ export default function HomeScreen({ navigation }: any) {
             console.warn(`[HomeScreen] Service ${svc.name} has locations array but none have coordinates`);
           }
         } else {
-          // If no locations defined, use service's main coordinates with default 50km radius
-          const distance = getServiceDistance(svc, userLocation);
-          if (distance !== null) {
-            isWithinRange = distance <= 50;
-            minDistance = distance;
-            console.log(`[HomeScreen] Service ${svc.name} (no locations): distance=${distance.toFixed(2)}km, withinRange=${isWithinRange}`);
-          } else {
-            console.warn(`[HomeScreen] Service ${svc.name} has no locations and no main coordinates`);
-          }
+          // If no locations defined, service cannot be shown (caterer must set locations with service radius)
+          console.warn(`[HomeScreen] Service ${svc.name} has no locations defined, cannot determine service area`);
+          return null; // Don't show services without defined locations
         }
         
         return isWithinRange ? { ...svc, _distance: minDistance } : null;

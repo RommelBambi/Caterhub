@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   Modal,
   Image
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
@@ -222,127 +222,146 @@ export default function PartnerSettingsScreen() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
-  // Load current user + profile + application data on mount
-  useEffect(() => {
-    if (!user) {
-      navigation.replace("PartnerDashboard");
-      return;
-    }
+  // Load current user + profile + application data when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) {
+        navigation.replace("PartnerDashboard");
+        return;
+      }
 
-    (async () => {
-      try {
-        // Load profile data
-        setBusinessName(user.username || "");
-        setEmail(user.email || "");
+      let isActive = true;
 
-        // Load profile from Supabase
-        const prof = await loadProfileFromSupabase(user.id);
-        if (prof) {
-      setContactNumber(prof.contactNumber ?? "");
-          setEmail(prof.email ?? user.email ?? "");
-          setWebsite(prof.website ?? "");
-      setAddress(prof.address ?? "");
-      setAbout(prof.about ?? "");
-          setFacebook(prof.facebook ?? "");
-          setInstagram(prof.instagram ?? "");
-        } else {
-          // Default values if no profile exists
-          setContactNumber("");
-          setWebsite("");
-          setAddress("");
-          setAbout("");
-          setFacebook("");
-          setInstagram("");
-        }
-
-        // Load profile image from Supabase users table
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('profile_image_url')
-          .eq('id', user.id)
-          .single();
-
-        if (userData && !userError && userData.profile_image_url) {
-          setProfileImage(userData.profile_image_url);
-        } else {
-          setProfileImage(null);
-        }
-
-        // Load partner application data from Supabase
-        const { data: application, error } = await supabase
-          .from('partner_applications')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-
-        if (application && !error) {
-          // Load business name and owner information from partner_applications
-          if (application.business_name) {
-            setBusinessName(application.business_name);
-          }
-          if (application.owner_name) {
-            setOwnerName(application.owner_name);
-          }
-          if (application.owner_phone) {
-            setOwnerPhone(application.owner_phone);
-          }
-          if (application.owner_email) {
-            setOwnerEmail(application.owner_email);
-          }
-          if (application.telephone_number) {
-            setTelephoneNumber(application.telephone_number);
-          }
-          if (application.contact_number) {
-            setContactNumber(application.contact_number);
+      (async () => {
+        try {
+          // Load profile data
+          if (isActive) {
+            setBusinessName(user.username || "");
+            setEmail(user.email || "");
           }
 
-          // Track last save time for determining new vs old files
-          setLastSavedAt(application.updated_at || application.created_at || null);
-
-          // Load locations
-          if (application.locations && Array.isArray(application.locations)) {
-            setLocations(application.locations as BusinessLocation[]);
-          }
-
-          // Load documents
-          if (application.uploaded_documents && Array.isArray(application.uploaded_documents)) {
-            const docs = application.uploaded_documents;
-            const dtiEntry = docs.find((doc: string) => doc?.startsWith(DTI_PREFIX));
-            if (dtiEntry) {
-              const storagePath = dtiEntry.slice(DTI_PREFIX.length);
-              setDtiFile({
-                name: storagePath.split('/').pop() || 'DTI Document',
-                size: 0,
-                storagePath,
-                isRemote: true,
-                // Files loaded from database are old (previously uploaded)
-                uploadedAt: application.updated_at || application.created_at,
-              });
+          // Load profile from Supabase
+          const prof = await loadProfileFromSupabase(user.id);
+          if (isActive) {
+            if (prof) {
+              setContactNumber(prof.contactNumber ?? "");
+              setEmail(prof.email ?? user.email ?? "");
+              setWebsite(prof.website ?? "");
+              setAddress(prof.address ?? "");
+              setAbout(prof.about ?? "");
+              setFacebook(prof.facebook ?? "");
+              setInstagram(prof.instagram ?? "");
+            } else {
+              // Default values if no profile exists
+              setContactNumber("");
+              setWebsite("");
+              setAddress("");
+              setAbout("");
+              setFacebook("");
+              setInstagram("");
             }
-            const otherEntries = docs.filter((doc: string) => !doc?.startsWith(DTI_PREFIX));
-            if (otherEntries.length) {
-              setSupportingFiles(
-                otherEntries.map((storagePath: string) => ({
-                  name: storagePath.split('/').pop() || 'Document',
+          }
+
+          // Load profile image from Supabase users table
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('profile_image_url')
+            .eq('id', user.id)
+            .single();
+
+          if (isActive) {
+            if (userData && !userError && userData.profile_image_url) {
+              setProfileImage(userData.profile_image_url);
+            } else {
+              setProfileImage(null);
+            }
+          }
+
+          // Load partner application data from Supabase
+          const { data: application, error } = await supabase
+            .from('partner_applications')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (isActive && application && !error) {
+            // Load business name and owner information from partner_applications
+            if (application.business_name) {
+              setBusinessName(application.business_name);
+            }
+            if (application.owner_name) {
+              setOwnerName(application.owner_name);
+            }
+            if (application.owner_phone) {
+              setOwnerPhone(application.owner_phone);
+            }
+            if (application.owner_email) {
+              setOwnerEmail(application.owner_email);
+            }
+            if (application.telephone_number) {
+              setTelephoneNumber(application.telephone_number);
+            }
+            if (application.contact_number) {
+              setContactNumber(application.contact_number);
+            }
+
+            // Track last save time for determining new vs old files
+            setLastSavedAt(application.updated_at || application.created_at || null);
+
+            // Load locations
+            if (application.locations && Array.isArray(application.locations)) {
+              setLocations(application.locations as BusinessLocation[]);
+            }
+
+            // Load documents
+            if (application.uploaded_documents && Array.isArray(application.uploaded_documents)) {
+              const docs = application.uploaded_documents;
+              const dtiEntry = docs.find((doc: string) => doc?.startsWith(DTI_PREFIX));
+              if (dtiEntry) {
+                const storagePath = dtiEntry.slice(DTI_PREFIX.length);
+                setDtiFile({
+                  name: storagePath.split('/').pop() || 'DTI Document',
                   size: 0,
                   storagePath,
                   isRemote: true,
                   // Files loaded from database are old (previously uploaded)
                   uploadedAt: application.updated_at || application.created_at,
-                }))
-              );
+                });
+              }
+              const otherEntries = docs.filter((doc: string) => !doc?.startsWith(DTI_PREFIX));
+              if (otherEntries.length) {
+                setSupportingFiles(
+                  otherEntries.map((storagePath: string) => ({
+                    name: storagePath.split('/').pop() || 'Document',
+                    size: 0,
+                    storagePath,
+                    isRemote: true,
+                    // Files loaded from database are old (previously uploaded)
+                    uploadedAt: application.updated_at || application.created_at,
+                  }))
+                );
+              }
             }
           }
+
+          if (isActive) {
+            setLoaded(true);
+          }
+        } catch (error) {
+          console.error('Error loading settings:', error);
+          if (isActive) {
+            setLoaded(true);
+          }
         }
-      } catch (error) {
-        console.error('Error loading settings:', error);
-      } finally {
-      setLoaded(true);
-      }
-    })();
-  }, [navigation, user]);
+      })();
+
+      return () => {
+        isActive = false;
+      };
+    }, [user?.id])
+  );
 
   // Location management functions
   const addLocation = () => {
@@ -1295,7 +1314,7 @@ export default function PartnerSettingsScreen() {
     });
   }
 
-  if (!loaded || !user) {
+  if (!user) {
     return (
       <View style={styles.loadingWrap}>
         <Text style={{ color: "#6b6b6b" }}>Loading…</Text>
@@ -1310,6 +1329,12 @@ export default function PartnerSettingsScreen() {
       <View style={styles.mainArea}>
         <TopBar title="Catering Profile" />
 
+        {!loaded ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="large" color="#FF8000" />
+            <Text style={{ color: "#6b6b6b", marginTop: 12 }}>Loading settings…</Text>
+          </View>
+        ) : (
         <ScrollView
           style={styles.scrollRegion}
           contentContainerStyle={styles.scrollContent}
@@ -2307,6 +2332,7 @@ export default function PartnerSettingsScreen() {
             </>
           )}
         </ScrollView>
+        )}
       </View>
       {!isWeb && <BottomNav />}
 

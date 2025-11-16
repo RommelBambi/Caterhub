@@ -10,9 +10,12 @@ interface Booking {
   event_date: string;
   guests: number;
   notes: string | null;
-  status: 'PENDING' | 'CONFIRMED' | 'DECLINED' | 'COMPLETED' | 'CANCELLED';
+  status: 'PENDING' | 'CONFIRMED' | 'ON_THE_WAY' | 'DECLINED' | 'COMPLETED' | 'CANCELLED';
   created_at: string;
   updated_at: string;
+  deposit_amount?: number;
+  remaining_amount?: number;
+  delivery_fee?: number;
   services?: {
     id: number;
     name: string;
@@ -48,7 +51,7 @@ export default function BookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<'All' | 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED'>('All');
+  const [filter, setFilter] = useState<'All' | 'PENDING' | 'CONFIRMED' | 'ON_THE_WAY' | 'COMPLETED' | 'CANCELLED'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
@@ -81,6 +84,14 @@ export default function BookingsPage() {
         return;
       }
 
+      // Ensure delivery_fee, deposit_amount, remaining_amount are included
+      const enrichedBookingsData = (bookingsData || []).map((booking: any) => ({
+        ...booking,
+        delivery_fee: booking.delivery_fee || 0,
+        deposit_amount: booking.deposit_amount || 0,
+        remaining_amount: booking.remaining_amount || 0,
+      }));
+
       // Fetch partner applications to get service names
       const { data: applications, error: appsError } = await supabase
         .from('partner_applications')
@@ -100,7 +111,7 @@ export default function BookingsPage() {
       });
 
       // Enrich bookings with service names from partner_applications
-      const enrichedBookings = (bookingsData || []).map((booking: any) => {
+      const enrichedBookings = (enrichedBookingsData || []).map((booking: any) => {
         const catererId = booking.packages?.caterer_id;
         const serviceName = catererId ? (catererNameMap.get(catererId) || 'Unknown Service') : null;
         
@@ -165,12 +176,15 @@ export default function BookingsPage() {
     return matchesStatus && matchesSearch;
   });
 
+  const onTheWayCount = bookings.filter(b => b.status === 'ON_THE_WAY').length;
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'CONFIRMED': return COLORS.success;
-      case 'CANCELLED': return COLORS.danger;
-      case 'DECLINED': return COLORS.danger;
-      case 'PENDING': return COLORS.warning;
+      case 'PENDING': return '#1D4ED8'; // Blue
+      case 'CONFIRMED': return '#22c55e'; // Green
+      case 'ON_THE_WAY': return '#f59e0b'; // Yellow
+      case 'CANCELLED': return '#ef4444'; // Red
+      case 'DECLINED': return '#ef4444'; // Red
       case 'COMPLETED': return COLORS.info;
       default: return COLORS.textLight;
     }
@@ -178,10 +192,11 @@ export default function BookingsPage() {
 
   const getStatusBg = (status: string) => {
     switch (status) {
-      case 'CONFIRMED': return COLORS.success + '15';
-      case 'CANCELLED': return COLORS.danger + '15';
-      case 'DECLINED': return COLORS.danger + '15';
-      case 'PENDING': return COLORS.warning + '15';
+      case 'PENDING': return '#DBEAFE'; // Blue background
+      case 'CONFIRMED': return '#D1FAE5'; // Green background
+      case 'ON_THE_WAY': return '#FEF3C7'; // Yellow background
+      case 'CANCELLED': return '#FEE2E2'; // Red background
+      case 'DECLINED': return '#FEE2E2'; // Red background
       case 'COMPLETED': return COLORS.info + '15';
       default: return COLORS.bg;
     }
@@ -253,12 +268,12 @@ export default function BookingsPage() {
           <Text style={[styles.statValue, { color: COLORS.success }]}>{confirmedCount}</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Completed</Text>
-          <Text style={[styles.statValue, { color: COLORS.info }]}>{completedCount}</Text>
+          <Text style={styles.statLabel}>On the Way</Text>
+          <Text style={[styles.statValue, { color: COLORS.warning }]}>{onTheWayCount}</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Revenue (Completed)</Text>
-          <Text style={[styles.statValue, { color: COLORS.success }]}>₱{totalRevenue.toLocaleString()}</Text>
+          <Text style={styles.statLabel}>Completed</Text>
+          <Text style={[styles.statValue, { color: COLORS.info }]}>{completedCount}</Text>
         </View>
       </View>
 
@@ -271,7 +286,7 @@ export default function BookingsPage() {
           onChangeText={setSearchQuery}
         />
         <View style={styles.filterGroup}>
-          {(['All', 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const).map((filterOption) => (
+          {(['All', 'PENDING', 'CONFIRMED', 'ON_THE_WAY', 'COMPLETED', 'CANCELLED'] as const).map((filterOption) => (
             <Pressable
               key={filterOption}
               style={[
@@ -286,7 +301,7 @@ export default function BookingsPage() {
                   filter === filterOption && styles.filterButtonTextActive,
                 ]}
               >
-                {filterOption}
+                {filterOption === 'ON_THE_WAY' ? 'On The Way' : filterOption}
               </Text>
             </Pressable>
           ))}
@@ -438,10 +453,44 @@ export default function BookingsPage() {
                     <Text style={styles.modalDetailLabel}>Guests:</Text>
                     <Text style={styles.modalDetailValue}>{selectedBooking.guests}</Text>
                   </View>
-                  <View style={styles.modalDetailRow}>
-                    <Text style={styles.modalDetailLabel}>Total Amount:</Text>
-                    <Text style={styles.modalDetailValue}>₱{calculateTotal(selectedBooking).toLocaleString()}</Text>
+                  {/* Price Breakdown */}
+                  <View style={[styles.modalDetailRow, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.border }]}>
+                  <Text style={styles.modalSectionTitle}>Price Breakdown</Text>
                   </View>
+                  {(() => {
+                    // Calculate package subtotal
+                    let packageSubtotal = 0;
+                    if (selectedBooking.packages?.price) {
+                      const priceMatch = selectedBooking.packages.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
+                      if (priceMatch) {
+                        const pricePerHead = parseFloat(priceMatch[1].replace(/,/g, ''));
+                        packageSubtotal = pricePerHead * selectedBooking.guests;
+                      }
+                    } else if (selectedBooking.services?.price_per_head) {
+                      packageSubtotal = selectedBooking.services.price_per_head * selectedBooking.guests;
+                    }
+                    const deliveryFee = selectedBooking.delivery_fee || 0;
+                    const total = packageSubtotal + deliveryFee;
+
+                    return (
+                      <>
+                        <View style={styles.modalDetailRow}>
+                          <Text style={styles.modalDetailLabel}>Package Subtotal:</Text>
+                          <Text style={styles.modalDetailValue}>₱{packageSubtotal.toLocaleString()}</Text>
+                        </View>
+                        {deliveryFee > 0 && (
+                          <View style={styles.modalDetailRow}>
+                            <Text style={styles.modalDetailLabel}>Delivery Fee:</Text>
+                            <Text style={styles.modalDetailValue}>₱{deliveryFee.toLocaleString()}</Text>
+                          </View>
+                        )}
+                        <View style={[styles.modalDetailRow, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.border }]}>
+                          <Text style={[styles.modalDetailLabel, { fontWeight: '600', fontSize: 16 }]}>Total Amount:</Text>
+                          <Text style={[styles.modalDetailValue, { fontWeight: '700', fontSize: 18 }]}>₱{total.toLocaleString()}</Text>
+                        </View>
+                      </>
+                    );
+                  })()}
                 </View>
 
                 {/* Customer Info */}
@@ -464,21 +513,61 @@ export default function BookingsPage() {
                     <Text style={styles.modalDetailLabel}>Service:</Text>
                     <Text style={styles.modalDetailValue}>{selectedBooking.services?.name || 'N/A'}</Text>
                   </View>
-                  {selectedBooking.packages && (
-                    <View style={styles.modalDetailRow}>
-                      <Text style={styles.modalDetailLabel}>Package:</Text>
-                      <Text style={styles.modalDetailValue}>{selectedBooking.packages.name}</Text>
-                    </View>
-                  )}
                 </View>
 
-                {/* Notes */}
-                {selectedBooking.notes && (
-                  <View style={styles.modalSection}>
-                    <Text style={styles.modalSectionTitle}>Notes</Text>
-                    <Text style={styles.modalNotesText}>{selectedBooking.notes}</Text>
-                  </View>
-                )}
+                {/* Selected Menu or Package */}
+                {(() => {
+                  // Parse notes to extract selected menu items
+                  let menuItems: Array<{ categoryName: string; optionName: string }> = [];
+                  let packageName: string | null = null;
+                  
+                  if (selectedBooking.notes) {
+                    try {
+                      const notesData = JSON.parse(selectedBooking.notes);
+                      if (notesData.picks && Array.isArray(notesData.picks)) {
+                        menuItems = notesData.picks.map((p: any) => ({
+                          categoryName: p.categoryName || p.sectionLabel || 'Category',
+                          optionName: p.optionName || p.chosenDish || 'Option',
+                        }));
+                      }
+                    } catch (e) {
+                      // If notes is not JSON, treat as plain text
+                    }
+                  }
+                  
+                  if (selectedBooking.packages) {
+                    packageName = selectedBooking.packages.name;
+                  }
+
+                  if (menuItems.length > 0 || packageName) {
+                    return (
+                      <View style={styles.modalSection}>
+                        <Text style={styles.modalSectionTitle}>Selected Menu or Package</Text>
+                        {packageName && (
+                          <View style={styles.menuTableRow}>
+                            <Text style={[styles.menuTableHeader, { flex: 1 }]}>Package:</Text>
+                            <Text style={[styles.menuTableValue, { flex: 2 }]}>{packageName}</Text>
+                          </View>
+                        )}
+                        {menuItems.length > 0 && (
+                          <>
+                            <View style={[styles.menuTableRow, { backgroundColor: COLORS.bg, paddingVertical: 8, marginTop: packageName ? 12 : 0 }]}>
+                              <Text style={[styles.menuTableHeader, { flex: 1 }]}>Category</Text>
+                              <Text style={[styles.menuTableHeader, { flex: 2 }]}>Selected Option</Text>
+                            </View>
+                            {menuItems.map((item, index) => (
+                              <View key={index} style={[styles.menuTableRow, { borderBottomWidth: index < menuItems.length - 1 ? 1 : 0, borderBottomColor: COLORS.border, paddingVertical: 8 }]}>
+                                <Text style={[styles.menuTableValue, { flex: 1 }]}>{item.categoryName}</Text>
+                                <Text style={[styles.menuTableValue, { flex: 2 }]}>{item.optionName}</Text>
+                              </View>
+                            ))}
+                          </>
+                        )}
+                      </View>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* Dates */}
                 <View style={styles.modalSection}>
@@ -781,5 +870,19 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: COLORS.bg,
     borderRadius: 8,
+  },
+  menuTableRow: {
+    flexDirection: 'row',
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+  },
+  menuTableHeader: {
+    fontWeight: '600',
+    fontSize: 13,
+    color: COLORS.text,
+  },
+  menuTableValue: {
+    fontSize: 14,
+    color: COLORS.text,
   },
 });
