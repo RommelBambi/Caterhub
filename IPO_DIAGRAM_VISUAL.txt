@@ -1,0 +1,183 @@
+================================================================================
+                    INPUT - PROCESS - OUTPUT DIAGRAM
+                         Catering Service Booking System
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                  INPUT                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  USER CONTEXT:                                                              │
+│  • User Location (GPS coordinates or address)                               │
+│  • Event Details (date, number of guests)                                  │
+│  • Venue/Delivery Address                                                    │
+│  • Selected Caterer/Service                                                 │
+│  • Selected Package                                                         │
+│  • Menu Customization (dish selections from categories)                     │
+│  • Dietary Restrictions & Allergies                                         │
+│  • Additional Notes/Special Requests                                        │
+│  • Payment Option (deposit or full payment)                                 │
+│  • Payment Method Preference (GCash, PayMaya, bank transfer)                │
+│                                                                             │
+│  CATERING CONTEXT:                                                          │
+│  • Caterer Profiles & Business Information                                 │
+│  • Service Locations (multiple locations per caterer)                     │
+│  • Service Radius (serviceRadiusKm)                                         │
+│  • Package Offerings & Pricing (price per head)                            │
+│  • Menu Items & Dish Options                                               │
+│  • Package Sections/Categories                                             │
+│  • Package Inclusions                                                       │
+│  • Caterer Availability                                                     │
+│  • Sample Images & Portfolio                                                │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                 PROCESS                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. SERVICE DISCOVERY MODULE:                                               │
+│     • Geolocation-Based Search                                             │
+│     • Address Geocoding (OpenStreetMap Nominatim API)                       │
+│     • Distance Calculation (Haversine Formula)                               │
+│     • Service Radius Filtering                                             │
+│     • Proximity-Based Matching                                             │
+│     • Closest Caterer Location Selection                                   │
+│                                                                             │
+│  2. PRICE CALCULATION MODULE (Cost Engine):                                 │
+│     • Package Price Calculation (price per head × guests)                   │
+│     • Delivery Fee Calculation:                                            │
+│       - Distance between customer and caterer                               │
+│       - Base fee (₱500 for first 5 km)                                     │
+│       - Additional distance fee (₱50/km beyond 5 km)                       │
+│       - Transportation capacity (jeepney requirements)                      │
+│     • Total Price Computation                                               │
+│     • Deposit Calculation (50% of total)                                     │
+│     • Remaining Amount Calculation (50% of total)                            │
+│                                                                             │
+│  3. BOOKING MODULE:                                                         │
+│     • Booking Data Validation                                               │
+│     • Booking Record Creation                                               │
+│     • Package & Menu Customization Storage                                  │
+│     • Dietary Restrictions Storage                                          │
+│     • Booking Status Management (PENDING → CONFIRMED → ON_THE_WAY →        │
+│       COMPLETED)                                                            │
+│                                                                             │
+│  4. PAYMENT PROCESSING MODULE:                                             │
+│     • Xendit Payment Gateway Integration                                    │
+│     • Payment Link Generation                                               │
+│     • Payment Method Processing (GCash, PayMaya, bank transfer)           │
+│     • Payment Status Tracking                                              │
+│     • Webhook Handling for Status Updates                                  │
+│     • Transaction ID Storage                                                 │
+│                                                                             │
+│  5. NOTIFICATION MODULE:                                                    │
+│     • Real-time Booking Updates                                            │
+│     • Payment Status Notifications                                          │
+│     • Order Updates for Caterers                                           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                 OUTPUT                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. BOOKING CONFIRMATION:                                                   │
+│     • Booking ID (unique identifier)                                       │
+│     • Event Date & Time                                                     │
+│     • Number of Guests                                                      │
+│     • Venue/Delivery Address                                                │
+│     • Selected Package Information                                          │
+│     • Menu Customization Details (selected dishes)                          │
+│     • Dietary Restrictions & Special Requests                               │
+│     • Price Breakdown:                                                      │
+│       - Package Subtotal (price per head × guests)                          │
+│       - Delivery Fee (calculated based on distance & guests)                │
+│       - Total Amount                                                        │
+│       - Deposit Amount (if applicable)                                      │
+│       - Remaining Amount (if applicable)                                     │
+│     • Caterer Contact Details (phone, email, address)                      │
+│                                                                             │
+│  2. PAYMENT RECEIPT:                                                        │
+│     • Payment Transaction ID                                                │
+│     • Payment Method Used                                                  │
+│     • Payment Amount                                                        │
+│     • Payment Date & Time                                                   │
+│     • Payment Status (PAID, PENDING, FAILED)                                 │
+│     • Payment Receipt/Invoice                                              │
+│                                                                             │
+│  3. BOOKING STATUS UPDATES:                                                 │
+│     • PENDING → Awaiting caterer confirmation                              │
+│     • CONFIRMED → Booking confirmed by caterer                              │
+│     • ON_THE_WAY → Service in transit                                      │
+│     • COMPLETED → Service delivered                                         │
+│     • DECLINED → Booking declined by caterer                               │
+│     • CANCELLED → Booking cancelled                                         │
+│                                                                             │
+│  4. SERVICE EXECUTION:                                                      │
+│     • Booking Details Accessible to Caterer                                 │
+│     • Menu Customization Visible to Caterer                                │
+│     • Dietary Restrictions Communicated                                      │
+│     • Delivery Address & Instructions                                       │
+│     • Event Date & Time Confirmation                                        │
+│                                                                             │
+│  5. DOCUMENTATION & FEEDBACK:                                              │
+│     • Review & Rating System:                                               │
+│       - Customer Feedback Collection                                        │
+│       - Rating Submission (1-5 stars)                                      │
+│       - Review Text Submission                                              │
+│       - Review Display on Caterer Profiles                                  │
+│       - Average Rating Calculation                                          │
+│       - Review Count Tracking                                               │
+│     • Booking History:                                                      │
+│       - Past Bookings List                                                  │
+│       - Booking Details Archive                                             │
+│       - Payment History                                                     │
+│       - Review History                                                      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+                          DATA FLOW SUMMARY
+================================================================================
+
+INPUT                    PROCESS                    OUTPUT
+  │                         │                          │
+  │ User Data            Discovery                  Booking
+  │ Event Details    →   & Search        →         Confirmation
+  │ Package Selection     │                          │
+  │ Menu Choices          Price Calc                Payment
+  │                       │                          Receipt
+  │                       Booking                    │
+  │                       Creation                   Status
+  │                       │                          Updates
+  │                       Payment                    │
+  │                       Processing                 Reviews
+  │                         │                          │
+  └─────────────────────────┴──────────────────────────┘
+
+================================================================================
+                          KEY FEATURES
+================================================================================
+
+1. Automated Price Calculation: Real-time calculation based on package pricing
+   and delivery distance
+
+2. Location-Based Matching: Proximity-based service discovery using GPS and
+   geocoding
+
+3. Menu Customization: Dish selection from package categories with dietary
+   accommodation
+
+4. Payment Integration: Secure payment processing with multiple payment methods
+
+5. Status Management: Complete booking lifecycle tracking
+
+6. Review System: Post-service feedback and rating collection
+
+================================================================================
+

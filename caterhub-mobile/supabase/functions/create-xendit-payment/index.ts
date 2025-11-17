@@ -195,6 +195,18 @@ serve(async (req)=>{
     } else {
       // Use Xendit eWallet API for specific payment methods
       const channelCode = getChannelCode(paymentMethod);
+      
+      // Build channel_properties - PayMaya requires cancel_redirect_url
+      const channelProperties: any = {
+        success_redirect_url: successUrl,
+        failure_redirect_url: failureUrl
+      };
+      
+      // PayMaya requires cancel_redirect_url
+      if (channelCode === 'PH_PAYMAYA') {
+        channelProperties.cancel_redirect_url = failureUrl; // Use failure URL as cancel URL
+      }
+      
       const ewalletResponse = await fetch(`${XENDIT_BASE_URL}/ewallets/charges`, {
         method: 'POST',
         headers: {
@@ -207,10 +219,7 @@ serve(async (req)=>{
           amount: amount,
           checkout_method: 'ONE_TIME_PAYMENT',
           channel_code: channelCode,
-          channel_properties: {
-            success_redirect_url: successUrl,
-            failure_redirect_url: failureUrl
-          },
+          channel_properties: channelProperties,
           customer_id: userId,
           callback_url: `${supabaseUrl}/functions/v1/xendit-webhook`,
           metadata: {

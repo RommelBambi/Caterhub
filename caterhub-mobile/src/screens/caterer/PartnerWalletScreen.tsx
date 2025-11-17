@@ -552,119 +552,131 @@ export default function PartnerWalletScreen() {
             </View>
           )}
 
-          {/* Withdrawal History */}
-          {withdrawals.length > 0 && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Withdrawal History</Text>
-              <View style={styles.withdrawalsList}>
-                {withdrawals.map((withdrawal) => {
-                  const getStatusColor = (status: string) => {
-                    switch (status) {
-                      case 'COMPLETED': return COLORS.success;
-                      case 'PROCESSING': return COLORS.warn;
-                      case 'FAILED': return COLORS.danger;
-                      case 'CANCELLED': return COLORS.textLight;
-                      default: return COLORS.warn;
-                    }
-                  };
+          {/* Transactions and Withdrawals Side by Side */}
+          <View style={styles.historyContainer}>
+            {/* Transaction History */}
+            <View style={styles.historyCard}>
+              <Text style={styles.cardTitle}>Recent Transactions</Text>
+              
+              {transactions.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="receipt-outline" size={48} color={COLORS.textLight} />
+                  <Text style={styles.emptyStateText}>No transactions yet</Text>
+                  <Text style={styles.emptyStateSubText}>
+                    Completed bookings will appear here
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.transactionsList}>
+                  {transactions.slice(0, 10).map((transaction) => {
+                    const totalAmount = (transaction.deposit_amount || 0) + 
+                                      (transaction.remaining_amount || 0) + 
+                                      (transaction.delivery_fee || 0);
+                    const payout = transaction.caterer_payout_amount || 
+                                  (totalAmount - (transaction.platform_fee_amount || 0));
 
-                  return (
-                    <View key={withdrawal.id} style={styles.withdrawalItem}>
-                      <View style={styles.withdrawalHeader}>
-                        <View style={styles.withdrawalLeft}>
-                          <Ionicons
-                            name={
-                              withdrawal.status === 'COMPLETED'
-                                ? 'checkmark-circle'
-                                : withdrawal.status === 'FAILED'
-                                ? 'close-circle'
-                                : 'time'
-                            }
-                            size={20}
-                            color={getStatusColor(withdrawal.status)}
-                          />
-                          <View style={styles.withdrawalInfo}>
-                            <Text style={styles.withdrawalTitle}>
-                              {withdrawal.payment_method === 'gcash'
-                                ? 'GCash'
-                                : withdrawal.payment_method === 'paymaya'
-                                ? 'PayMaya'
-                                : 'Bank Transfer'}
-                            </Text>
-                            <Text style={styles.withdrawalSubtitle}>
-                              {formatDate(withdrawal.created_at)} • {withdrawal.status}
-                            </Text>
+                    return (
+                      <View key={transaction.id} style={styles.transactionItem}>
+                        <View style={styles.transactionHeader}>
+                          <View style={styles.transactionLeft}>
+                            <Ionicons 
+                              name={transaction.status === 'COMPLETED' ? 'checkmark-circle' : 'time'} 
+                              size={20} 
+                              color={transaction.status === 'COMPLETED' ? COLORS.success : COLORS.warn} 
+                            />
+                            <View style={styles.transactionInfo}>
+                              <Text style={styles.transactionTitle}>
+                                Booking #{transaction.id}
+                              </Text>
+                              <Text style={styles.transactionSubtitle}>
+                                {transaction.customer_name} • {formatDate(transaction.event_date)}
+                              </Text>
+                            </View>
                           </View>
-                        </View>
-                        <Text style={[styles.withdrawalAmount, { color: COLORS.primary }]}>
-                          {formatCurrency(withdrawal.amount)}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
-          {/* Transaction History */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Recent Transactions</Text>
-            
-            {transactions.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="receipt-outline" size={48} color={COLORS.textLight} />
-                <Text style={styles.emptyStateText}>No transactions yet</Text>
-                <Text style={styles.emptyStateSubText}>
-                  Completed bookings will appear here
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.transactionsList}>
-                {transactions.map((transaction) => {
-                  const totalAmount = (transaction.deposit_amount || 0) + 
-                                    (transaction.remaining_amount || 0) + 
-                                    (transaction.delivery_fee || 0);
-                  const payout = transaction.caterer_payout_amount || 
-                                (totalAmount - (transaction.platform_fee_amount || 0));
-
-                  return (
-                    <View key={transaction.id} style={styles.transactionItem}>
-                      <View style={styles.transactionHeader}>
-                        <View style={styles.transactionLeft}>
-                          <Ionicons 
-                            name={transaction.status === 'COMPLETED' ? 'checkmark-circle' : 'time'} 
-                            size={20} 
-                            color={transaction.status === 'COMPLETED' ? COLORS.success : COLORS.warn} 
-                          />
-                          <View style={styles.transactionInfo}>
-                            <Text style={styles.transactionTitle}>
-                              Booking #{transaction.id}
-                            </Text>
-                            <Text style={styles.transactionSubtitle}>
-                              {transaction.customer_name} • {formatDate(transaction.event_date)}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text style={[styles.transactionAmount, { color: COLORS.primary }]}>
-                          {formatCurrency(payout)}
-                        </Text>
-                      </View>
-                      
-                      {transaction.platform_fee_amount && (
-                        <View style={styles.transactionDetails}>
-                          <Text style={styles.transactionDetailText}>
-                            Total: {formatCurrency(totalAmount)} • 
-                            Fee: {formatCurrency(transaction.platform_fee_amount)} • 
-                            Payout: {formatCurrency(payout)}
+                          <Text style={[styles.transactionAmount, { color: COLORS.primary }]}>
+                            {formatCurrency(payout)}
                           </Text>
                         </View>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
+                        
+                        {transaction.platform_fee_amount && (
+                          <View style={styles.transactionDetails}>
+                            <Text style={styles.transactionDetailText}>
+                              Total: {formatCurrency(totalAmount)} • 
+                              Fee: {formatCurrency(transaction.platform_fee_amount)} • 
+                              Payout: {formatCurrency(payout)}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+
+            {/* Withdrawal History */}
+            <View style={styles.historyCard}>
+              <Text style={styles.cardTitle}>Withdrawal History</Text>
+              
+              {withdrawals.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="cash-outline" size={48} color={COLORS.textLight} />
+                  <Text style={styles.emptyStateText}>No withdrawals yet</Text>
+                  <Text style={styles.emptyStateSubText}>
+                    Withdrawal requests will appear here
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.withdrawalsList}>
+                  {withdrawals.slice(0, 10).map((withdrawal) => {
+                    const getStatusColor = (status: string) => {
+                      switch (status) {
+                        case 'COMPLETED': return COLORS.success;
+                        case 'PROCESSING': return COLORS.warn;
+                        case 'FAILED': return COLORS.danger;
+                        case 'CANCELLED': return COLORS.textLight;
+                        default: return COLORS.warn;
+                      }
+                    };
+
+                    return (
+                      <View key={withdrawal.id} style={styles.withdrawalItem}>
+                        <View style={styles.withdrawalHeader}>
+                          <View style={styles.withdrawalLeft}>
+                            <Ionicons
+                              name={
+                                withdrawal.status === 'COMPLETED'
+                                  ? 'checkmark-circle'
+                                  : withdrawal.status === 'FAILED'
+                                  ? 'close-circle'
+                                  : 'time'
+                              }
+                              size={20}
+                              color={getStatusColor(withdrawal.status)}
+                            />
+                            <View style={styles.withdrawalInfo}>
+                              <Text style={styles.withdrawalTitle}>
+                                {withdrawal.payment_method === 'gcash'
+                                  ? 'GCash'
+                                  : withdrawal.payment_method === 'paymaya'
+                                  ? 'PayMaya'
+                                  : 'Bank Transfer'}
+                              </Text>
+                              <Text style={styles.withdrawalSubtitle}>
+                                {formatDate(withdrawal.created_at)} • {withdrawal.status}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.withdrawalAmount, { color: COLORS.primary }]}>
+                            {formatCurrency(withdrawal.amount)}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
           </View>
 
         </ScrollView>
@@ -1040,5 +1052,24 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: Platform.OS === 'web' ? 16 : 15,
     fontWeight: "700",
+  },
+  historyContainer: {
+    flexDirection: Platform.OS === 'web' ? "row" : "column",
+    gap: 16,
+    marginBottom: 24,
+  },
+  historyCard: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: Platform.OS === 'web' ? 12 : 16,
+    padding: Platform.OS === 'web' ? 24 : 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: Platform.OS === 'web' ? 2 : 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: Platform.OS === 'web' ? 8 : 12,
+    elevation: 2,
+    minHeight: Platform.OS === 'web' ? 400 : 300,
   },
 });

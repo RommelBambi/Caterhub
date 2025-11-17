@@ -142,12 +142,13 @@ serve(async (req) => {
     const authHeaderValue = `Basic ${btoa(xenditSecretKey + ':')}`;
     const externalId = `withdrawal_${withdrawalRequestId}_${Date.now()}`;
 
-    // Determine bank code based on payment method
-    let bankCode: string;
+    // Determine channel code based on payment method
+    // Use same format as working payment function (PH_GCASH)
+    let channelCode: string;
     if (paymentMethod === 'gcash') {
-      bankCode = 'GCASH';
+      channelCode = 'PH_GCASH';  // Same as working payment function
     } else if (paymentMethod === 'paymaya') {
-      bankCode = 'PAYMAYA';
+      channelCode = 'PH_PAYMAYA';  // Same as working payment function
     } else {
       return new Response(
         JSON.stringify({
@@ -164,39 +165,25 @@ serve(async (req) => {
     }
 
     // Create disbursement via Xendit Disbursements API
-    // Based on actual Xendit API error response, it requires:
-    // - reference_id (not external_id)
-    // - channel_code (not bank_code)
-    // - account_name (not account_holder_name)
+    // Xendit API documentation: https://docs.xendit.co/api-reference/#disbursements
     const referenceId = externalId;
-    const channelCode = bankCode;
     
-    // Note: If you have categories configured in Xendit Dashboard, you may need to specify the category
-    // Match the exact category name from your Xendit Dashboard (case-sensitive)
-    const categoryName = paymentMethod === 'gcash' ? 'Gcash' : 'PayMaya';
-    
-    console.log('[create-xendit-payout] Creating disbursement with:', {
+    // Build request body according to Xendit Payouts API v2
+    // Reference: https://docs.xendit.co/api-payouts-beta/api-payouts-beta
+    // v2/payouts requires: channel_properties.account_holder_name (not account_name) and idempotency-key header
+    const requestBody = {
       reference_id: referenceId,
       channel_code: channelCode,
-      account_name: accountName,
-      account_number: accountNumber,
-      amount: amount,
-      currency: 'PHP',
-      category: categoryName,
-    });
-
-    // Try both possible request formats - Xendit API might require different field names
-    // Format 1: Using reference_id, channel_code, account_name (current attempt)
-    
-    const requestBody1 = {
-      reference_id: referenceId,
-      channel_code: channelCode,
-      account_name: accountName,
-      account_number: accountNumber,
+      channel_properties: {
+        account_holder_name: accountName,  // v2 API uses account_holder_name, not account_name
+        account_number: accountNumber,
+      },
       description: `Withdrawal to ${paymentMethod === 'gcash' ? 'GCash' : 'PayMaya'}`,
       amount: amount,
       currency: 'PHP',
-      category: categoryName, // Add category field - may be required if categories are configured
+      // Add callback URL for webhook notifications
+      callback_url: `${supabaseUrl}/functions/v1/xendit-webhook`,
+      // Note: email_to and metadata are optional, but included for tracking
       ...(user.email && { email_to: [user.email] }),
       metadata: {
         withdrawal_request_id: withdrawalRequestId.toString(),
@@ -205,37 +192,22 @@ serve(async (req) => {
       },
     };
 
-    // Format 2: Alternative format with external_id and bank_code (legacy format)
-    const requestBody2 = {
-      external_id: referenceId,
-      bank_code: channelCode,
-      account_holder_name: accountName,
-      account_number: accountNumber,
-      description: `Withdrawal to ${paymentMethod === 'gcash' ? 'GCash' : 'PayMaya'}`,
-      amount: amount,
-      currency: 'PHP',
-      category: categoryName, // Add category field here too
-      ...(user.email && { email_to: [user.email] }),
-      metadata: {
-        withdrawal_request_id: withdrawalRequestId.toString(),
-        caterer_id: user.id,
-        payment_method: paymentMethod,
-      },
-    };
+    console.log('[create-xendit-payout] Creating disbursement with:', JSON.stringify(requestBody, null, 2));
 
-    console.log('[create-xendit-payout] Attempting Format 1 (reference_id/channel_code/account_name):', JSON.stringify(requestBody1, null, 2));
-
-    // Try Format 1 first with /disbursements endpoint
-    let disbursementResponse = await fetch(`${XENDIT_BASE_URL}/disbursements`, {
+    // Try the newer /v2/payouts endpoint first (Xendit Payouts API)
+    // This endpoint requires idempotency-key header
+    const idempotencyKey = `withdrawal_${withdrawalRequestId}_${Date.now()}`;
+    let disbursementResponse = await fetch(`${XENDIT_BASE_URL}/v2/payouts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: authHeaderValue,
+        'Authorization': authHeaderValue,
+        'idempotency-key': idempotencyKey,
       },
-      body: JSON.stringify(requestBody1),
+      body: JSON.stringify(requestBody),
     });
 
-    // If Format 1 fails with validation error, try Format 2
+    // If that fails, try alternative formats
     if (!disbursementResponse.ok) {
       const errorText = await disbursementResponse.text();
       let errorData;
@@ -245,11 +217,34 @@ serve(async (req) => {
         errorData = { message: errorText };
       }
 
-      console.log('[create-xendit-payout] Format 1 error response:', JSON.stringify(errorData, null, 2));
+      console.log('[create-xendit-payout] v2/payouts endpoint error:', JSON.stringify(errorData, null, 2));
+      
+      // Log detailed validation errors if available
+      if (errorData.errors && Array.isArray(errorData.errors)) {
+        console.log('[create-xendit-payout] v2/payouts validation errors:', JSON.stringify(errorData.errors, null, 2));
+      }
 
-      // If it's a validation error, try the alternative format
-      if (errorData.error_code === 'API_VALIDATION_ERROR') {
-        console.log('[create-xendit-payout] Format 1 failed, trying Format 2 (external_id/bank_code/account_holder_name):', JSON.stringify(requestBody2, null, 2));
+      // Try legacy /disbursements endpoint as fallback (different format - account_name/account_number at root)
+      if (errorData.error_code === 'API_VALIDATION_ERROR' || errorData.error_code === 'NOT_FOUND') {
+        console.log('[create-xendit-payout] Trying legacy /disbursements endpoint');
+        
+        // Legacy format: account_name and account_number at root level, not in channel_properties
+        const legacyRequestBody = {
+          reference_id: referenceId,
+          channel_code: channelCode,
+          account_name: accountName,
+          account_number: accountNumber,
+          description: `Withdrawal to ${paymentMethod === 'gcash' ? 'GCash' : 'PayMaya'}`,
+          amount: amount,
+          currency: 'PHP',
+          callback_url: `${supabaseUrl}/functions/v1/xendit-webhook`,
+          ...(user.email && { email_to: [user.email] }),
+          metadata: {
+            withdrawal_request_id: withdrawalRequestId.toString(),
+            caterer_id: user.id,
+            payment_method: paymentMethod,
+          },
+        };
         
         disbursementResponse = await fetch(`${XENDIT_BASE_URL}/disbursements`, {
           method: 'POST',
@@ -257,10 +252,10 @@ serve(async (req) => {
             'Content-Type': 'application/json',
             Authorization: authHeaderValue,
           },
-          body: JSON.stringify(requestBody2),
+          body: JSON.stringify(legacyRequestBody),
         });
 
-        // If Format 2 also fails, try v2 endpoint with Format 1
+        // If still failing, try without PH_ prefix
         if (!disbursementResponse.ok) {
           const errorText2 = await disbursementResponse.text();
           let errorData2;
@@ -270,14 +265,20 @@ serve(async (req) => {
             errorData2 = { message: errorText2 };
           }
 
-          console.log('[create-xendit-payout] Format 2 also failed, trying v2 endpoint with Format 1');
-          disbursementResponse = await fetch(`${XENDIT_BASE_URL}/v2/disbursements`, {
+          console.log('[create-xendit-payout] Legacy endpoint failed, trying without PH_ prefix');
+          const legacyChannelCode = channelCode.replace('PH_', '');
+          const legacyRequestBody2 = {
+            ...legacyRequestBody,
+            channel_code: legacyChannelCode,
+          };
+          
+          disbursementResponse = await fetch(`${XENDIT_BASE_URL}/disbursements`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               Authorization: authHeaderValue,
             },
-            body: JSON.stringify(requestBody1),
+            body: JSON.stringify(legacyRequestBody2),
           });
         }
       }
@@ -300,6 +301,8 @@ serve(async (req) => {
         errorData: errorData,
         errorDataStringified: JSON.stringify(errorData),
         errorDataErrors: errorData.errors || 'No errors array',
+        // Show the actual request body that was sent (for debugging)
+        actualRequestBody: requestBody,
         requestBody: {
           reference_id: referenceId,
           channel_code: channelCode,
@@ -315,7 +318,8 @@ serve(async (req) => {
       // Extract specific field errors if available
       if (errorData.errors && Array.isArray(errorData.errors)) {
         const fieldErrors = errorData.errors.map((err: any) => ({
-          field: err.field,
+          field: err.field || err.path,
+          message: err.message,
           messages: err.messages,
           location: err.location,
         }));
@@ -363,15 +367,99 @@ serve(async (req) => {
       status: disbursementData.status,
     });
     
-    await supabase
+    // Map Xendit statuses to our internal statuses
+    // Xendit can return: PENDING, ACCEPTED, PROCESSING, COMPLETED, FAILED, REJECTED, CANCELLED
+    const xenditStatus = (disbursementData.status || '').toUpperCase();
+    let newStatus: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+    
+    switch(xenditStatus) {
+      case 'PENDING':
+      case 'ACCEPTED':
+        newStatus = 'PROCESSING'; // Both PENDING and ACCEPTED mean it's being processed
+        break;
+      case 'PROCESSING':
+        newStatus = 'PROCESSING';
+        break;
+      case 'COMPLETED':
+      case 'SUCCEEDED':
+        newStatus = 'COMPLETED';
+        break;
+      case 'FAILED':
+      case 'REJECTED':
+        newStatus = 'FAILED';
+        break;
+      case 'CANCELLED':
+        newStatus = 'CANCELLED';
+        break;
+      default:
+        // Default to PROCESSING for unknown statuses
+        newStatus = 'PROCESSING';
+        console.log('[create-xendit-payout] Unknown Xendit status, defaulting to PROCESSING:', xenditStatus);
+    }
+    
+    // Update withdrawal request status
+    const { error: updateError } = await supabase
       .from('withdrawal_requests')
       .update({
-        status: disbursementData.status === 'PENDING' ? 'PROCESSING' : (disbursementData.status || 'PROCESSING'),
+        status: newStatus,
         xendit_payout_id: payoutId,
         xendit_external_id: externalIdValue,
         updated_at: new Date().toISOString(),
       })
       .eq('id', withdrawalRequestId);
+    
+    if (updateError) {
+      console.error('[create-xendit-payout] Error updating withdrawal request:', updateError);
+      // Continue anyway - we'll still create the notification
+    } else {
+      console.log('[create-xendit-payout] Withdrawal request updated successfully:', {
+        withdrawalRequestId,
+        newStatus,
+        payoutId
+      });
+    }
+
+    // Create notification for withdrawal submission
+    const paymentMethodName = paymentMethod === 'gcash' ? 'GCash' : paymentMethod === 'paymaya' ? 'PayMaya' : 'Bank Transfer';
+    const notificationTitle = 'Withdrawal Submitted';
+    
+    // Use user-friendly status text that matches the actual database status
+    let statusText = '';
+    switch(newStatus) {
+      case 'PROCESSING':
+        statusText = 'processing';
+        break;
+      case 'COMPLETED':
+        statusText = 'completed';
+        break;
+      case 'FAILED':
+        statusText = 'failed';
+        break;
+      case 'CANCELLED':
+        statusText = 'cancelled';
+        break;
+      default:
+        statusText = 'pending';
+    }
+    
+    const notificationMessage = `Your withdrawal request of ₱${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} has been submitted and is now ${statusText}.`;
+    
+    const { error: notificationError } = await supabase
+      .from('notifications')
+      .insert({
+        user_id: user.id,
+        title: notificationTitle,
+        message: notificationMessage,
+        type: 'payment',
+        related_id: withdrawalRequestId,
+      });
+    
+    if (notificationError) {
+      console.error('[create-xendit-payout] Error creating withdrawal notification:', notificationError);
+      // Don't fail the request if notification creation fails
+    } else {
+      console.log('[create-xendit-payout] Withdrawal notification created for user:', user.id);
+    }
 
     return new Response(
       JSON.stringify({

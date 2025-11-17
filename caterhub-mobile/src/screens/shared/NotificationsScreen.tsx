@@ -63,6 +63,11 @@ export default function NotificationsScreen({ navigation, userRole = 'customer' 
   };
 
   const handleNotificationPress = async (notification: Notification) => {
+    // For caterers, notifications are not clickable
+    if (userRole === 'caterer') {
+      return;
+    }
+
     // Mark as read
     if (!notification.read) {
       try {
@@ -79,10 +84,7 @@ export default function NotificationsScreen({ navigation, userRole = 'customer' 
     if (notification.related_id) {
       if (notification.type === 'booking' || notification.type === 'status' || notification.type === 'payment') {
         // Navigate to booking details
-        if (userRole === 'caterer') {
-          // Navigate to caterer order details (would need to fetch full order data)
-          console.log('Navigate to caterer order details:', notification.related_id);
-        } else if (userRole === 'customer') {
+        if (userRole === 'customer') {
           // Navigate to Bookings tab first, then to BookingDetails
           navigation.navigate('Bookings', {
             screen: 'BookingDetails',
@@ -90,6 +92,20 @@ export default function NotificationsScreen({ navigation, userRole = 'customer' 
           });
         }
       }
+    }
+  };
+
+  const handleMarkAsRead = async (notification: Notification) => {
+    if (notification.read) return;
+    
+    try {
+      await markAsRead(notification.id);
+      setNotifications(prev =>
+        prev.map(n => (n.id === notification.id ? { ...n, read: true } : n))
+      );
+    } catch (error) {
+      console.error('Error marking as read:', error);
+      Alert.alert('Error', 'Failed to mark notification as read');
     }
   };
 
@@ -238,52 +254,68 @@ export default function NotificationsScreen({ navigation, userRole = 'customer' 
             </Text>
           </View>
         ) : (
-          notifications.map((notification) => (
-            <TouchableOpacity
-              key={notification.id}
-              style={[
-                styles.notificationCard,
-                !notification.read && styles.unreadCard,
-              ]}
-              onPress={() => handleNotificationPress(notification)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.notificationContent}>
-                <View
-                  style={[
-                    styles.iconContainer,
-                    { backgroundColor: getNotificationColor(notification.type) + '20' },
-                  ]}
-                >
-                  <Ionicons
-                    name={getNotificationIcon(notification.type) as any}
-                    size={24}
-                    color={getNotificationColor(notification.type)}
-                  />
+          notifications.map((notification) => {
+            const NotificationWrapper = userRole === 'caterer' ? View : TouchableOpacity;
+            const wrapperProps = userRole === 'caterer' 
+              ? {} 
+              : { 
+                  onPress: () => handleNotificationPress(notification),
+                  activeOpacity: 0.7 
+                };
+
+            return (
+              <NotificationWrapper
+                key={notification.id}
+                style={[
+                  styles.notificationCard,
+                  !notification.read && styles.unreadCard,
+                ]}
+                {...wrapperProps}
+              >
+                <View style={styles.notificationContent}>
+                  <View
+                    style={[
+                      styles.iconContainer,
+                      { backgroundColor: getNotificationColor(notification.type) + '20' },
+                    ]}
+                  >
+                    <Ionicons
+                      name={getNotificationIcon(notification.type) as any}
+                      size={24}
+                      color={getNotificationColor(notification.type)}
+                    />
+                  </View>
+
+                  <View style={styles.textContainer}>
+                    <Text style={[styles.title, !notification.read && styles.unreadTitle]}>
+                      {notification.title}
+                    </Text>
+                    <Text style={styles.message}>{notification.message}</Text>
+                    <Text style={styles.time}>{formatTime(notification.created_at)}</Text>
+                  </View>
+
+                  <View style={styles.actionButtons}>
+                    {userRole === 'caterer' && !notification.read && (
+                      <TouchableOpacity
+                        onPress={() => handleMarkAsRead(notification)}
+                        style={styles.checkButton}
+                      >
+                        <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => handleDeleteNotification(notification.id)}
+                      style={styles.deleteButton}
+                    >
+                      <Ionicons name="close-circle" size={20} color="#9ca3af" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
-                <View style={styles.textContainer}>
-                  <Text style={[styles.title, !notification.read && styles.unreadTitle]}>
-                    {notification.title}
-                  </Text>
-                  <Text style={styles.message}>{notification.message}</Text>
-                  <Text style={styles.time}>{formatTime(notification.created_at)}</Text>
-                </View>
-
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleDeleteNotification(notification.id);
-                  }}
-                  style={styles.deleteButton}
-                >
-                  <Ionicons name="close-circle" size={20} color="#9ca3af" />
-                </TouchableOpacity>
-              </View>
-
-              {!notification.read && <View style={styles.unreadDot} />}
-            </TouchableOpacity>
-          ))
+                {!notification.read && <View style={styles.unreadDot} />}
+              </NotificationWrapper>
+            );
+          })
         )}
       </ScrollView>
     </View>
@@ -413,9 +445,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9ca3af',
   },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 8,
+  },
+  checkButton: {
+    padding: 4,
+  },
   deleteButton: {
     padding: 4,
-    marginLeft: 8,
   },
   unreadDot: {
     position: 'absolute',

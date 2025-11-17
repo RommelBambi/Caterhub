@@ -67,7 +67,33 @@ export async function createWithdrawalViaEdgeFunction(
     console.log('[createWithdrawalViaEdgeFunction] Response status:', response.status, response.statusText);
 
     if (!response.ok) {
-      const errorData = await response.json();
+      // Read response as text first (can only read body once)
+      const errorText = await response.text();
+      
+      // Handle 404 specifically - edge function might not be deployed
+      if (response.status === 404) {
+        console.error('[createWithdrawalViaEdgeFunction] 404 Error - Edge function not found. Response:', errorText);
+        throw new Error('Withdrawal service is currently unavailable. The payment service may not be deployed. Please contact support or try again later.');
+      }
+
+      // Try to parse as JSON, but handle cases where it's not JSON
+      let errorData: any;
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (parseError) {
+          // If JSON parsing fails, use the text response
+          console.error('[createWithdrawalViaEdgeFunction] Failed to parse error response as JSON:', errorText);
+          throw new Error(`Failed to create withdrawal payout: ${response.statusText} (${response.status})`);
+        }
+      } else {
+        // Not JSON, use the text we already read
+        console.error('[createWithdrawalViaEdgeFunction] Non-JSON error response:', errorText);
+        throw new Error(`Failed to create withdrawal payout: ${response.statusText} (${response.status})`);
+      }
+
       console.error('[createWithdrawalViaEdgeFunction] Error response:', errorData);
       
       // Extract detailed error message from Xendit

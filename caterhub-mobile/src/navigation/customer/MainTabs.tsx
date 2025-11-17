@@ -44,6 +44,7 @@ function FavoritesStack() {
       <Stack.Screen name="CustomizePackage" component={CustomizePackage} />
       <Stack.Screen name="BookingForm" component={BookingForm} />
       <Stack.Screen name="Payment" component={PaymentScreen} />
+      <Stack.Screen name="PaymentPending" component={PaymentPendingScreen} />
       <Stack.Screen name="AllReviews" component={AllReviewsScreen} />
     </Stack.Navigator>
   );
@@ -56,6 +57,7 @@ function BookingsStack() {
       <Stack.Screen name="BookingDetails" component={BookingDetails} />
       <Stack.Screen name="ServiceDetails" component={ServiceDetails} />
       <Stack.Screen name="Payment" component={PaymentScreen} />
+      <Stack.Screen name="PaymentPending" component={PaymentPendingScreen} />
       <Stack.Screen name="Review" component={ReviewScreen} />
     </Stack.Navigator>
   );
