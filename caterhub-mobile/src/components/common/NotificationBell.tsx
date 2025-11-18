@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getUnreadCount, subscribeToNotifications } from '../../services/notifications';
 import NotificationsDropdown from './NotificationsDropdown';
+import { useAuth } from '../../store/auth';
+import { supabase } from '../../services/supabase';
 
 interface NotificationBellProps {
   color?: string;
@@ -17,29 +19,62 @@ export default function NotificationBell({
   userRole = 'customer',
   navigation,
 }: NotificationBellProps) {
+  const { user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [dropdownVisible, setDropdownVisible] = useState(false);
 
-  useEffect(() => {
-    loadUnreadCount();
-
-    // Subscribe to new notifications
-    const unsubscribe = subscribeToNotifications(() => {
-      loadUnreadCount();
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  const loadUnreadCount = async () => {
+  const loadUnreadCount = useCallback(async () => {
     try {
       const count = await getUnreadCount();
       setUnreadCount(count);
     } catch (error) {
       console.error('Error loading unread count:', error);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Load initial count
+    loadUnreadCount();
+
+    // Subscribe to real-time notifications changes
+    const channel = supabase
+      .channel(`notifications-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`, // Only listen to notifications for this user
+        },
+        (payload) => {
+          console.log('[NotificationBell] Notification change detected:', payload.eventType);
+          // Reload count when any notification changes
+          loadUnreadCount();
+        }
+      )
+      .subscribe();
+
+    // Also use the existing subscription for backward compatibility
+    const unsubscribe = subscribeToNotifications(() => {
+      loadUnreadCount();
+    });
+
+    return () => {
+      supabase.removeChannel(channel);
+      unsubscribe();
+    };
+  }, [user?.id, loadUnreadCount]);
+
+  // Refresh count when dropdown closes (in case notifications were marked as read)
+  const handleClose = () => {
+    setDropdownVisible(false);
+    // Small delay to ensure database updates are complete
+    setTimeout(() => {
+      loadUnreadCount();
+    }, 300);
   };
 
   const handlePress = () => {
@@ -58,7 +93,7 @@ export default function NotificationBell({
       </TouchableOpacity>
       <NotificationsDropdown
         visible={dropdownVisible}
-        onClose={() => setDropdownVisible(false)}
+        onClose={handleClose}
         userRole={userRole}
         navigation={navigation}
       />

@@ -599,6 +599,50 @@ export interface Database {
           processed_at?: string | null;
         };
       };
+      caterer_subscriptions: {
+        Row: {
+          id: number; // bigserial
+          caterer_id: string; // uuid, not null, foreign key to users(id)
+          plan_type: 'monthly' | 'yearly'; // varchar(20), not null
+          amount: number; // numeric(10, 2), not null
+          status: 'active' | 'expired' | 'cancelled' | 'pending_payment'; // varchar(20), not null, default 'pending_payment'
+          xendit_invoice_id: string | null; // varchar(255), nullable
+          xendit_payment_id: string | null; // varchar(255), nullable
+          started_at: string | null; // timestamp with time zone, nullable
+          expires_at: string | null; // timestamp with time zone, nullable
+          cancelled_at: string | null; // timestamp with time zone, nullable
+          created_at: string; // timestamp with time zone, not null, default now()
+          updated_at: string; // timestamp with time zone, not null, default now()
+        };
+        Insert: {
+          id?: number;
+          caterer_id: string; // required
+          plan_type: 'monthly' | 'yearly'; // required
+          amount: number; // required
+          status?: 'active' | 'expired' | 'cancelled' | 'pending_payment'; // default 'pending_payment'
+          xendit_invoice_id?: string | null;
+          xendit_payment_id?: string | null;
+          started_at?: string | null;
+          expires_at?: string | null;
+          cancelled_at?: string | null;
+          created_at?: string; // default now()
+          updated_at?: string; // default now()
+        };
+        Update: {
+          id?: number;
+          caterer_id?: string;
+          plan_type?: 'monthly' | 'yearly';
+          amount?: number;
+          status?: 'active' | 'expired' | 'cancelled' | 'pending_payment';
+          xendit_invoice_id?: string | null;
+          xendit_payment_id?: string | null;
+          started_at?: string | null;
+          expires_at?: string | null;
+          cancelled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
     Views: {
       caterer_earnings: {

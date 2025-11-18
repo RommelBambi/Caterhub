@@ -17,6 +17,7 @@ export default function FavoritesScreen({ navigation }: any) {
 
   useFocusEffect(
     React.useCallback(() => {
+      // Note: Tab reset logic is handled in MainTabs.tsx tabPress listeners
       let isActive = true;
       (async () => {
         try {

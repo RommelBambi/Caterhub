@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, Platform, Image } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -46,9 +46,17 @@ export default function TopBar({ title }: TopBarProps) {
         {isWeb ? (
           <Pressable style={styles.profileBtn} onPress={handleProfilePress}>
             <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>
-                {businessName.charAt(0).toUpperCase()}
-              </Text>
+              {user?.profile_image_url ? (
+                <Image 
+                  source={{ uri: user.profile_image_url }} 
+                  style={styles.avatarImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {businessName.charAt(0).toUpperCase()}
+                </Text>
+              )}
             </View>
 
             <View style={styles.profileTextCol}>
@@ -63,9 +71,17 @@ export default function TopBar({ title }: TopBarProps) {
         ) : (
           <Pressable style={styles.profileBtnMobile} onPress={handleProfilePress}>
             <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>
-                {businessName.charAt(0).toUpperCase()}
-              </Text>
+              {user?.profile_image_url ? (
+                <Image 
+                  source={{ uri: user.profile_image_url }} 
+                  style={styles.avatarImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {businessName.charAt(0).toUpperCase()}
+                </Text>
+              )}
             </View>
           </Pressable>
         )}
@@ -155,6 +171,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "700",
     fontSize: Platform.OS === 'web' ? 14 : 16
+  },
+  avatarImage: {
+    width: Platform.OS === 'web' ? 36 : 40,
+    height: Platform.OS === 'web' ? 36 : 40,
+    borderRadius: 9999,
   },
   profileTextCol: {
     flexShrink: 1

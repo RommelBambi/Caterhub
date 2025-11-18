@@ -2,6 +2,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { CommonActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -98,9 +99,93 @@ export default function MainTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeStack} />
-      <Tab.Screen name="Favorites" component={FavoritesStack} />
-      <Tab.Screen name="Bookings" component={BookingsStack} />
+      <Tab.Screen 
+        name="Home" 
+        component={HomeStack}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Reset to HomeScreen when tab is pressed
+            const state = navigation.getState();
+            const homeTab = state.routes.find(r => r.name === 'Home');
+            // Always reset to initial route if there are nested screens
+            if (homeTab && homeTab.state && homeTab.state.index > 0) {
+              e.preventDefault();
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [
+                    {
+                      name: 'Home',
+                      state: {
+                        routes: [{ name: 'HomeScreen' }],
+                        index: 0,
+                      },
+                    },
+                  ],
+                })
+              );
+            }
+          },
+        })}
+      />
+      <Tab.Screen 
+        name="Favorites" 
+        component={FavoritesStack}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Reset to FavoritesScreen when tab is pressed
+            const state = navigation.getState();
+            const favoritesTab = state.routes.find(r => r.name === 'Favorites');
+            // Always reset to initial route if there are nested screens
+            if (favoritesTab && favoritesTab.state && favoritesTab.state.index > 0) {
+              e.preventDefault();
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [
+                    {
+                      name: 'Favorites',
+                      state: {
+                        routes: [{ name: 'FavoritesScreen' }],
+                        index: 0,
+                      },
+                    },
+                  ],
+                })
+              );
+            }
+          },
+        })}
+      />
+      <Tab.Screen 
+        name="Bookings" 
+        component={BookingsStack}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            // Reset to BookingsList when tab is pressed
+            const state = navigation.getState();
+            const bookingsTab = state.routes.find(r => r.name === 'Bookings');
+            // Always reset to initial route if there are nested screens
+            if (bookingsTab && bookingsTab.state && bookingsTab.state.index > 0) {
+              e.preventDefault();
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [
+                    {
+                      name: 'Bookings',
+                      state: {
+                        routes: [{ name: 'BookingsList' }],
+                        index: 0,
+                      },
+                    },
+                  ],
+                })
+              );
+            }
+          },
+        })}
+      />
       <Tab.Screen name="Account" component={AccountScreen} />
     </Tab.Navigator>
   );

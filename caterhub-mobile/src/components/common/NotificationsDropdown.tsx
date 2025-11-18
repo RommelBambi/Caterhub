@@ -65,42 +65,73 @@ export default function NotificationsDropdown({
     }
   };
 
-  const handleNotificationPress = async (notification: Notification) => {
-    // Mark as read
-    if (!notification.read) {
-      try {
-        await markAsRead(notification.id);
-        setNotifications(prev =>
-          prev.map(n => (n.id === notification.id ? { ...n, read: true } : n))
-        );
-      } catch (error) {
-        console.error('Error marking as read:', error);
-      }
+  const handleMarkAsRead = async (notification: Notification, e?: any) => {
+    if (e) {
+      e.stopPropagation();
     }
-
-    // Close dropdown
-    onClose();
-
-    // Navigate based on type and related_id
-    if (notification.related_id && navigation) {
-      if (notification.type === 'booking' || notification.type === 'status' || notification.type === 'payment') {
-        if (userRole === 'caterer') {
-          // Navigate to caterer order details
-          navigation.navigate('PartnerOrderDetails', {
-            order: {
-              id: String(notification.related_id),
-              // Other required fields would need to be fetched
-            },
-          });
-        } else if (userRole === 'customer') {
-          navigation.navigate('Bookings', {
-            screen: 'BookingDetails',
-            params: { bookingId: notification.related_id },
-          });
-        }
-      }
+    
+    if (notification.read) return;
+    
+    try {
+      await markAsRead(notification.id);
+      setNotifications(prev =>
+        prev.map(n => (n.id === notification.id ? { ...n, read: true } : n))
+      );
+    } catch (error) {
+      console.error('Error marking as read:', error);
+      Alert.alert('Error', 'Failed to mark notification as read');
     }
   };
+
+  const handleNotificationPress = async (notification: Notification) => {
+    // Mark as read if unread
+    if (!notification.read) {
+      await handleMarkAsRead(notification);
+    }
+
+    // Close the dropdown
+    onClose();
+
+    // Navigate based on notification type
+    if (!navigation) return;
+
+    // Booking notifications → Orders page
+    if (notification.type === 'booking') {
+      navigation.navigate('PartnerOrders' as any);
+      return;
+    }
+
+    // Payment notifications - check message to determine if withdrawal or subscription
+    if (notification.type === 'payment') {
+      const message = notification.message.toLowerCase();
+      const title = notification.title.toLowerCase();
+
+      // Check for subscription/premium keywords
+      if (
+        message.includes('premium subscription') ||
+        message.includes('subscription') ||
+        title.includes('premium subscription') ||
+        title.includes('subscription')
+      ) {
+        // Subscription notification → Settings page (Premium tab)
+        navigation.navigate('PartnerSettings' as any, { initialTab: 'subscription' } as any);
+        return;
+      }
+
+      // Check for withdrawal keywords
+      if (
+        message.includes('withdrawal') ||
+        title.includes('withdrawal')
+      ) {
+        // Withdrawal notification → Wallet page
+        navigation.navigate('PartnerWallet' as any);
+        return;
+      }
+    }
+
+    // Default: no navigation for other types
+  };
+
 
   const handleMarkAllRead = async () => {
     try {
@@ -287,12 +318,22 @@ export default function NotificationsDropdown({
                       <Text style={styles.time}>{formatTime(notification.created_at)}</Text>
                     </View>
 
-                    <TouchableOpacity
-                      onPress={(e) => handleDeleteNotification(notification.id, e)}
-                      style={styles.deleteButton}
-                    >
-                      <Ionicons name="close-circle" size={18} color="#9ca3af" />
-                    </TouchableOpacity>
+                    <View style={styles.actionButtons}>
+                      {userRole === 'caterer' && !notification.read && (
+                        <TouchableOpacity
+                          onPress={(e) => handleMarkAsRead(notification, e)}
+                          style={styles.checkButton}
+                        >
+                          <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        onPress={(e) => handleDeleteNotification(notification.id, e)}
+                        style={styles.deleteButton}
+                      >
+                        <Ionicons name="close-circle" size={18} color="#9ca3af" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
 
                   {!notification.read && <View style={styles.unreadDot} />}
@@ -457,9 +498,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9ca3af',
   },
+  actionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 8,
+  },
+  checkButton: {
+    padding: 4,
+  },
   deleteButton: {
     padding: 4,
-    marginLeft: 8,
   },
   unreadDot: {
     position: 'absolute',

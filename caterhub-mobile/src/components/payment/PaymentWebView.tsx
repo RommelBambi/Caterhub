@@ -48,13 +48,16 @@ export default function PaymentWebView({
     const url = navState.url.toLowerCase();
     console.log('[PaymentWebView] Navigation to:', url);
     
-    // Check for caterhub:// deep link redirects
-    if (url.includes('caterhub://payment/')) {
+    // Check for caterhub:// deep link redirects (both payment and subscription)
+    if (url.includes('caterhub://payment/') || url.includes('caterhub://subscription/')) {
       if (url.includes('/success')) {
         console.log('[PaymentWebView] Payment success detected via deep link');
+        const isSubscription = url.includes('subscription');
         Alert.alert(
           '🎉 Payment Successful!',
-          'Your booking has been confirmed. Check your bookings for details.',
+          isSubscription 
+            ? 'Your premium subscription payment is being processed. You will be notified once it is activated.'
+            : 'Your booking has been confirmed. Check your bookings for details.',
           [{ text: 'OK', onPress: () => {
             onPaymentComplete();
             onClose();
@@ -155,12 +158,40 @@ export default function PaymentWebView({
             source={{ uri: checkoutUrl }}
             style={styles.webView}
             onNavigationStateChange={handleNavigationStateChange}
-            onLoadStart={() => setLoading(true)}
-            onLoadEnd={() => setLoading(false)}
+            onLoadStart={() => {
+              console.log('[PaymentWebView] Load started:', checkoutUrl);
+              setLoading(true);
+            }}
+            onLoadEnd={() => {
+              console.log('[PaymentWebView] Load ended');
+              setLoading(false);
+            }}
+            onError={(syntheticEvent) => {
+              const { nativeEvent } = syntheticEvent;
+              console.error('[PaymentWebView] WebView error:', nativeEvent);
+              Alert.alert(
+                'Loading Error',
+                'Failed to load payment page. Please check your connection and try again.',
+                [{ text: 'OK', onPress: onClose }]
+              );
+              setLoading(false);
+            }}
+            onHttpError={(syntheticEvent) => {
+              const { nativeEvent } = syntheticEvent;
+              console.error('[PaymentWebView] HTTP error:', nativeEvent.statusCode, nativeEvent.url);
+              if (nativeEvent.statusCode >= 400) {
+                Alert.alert(
+                  'Loading Error',
+                  `Failed to load payment page (Error ${nativeEvent.statusCode}). Please try again.`,
+                  [{ text: 'OK', onPress: onClose }]
+                );
+              }
+            }}
             javaScriptEnabled={true}
             domStorageEnabled={true}
             startInLoadingState={true}
             scalesPageToFit={true}
+            userAgent="Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36"
             onMessage={(event) => {
               try {
                 const data = JSON.parse(event.nativeEvent.data);
@@ -195,13 +226,16 @@ export default function PaymentWebView({
             onShouldStartLoadWithRequest={(request) => {
               const url = request.url.toLowerCase();
               
-              // Handle caterhub:// deep links
-              if (url.includes('caterhub://payment/')) {
+              // Handle caterhub:// deep links (both payment and subscription)
+              if (url.includes('caterhub://payment/') || url.includes('caterhub://subscription/')) {
                 console.log('[PaymentWebView] Deep link detected:', url);
+                const isSubscription = url.includes('subscription');
                 if (url.includes('/success')) {
                   Alert.alert(
                     '🎉 Payment Successful!',
-                    'Your booking has been confirmed. Check your bookings for details.',
+                    isSubscription 
+                      ? 'Your premium subscription payment is being processed. You will be notified once it is activated.'
+                      : 'Your booking has been confirmed. Check your bookings for details.',
                     [{ text: 'OK', onPress: () => {
                       onPaymentComplete();
                       onClose();
@@ -243,15 +277,17 @@ export default function PaymentWebView({
                 get: () => originalLocation,
                 set: (url) => {
                   console.log('Redirect attempt:', url);
-                  if (url.includes('caterhub://payment/')) {
+                  if (url.includes('caterhub://payment/') || url.includes('caterhub://subscription/')) {
                     const urlObj = new URL(url.replace('caterhub://', 'https://caterhub.com/'));
                     const status = url.includes('/success') ? 'success' : 'failed';
                     const bookingId = urlObj.searchParams.get('bookingId');
+                    const subscriptionId = urlObj.searchParams.get('subscriptionId');
                     
                     window.ReactNativeWebView.postMessage(JSON.stringify({
                       type: 'payment_redirect',
                       status: status,
                       bookingId: bookingId,
+                      subscriptionId: subscriptionId,
                       provider: 'xendit'
                     }));
                   } else {
@@ -265,15 +301,17 @@ export default function PaymentWebView({
                 get: () => originalLocation.href,
                 set: (url) => {
                   console.log('Href redirect attempt:', url);
-                  if (url.includes('caterhub://payment/')) {
+                  if (url.includes('caterhub://payment/') || url.includes('caterhub://subscription/')) {
                     const urlObj = new URL(url.replace('caterhub://', 'https://caterhub.com/'));
                     const status = url.includes('/success') ? 'success' : 'failed';
                     const bookingId = urlObj.searchParams.get('bookingId');
+                    const subscriptionId = urlObj.searchParams.get('subscriptionId');
                     
                     window.ReactNativeWebView.postMessage(JSON.stringify({
                       type: 'payment_redirect',
                       status: status,
                       bookingId: bookingId,
+                      subscriptionId: subscriptionId,
                       provider: 'xendit'
                     }));
                   } else {

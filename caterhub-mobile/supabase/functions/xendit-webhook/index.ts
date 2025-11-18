@@ -21,8 +21,9 @@ serve(async (req)=>{
     console.log('XENDIT_WEBHOOK_TOKEN not set - skipping validation for testing');
     // Parse webhook payload
     const payload = await req.json();
-    console.log('Received Xendit webhook:', JSON.stringify(payload, null, 2));
-    // Handle eWallet webhook format
+    console.log('📥 Received Xendit webhook at:', new Date().toISOString());
+    console.log('📦 Webhook payload:', JSON.stringify(payload, null, 2));
+    // Handle webhook format
     let eventId;
     let eventType;
     let status;
@@ -30,8 +31,30 @@ serve(async (req)=>{
     let chargeId = null;
     let payoutId = null;
     let externalId = null;
-    // Check if this is an eWallet webhook (your format: {data: {id, status, ...}})
-    if (payload.data && payload.data.id && payload.data.status) {
+    
+    // Check for payout/disbursement events FIRST (they can also have payload.data structure)
+    // Xendit payout webhooks have: { event: "payout.succeeded", data: { id, status, ... } }
+    if (payload?.event && (payload.event.includes('payout') || payload.event.includes('disbursement'))) {
+      // This is a payout webhook - handle it as payout, not eWallet
+      eventId = payload?.data?.id || payload?.id || `evt_${Date.now()}`;
+      eventType = payload.event; // Use the event field directly: "payout.succeeded"
+      status = payload?.data?.status || payload?.status || 'unknown';
+      
+      // Extract payout ID and external ID from data
+      payoutId = payload?.data?.id || payload?.id || null;
+      externalId = payload?.data?.reference_id || payload?.data?.external_id || payload?.reference_id || payload?.external_id || null;
+      
+      console.log('🔔 Payout/Disbursement webhook detected (from event field):', {
+        eventId,
+        eventType,
+        status,
+        payoutId,
+        externalId,
+        payloadEvent: payload.event,
+        payloadData: payload.data
+      });
+    } else if (payload.data && payload.data.id && payload.data.status && !payload.event) {
+      // Check if this is an eWallet webhook (format: {data: {id, status, ...}} without event field)
       const data = payload.data;
       eventId = data.id;
       eventType = 'ewallet.charge.' + data.status.toLowerCase();
@@ -51,18 +74,40 @@ serve(async (req)=>{
       eventType = payload?.event || 'unknown';
       status = payload?.status || 'unknown';
       
-      // Check for payout/disbursement webhooks
-      if (eventType.includes('payout') || eventType.includes('disbursement')) {
-        payoutId = payload?.id || payload?.data?.id || null;
-        externalId = payload?.reference_id || payload?.data?.reference_id || payload?.external_id || payload?.data?.external_id || null;
-        console.log('Payout/Disbursement webhook detected:', {
+      // If we haven't already detected it as a payout, check for other payout indicators
+      if (!payoutId && (eventType.includes('payout') || eventType.includes('disbursement'))) {
+        // Extract payout ID from multiple possible locations
+        payoutId = payload?.id || 
+                   payload?.data?.id || 
+                   payload?.payout_id ||
+                   payload?.data?.payout_id ||
+                   payload?.disbursement_id ||
+                   payload?.data?.disbursement_id ||
+                   null;
+        
+        // Extract external/reference ID from multiple possible locations
+        externalId = payload?.reference_id || 
+                     payload?.data?.reference_id || 
+                     payload?.external_id || 
+                     payload?.data?.external_id ||
+                     payload?.referenceId ||
+                     payload?.data?.referenceId ||
+                     null;
+        
+        console.log('🔔 Payout/Disbursement webhook detected (from eventType):', {
           eventId,
           eventType,
           status,
           payoutId,
-          externalId
+          externalId,
+          payloadType: payload?.type,
+          payloadDataType: payload?.data?.type,
+          payloadKeys: payload ? Object.keys(payload) : []
         });
-      } else if (eventType === 'invoice.paid' || eventType === 'invoice.expired') {
+      }
+      
+      // Handle invoice webhooks
+      if (eventType === 'invoice.paid' || eventType === 'invoice.expired') {
         invoiceId = payload?.id;
         externalId = payload?.external_id;
       } else if (eventType.includes('ewallet')) {
@@ -150,10 +195,29 @@ serve(async (req)=>{
     const eventType = webhook.event_type;
     
     // Extract payout ID from payload if it's a payout webhook
+    // Xendit payout webhooks can have the payout ID in various places
     let payoutId = null;
     if (eventType.includes('payout') || eventType.includes('disbursement')) {
       const payload = webhook.payload;
-      payoutId = payload?.id || payload?.data?.id || null;
+      // Try multiple possible locations for payout ID
+      payoutId = payload?.id || 
+                 payload?.data?.id || 
+                 payload?.payout_id ||
+                 payload?.data?.payout_id ||
+                 payload?.disbursement_id ||
+                 payload?.data?.disbursement_id ||
+                 null;
+      
+      console.log('Extracting payout ID from webhook payload:', {
+        eventType,
+        payloadId: payload?.id,
+        payloadDataId: payload?.data?.id,
+        payloadPayoutId: payload?.payout_id,
+        payloadDataPayoutId: payload?.data?.payout_id,
+        extractedPayoutId: payoutId,
+        fullPayloadKeys: payload ? Object.keys(payload) : [],
+        payloadDataKeys: payload?.data ? Object.keys(payload.data) : []
+      });
     }
     
     console.log('Processing webhook:', {
@@ -163,15 +227,107 @@ serve(async (req)=>{
       chargeId,
       payoutId,
       externalId,
-      status
+      status,
+      payloadPreview: webhook.payload ? JSON.stringify(webhook.payload).substring(0, 500) : 'null'
     });
+    // Handle subscription payment webhooks (invoice.paid or ewallet.charge.succeeded for subscriptions)
+    const payload = webhook.payload;
+    const metadata = payload?.metadata || payload?.data?.metadata;
+    
+    // Check if this is a subscription payment (invoice or eWallet)
+    if (metadata?.subscription_id && (eventType === 'invoice.paid' || eventType === 'ewallet.charge.succeeded' || eventType === 'ewallet.capture')) {
+      const subscriptionId = parseInt(metadata.subscription_id);
+      const paymentId = invoiceId || chargeId; // Can be invoice ID or charge ID
+      
+      console.log('🔔 Processing subscription payment webhook:', {
+        subscriptionId,
+        paymentId,
+        eventType,
+        catererId: metadata.caterer_id,
+        planType: metadata.plan_type
+      });
+      
+      // Find subscription
+      const { data: subscription, error: subError } = await supabase
+        .from('caterer_subscriptions')
+        .select('*')
+        .eq('id', subscriptionId)
+        .single();
+      
+      if (subError || !subscription) {
+        console.error('❌ Subscription not found:', subscriptionId, subError);
+      } else {
+        // Update subscription to active
+        const { error: updateError } = await supabase
+          .from('caterer_subscriptions')
+          .update({
+            status: 'active',
+            xendit_payment_id: paymentId,
+            started_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', subscriptionId);
+        
+        if (updateError) {
+          console.error('❌ Error updating subscription:', updateError);
+        } else {
+          console.log('✅ Subscription activated:', subscriptionId);
+          
+          // Create notification for caterer
+          const { error: notificationError } = await supabase
+            .from('notifications')
+            .insert({
+              user_id: subscription.caterer_id,
+              title: 'Premium Subscription Activated',
+              message: `Your ${subscription.plan_type === 'monthly' ? 'monthly' : 'yearly'} premium subscription has been activated! You are now featured in our premium section.`,
+              type: 'payment',
+              related_id: subscriptionId,
+            });
+          
+          if (notificationError) {
+            console.error('Error creating subscription notification:', notificationError);
+          } else {
+            console.log('✅ Subscription notification created');
+          }
+        }
+      }
+      
+      // Return early - subscription payment processed
+      const { error: markError } = await supabase.from('payment_webhooks').update({
+        processed: true,
+        processed_at: new Date().toISOString()
+      }).eq('id', webhookId);
+      
+      if (markError) {
+        console.error('Error marking webhook as processed:', markError);
+      }
+      
+      return; // Don't process as booking payment
+    }
+    
     // Handle payout/disbursement webhooks for withdrawal requests
-    if (eventType.includes('payout') || eventType.includes('disbursement')) {
+    // Check if this is a payout/disbursement webhook
+    const isPayoutWebhook = eventType.includes('payout') || 
+                            eventType.includes('disbursement') ||
+                            webhook.payload?.type === 'disbursement' ||
+                            webhook.payload?.data?.type === 'disbursement' ||
+                            webhook.payload?.type === 'payout' ||
+                            webhook.payload?.data?.type === 'payout';
+    
+    if (isPayoutWebhook) {
+      console.log('🔔 Processing payout/disbursement webhook:', {
+        eventType,
+        status,
+        payoutId,
+        externalId,
+        isPayoutWebhook: true
+      });
       let withdrawalRequest = null;
       let withdrawalError = null;
       
       // First try to find by payout ID
       if (payoutId) {
+        console.log('🔍 Searching for withdrawal by payout ID:', payoutId);
         const { data: withdrawals, error } = await supabase
           .from('withdrawal_requests')
           .select('*')
@@ -179,10 +335,19 @@ serve(async (req)=>{
           .limit(1);
         withdrawalError = error;
         withdrawalRequest = withdrawals?.[0];
+        if (withdrawalRequest) {
+          console.log('✅ Found withdrawal request by payout ID:', {
+            withdrawalRequestId: withdrawalRequest.id,
+            payoutId
+          });
+        } else {
+          console.log('❌ No withdrawal found by payout ID:', payoutId);
+        }
       }
       
       // If not found, try by external_id
       if (!withdrawalRequest && externalId) {
+        console.log('🔍 Searching for withdrawal by external_id:', externalId);
         const { data: withdrawals, error } = await supabase
           .from('withdrawal_requests')
           .select('*')
@@ -190,13 +355,23 @@ serve(async (req)=>{
           .limit(1);
         withdrawalError = error;
         withdrawalRequest = withdrawals?.[0];
+        if (withdrawalRequest) {
+          console.log('✅ Found withdrawal request by external_id:', {
+            withdrawalRequestId: withdrawalRequest.id,
+            externalId
+          });
+        } else {
+          console.log('❌ No withdrawal found by external_id:', externalId);
+        }
       }
       
       // If still not found, try to extract withdrawal request ID from reference_id pattern (withdrawal_10_timestamp)
       if (!withdrawalRequest && externalId) {
+        console.log('🔍 Trying to extract withdrawal ID from external_id pattern:', externalId);
         const match = externalId.match(/withdrawal_(\d+)_/);
         if (match) {
           const withdrawalRequestId = parseInt(match[1]);
+          console.log('🔍 Searching for withdrawal by extracted ID:', withdrawalRequestId);
           const { data: withdrawals, error } = await supabase
             .from('withdrawal_requests')
             .select('*')
@@ -204,10 +379,37 @@ serve(async (req)=>{
             .limit(1);
           withdrawalError = error;
           withdrawalRequest = withdrawals?.[0];
-          console.log('Found withdrawal request by ID extraction:', {
-            withdrawalRequestId,
-            found: !!withdrawalRequest
-          });
+          if (withdrawalRequest) {
+            console.log('✅ Found withdrawal request by ID extraction:', {
+              withdrawalRequestId: withdrawalRequest.id,
+              extractedId: withdrawalRequestId
+            });
+          } else {
+            console.log('❌ No withdrawal found by extracted ID:', withdrawalRequestId);
+          }
+        } else {
+          console.log('❌ Could not extract withdrawal ID from external_id pattern:', externalId);
+        }
+      }
+      
+      // If still not found, try searching by metadata in payload
+      if (!withdrawalRequest && webhook.payload?.metadata) {
+        const metadata = webhook.payload.metadata;
+        const withdrawalRequestIdFromMetadata = metadata?.withdrawal_request_id || metadata?.withdrawalRequestId;
+        if (withdrawalRequestIdFromMetadata) {
+          console.log('🔍 Searching for withdrawal by metadata withdrawal_request_id:', withdrawalRequestIdFromMetadata);
+          const { data: withdrawals, error } = await supabase
+            .from('withdrawal_requests')
+            .select('*')
+            .eq('id', parseInt(withdrawalRequestIdFromMetadata))
+            .limit(1);
+          withdrawalError = error;
+          withdrawalRequest = withdrawals?.[0];
+          if (withdrawalRequest) {
+            console.log('✅ Found withdrawal request by metadata:', {
+              withdrawalRequestId: withdrawalRequest.id
+            });
+          }
         }
       }
       
@@ -216,19 +418,52 @@ serve(async (req)=>{
       }
       
       if (withdrawalRequest) {
-        let updateData: any = {};
+        console.log('✅ Found withdrawal request for payout webhook:', {
+          withdrawalRequestId: withdrawalRequest.id,
+          currentStatus: withdrawalRequest.status,
+          payoutId,
+          externalId,
+          amount: withdrawalRequest.amount,
+          paymentMethod: withdrawalRequest.payment_method
+        });
+        
+        let updateData: {
+          status?: 'COMPLETED' | 'FAILED' | 'PROCESSING' | 'CANCELLED';
+          processed_at?: string;
+          updated_at?: string;
+          error_message?: string;
+        } = {};
         
         // Map Xendit payout statuses to withdrawal request statuses
-        switch(eventType.toLowerCase()) {
+        // Handle both event types and status fields
+        const eventTypeLower = eventType.toLowerCase();
+        const statusUpper = (status || '').toUpperCase();
+        const payloadStatus = (webhook.payload?.data?.status || webhook.payload?.status || '').toUpperCase();
+        const finalStatus = statusUpper || payloadStatus;
+        
+        console.log('Mapping payout status:', {
+          eventType,
+          eventTypeLower,
+          status,
+          statusUpper,
+          payloadStatus,
+          finalStatus,
+          payloadKeys: webhook.payload ? Object.keys(webhook.payload) : []
+        });
+        
+        switch(eventTypeLower) {
           case 'payout.succeeded':
           case 'disbursement.succeeded':
           case 'payout.completed':
           case 'disbursement.completed':
+          case 'payout.settled':
+          case 'disbursement.settled':
             updateData = {
               status: 'COMPLETED',
               processed_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             };
+            console.log('✅ Mapped to COMPLETED via event type:', eventTypeLower);
             break;
           case 'payout.failed':
           case 'disbursement.failed':
@@ -256,23 +491,42 @@ serve(async (req)=>{
             break;
           default:
             // For unknown payout statuses, try to map from status field
-            if (status === 'SUCCEEDED' || status === 'COMPLETED') {
+            // Check both status field and payload.data.status (case-insensitive)
+            // Also check if event type contains "succeeded" or "completed"
+            if (eventTypeLower.includes('succeeded') || eventTypeLower.includes('completed') || eventTypeLower.includes('settled')) {
               updateData = {
                 status: 'COMPLETED',
                 processed_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
               };
-            } else if (status === 'FAILED' || status === 'REJECTED') {
+              console.log('✅ Mapped to COMPLETED via event type contains succeeded/completed/settled:', eventTypeLower);
+            } else if (finalStatus === 'SUCCEEDED' || finalStatus === 'COMPLETED' || finalStatus === 'SETTLED') {
+              updateData = {
+                status: 'COMPLETED',
+                processed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+              console.log('✅ Mapped to COMPLETED based on status field:', finalStatus);
+            } else if (finalStatus === 'FAILED' || finalStatus === 'REJECTED' || eventTypeLower.includes('failed') || eventTypeLower.includes('rejected')) {
               updateData = {
                 status: 'FAILED',
                 error_message: webhook.payload?.failure_reason || webhook.payload?.message || 'Payout failed',
                 updated_at: new Date().toISOString()
               };
-            } else if (status === 'PENDING') {
+              console.log('❌ Mapped to FAILED based on status field or event type:', finalStatus, eventTypeLower);
+            } else if (finalStatus === 'PENDING' || finalStatus === 'PROCESSING' || eventTypeLower.includes('pending') || eventTypeLower.includes('processing')) {
               updateData = {
                 status: 'PROCESSING',
                 updated_at: new Date().toISOString()
               };
+              console.log('⏳ Mapped to PROCESSING based on status field or event type:', finalStatus, eventTypeLower);
+            } else {
+              console.log('⚠️ Could not determine status from status field or event type:', {
+                finalStatus,
+                eventTypeLower,
+                status,
+                payloadStatus
+              });
             }
         }
         
@@ -286,66 +540,104 @@ serve(async (req)=>{
           if (updateError) {
             throw updateError;
           }
-          console.log('Withdrawal request updated:', withdrawalRequest.id, updateData);
+          console.log('Withdrawal request updated successfully:', {
+            withdrawalRequestId: withdrawalRequest.id,
+            oldStatus: withdrawalRequest.status,
+            newStatus: updateData.status,
+            updateData
+          });
           
           // Create notification for the caterer with withdrawal status
+          // TypeScript type guard: we know updateData has status because Object.keys check passed
           const newStatus = updateData.status;
-          const paymentMethodName = withdrawalRequest.payment_method === 'gcash' 
-            ? 'GCash' 
-            : withdrawalRequest.payment_method === 'paymaya' 
-            ? 'PayMaya' 
-            : 'Bank Transfer';
           
-          let notificationTitle = '';
-          let notificationMessage = '';
-          
-          switch(newStatus) {
-            case 'COMPLETED':
-              notificationTitle = 'Withdrawal Completed';
-              notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} has been completed successfully.`;
-              break;
-            case 'FAILED':
-              notificationTitle = 'Withdrawal Failed';
-              const errorMsg = updateData.error_message || 'Unknown error';
-              notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} has failed. ${errorMsg}`;
-              break;
-            case 'PROCESSING':
-              notificationTitle = 'Withdrawal Processing';
-              notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} is now being processed.`;
-              break;
-            case 'CANCELLED':
-              notificationTitle = 'Withdrawal Cancelled';
-              notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} has been cancelled.`;
-              break;
-            default:
-              notificationTitle = 'Withdrawal Status Updated';
-              notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} status is now: ${newStatus}`;
-          }
-          
-          // Create notification
-          const { error: notificationError } = await supabase
-            .from('notifications')
-            .insert({
-              user_id: withdrawalRequest.caterer_id,
-              title: notificationTitle,
-              message: notificationMessage,
-              type: 'payment',
-              related_id: withdrawalRequest.id,
-            });
-          
-          if (notificationError) {
-            console.error('Error creating withdrawal notification:', notificationError);
-            // Don't throw - notification failure shouldn't break the webhook processing
+          if (newStatus) {
+            const paymentMethodName = withdrawalRequest.payment_method === 'gcash' 
+              ? 'GCash' 
+              : withdrawalRequest.payment_method === 'paymaya' 
+              ? 'PayMaya' 
+              : 'Bank Transfer';
+            
+            let notificationTitle = '';
+            let notificationMessage = '';
+            
+            switch(newStatus) {
+              case 'COMPLETED':
+                notificationTitle = 'Withdrawal Completed';
+                notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} has been completed successfully.`;
+                console.log('Creating COMPLETED notification for withdrawal:', withdrawalRequest.id);
+                break;
+              case 'FAILED':
+                notificationTitle = 'Withdrawal Failed';
+                const errorMsg = updateData.error_message || 'Unknown error';
+                notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} has failed. ${errorMsg}`;
+                console.log('Creating FAILED notification for withdrawal:', withdrawalRequest.id);
+                break;
+              case 'PROCESSING':
+                notificationTitle = 'Withdrawal Processing';
+                notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} is now being processed.`;
+                console.log('Creating PROCESSING notification for withdrawal:', withdrawalRequest.id);
+                break;
+              case 'CANCELLED':
+                notificationTitle = 'Withdrawal Cancelled';
+                notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} has been cancelled.`;
+                console.log('Creating CANCELLED notification for withdrawal:', withdrawalRequest.id);
+                break;
+              default:
+                notificationTitle = 'Withdrawal Status Updated';
+                notificationMessage = `Your withdrawal of ₱${withdrawalRequest.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to ${paymentMethodName} status is now: ${newStatus}`;
+                console.log('Creating status update notification for withdrawal:', withdrawalRequest.id, 'status:', newStatus);
+            }
+            
+            // Create notification - ALWAYS create notification when status changes
+            const { error: notificationError } = await supabase
+              .from('notifications')
+              .insert({
+                user_id: withdrawalRequest.caterer_id,
+                title: notificationTitle,
+                message: notificationMessage,
+                type: 'payment',
+                related_id: withdrawalRequest.id,
+              });
+            
+            if (notificationError) {
+              console.error('Error creating withdrawal notification:', {
+                error: notificationError,
+                withdrawalRequestId: withdrawalRequest.id,
+                status: newStatus,
+                catererId: withdrawalRequest.caterer_id
+              });
+              // Don't throw - notification failure shouldn't break the webhook processing
+            } else {
+              console.log('✅ Withdrawal notification created successfully:', {
+                withdrawalRequestId: withdrawalRequest.id,
+                status: newStatus,
+                catererId: withdrawalRequest.caterer_id,
+                title: notificationTitle
+              });
+            }
           } else {
-            console.log('Withdrawal notification created for caterer:', withdrawalRequest.caterer_id);
+            console.warn('No status in updateData, skipping notification:', {
+              withdrawalRequestId: withdrawalRequest.id,
+              updateData
+            });
           }
         }
       } else {
-        console.log('No withdrawal request found for webhook:', {
+        console.error('❌ No withdrawal request found for payout webhook!', {
           payoutId,
           externalId,
-          eventType
+          eventType,
+          status,
+          webhookPayload: JSON.stringify(webhook.payload, null, 2),
+          searchAttempts: [
+            payoutId ? `Tried payout_id: ${payoutId}` : null,
+            externalId ? `Tried external_id: ${externalId}` : null,
+            externalId ? `Tried pattern extraction from: ${externalId}` : null,
+            webhook.payload?.metadata ? `Tried metadata: ${JSON.stringify(webhook.payload.metadata)}` : null
+          ].filter(Boolean)
         });
+        console.log('💡 Tip: Check if the payout_id or external_id in the webhook matches what was saved in withdrawal_requests table');
       }
     } else {
       // Handle booking webhooks (existing logic)

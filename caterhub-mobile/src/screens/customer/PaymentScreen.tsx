@@ -9,7 +9,9 @@ import {
   ActivityIndicator,
   Linking,
   Platform,
+  BackHandler,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../store/auth';
@@ -38,7 +40,7 @@ type PaymentMethod = 'gcash' | 'paymaya';
 export default function PaymentScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { bookingId, amount, description, isRemainingPayment = false, paymentOption, depositAmount: routeDepositAmount, remainingAmount: routeRemainingAmount } = route.params;
+  const { bookingId, amount, description, isRemainingPayment = false, paymentOption, depositAmount: routeDepositAmount, remainingAmount: routeRemainingAmount, serviceId } = route.params;
   
   // Use paymentOption to determine payment amounts
   // If paymentOption is 'full', show full amount; if 'deposit', show 50%
@@ -71,6 +73,60 @@ export default function PaymentScreen({ route, navigation }: any) {
       checkXenditKeys();
     }
   }, []);
+
+  // Handle back button press with confirmation
+  const handleBackPress = React.useCallback(() => {
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Are you sure you want to go back? Going back will cancel the payment process.');
+      if (confirmed) {
+        // Navigate to ServiceDetails if serviceId is available, otherwise go back
+        if (serviceId) {
+          navigation.navigate('ServiceDetails', { serviceId });
+        } else {
+          navigation.goBack();
+        }
+      }
+    } else {
+      Alert.alert(
+        'Cancel Payment?',
+        'Going back will cancel the payment process. Are you sure you want to continue?',
+        [
+          {
+            text: 'Continue Payment',
+            style: 'cancel',
+          },
+          {
+            text: 'Go Back',
+            style: 'destructive',
+            onPress: () => {
+              // Navigate to ServiceDetails if serviceId is available, otherwise go back
+              if (serviceId) {
+                navigation.navigate('ServiceDetails', { serviceId });
+              } else {
+                navigation.goBack();
+              }
+            },
+          },
+        ]
+      );
+    }
+    return true; // Prevent default back behavior
+  }, [serviceId, navigation]);
+
+  // Handle Android hardware back button
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        handleBackPress();
+        return true; // Prevent default back behavior
+      };
+
+      if (Platform.OS === 'android') {
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+        return () => backHandler.remove();
+      }
+    }, [handleBackPress])
+  );
 
   const paymentMethods = [
     { id: 'gcash', name: 'GCash', icon: 'wallet', color: '#007DFF', description: 'Pay via GCash e-wallet' },
@@ -207,7 +263,7 @@ export default function PaymentScreen({ route, navigation }: any) {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+        <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Payment</Text>

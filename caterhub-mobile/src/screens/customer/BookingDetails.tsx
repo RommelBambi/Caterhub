@@ -113,41 +113,6 @@ const BookingDetails = ({ route, navigation }: any) => {
     );
   };
 
-  const handleRefundRequest = () => {
-    const eventDate = new Date(booking.event_date);
-    const currentDate = new Date();
-    const daysUntilEvent = Math.ceil((eventDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
-    
-    let message = 'Are you sure you want to request a refund and cancel this booking?';
-    let warningMessage = '';
-    
-    if (daysUntilEvent <= 7) {
-      warningMessage = '\n\n⚠️ WARNING: Cancellations within 7 days of the event may not be fully refundable. Refund amount will be determined based on our cancellation policy.';
-    } else {
-      warningMessage = '\n\n✅ Good news: Since your event is more than 7 days away, you may be eligible for a full refund.';
-    }
-    
-    Alert.alert(
-      'Request Refund',
-      message + warningMessage,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Continue',
-          style: 'destructive',
-          onPress: () => {
-            // For now, show contact information
-            // Later this can navigate to a refund request form
-            Alert.alert(
-              'Refund Request',
-              `We'll process your refund request for booking #${booking.id}.\n\nPlease contact our support team:\nEmail: support@caterhub.com\nPhone: +63 123 456 7890\n\nInclude your booking ID for faster processing.`,
-              [{ text: 'OK' }]
-            );
-          },
-        },
-      ]
-    );
-  };
 
   if (loading) {
     return (
@@ -584,10 +549,12 @@ const BookingDetails = ({ route, navigation }: any) => {
               Report an Issue
             </Button>
             
-            {/* Refund/Cancel with Warning */}
+            {/* Cancel Booking - Only show if no payment has been made */}
             {b.status !== 'CANCELLED' &&
               b.status !== 'COMPLETED' &&
-              b.status !== 'DECLINED' && (
+              b.status !== 'DECLINED' &&
+              !depositPaid &&
+              !remainingPaid && (
                 <Button
                   mode="outlined"
                   buttonColor="transparent"
@@ -596,11 +563,26 @@ const BookingDetails = ({ route, navigation }: any) => {
                   icon="close-circle"
                   loading={canceling}
                   disabled={canceling}
-                  onPress={handleRefundRequest}
+                  onPress={handleCancelBooking}
                 >
-                  Request Refund/Cancel
+                  Cancel Booking
                 </Button>
               )}
+            
+            {/* Show message if payment has been made */}
+            {(depositPaid || remainingPaid) && (
+              <View style={[styles.statusAlert, { backgroundColor: '#fee2e2', borderColor: '#fca5a5', marginTop: 8 }]}>
+                <View style={styles.statusHeader}>
+                  <Ionicons name="information-circle" size={20} color="#ef4444" />
+                  <Text style={[styles.statusTitle, { color: '#ef4444' }]}>
+                    Cancellation Not Available
+                  </Text>
+                </View>
+                <Text style={styles.statusSubtitle}>
+                  Once payment has been made, bookings cannot be cancelled. Please contact support if you need assistance.
+                </Text>
+              </View>
+            )}
           </Card.Content>
         </Card>
       </ScrollView>

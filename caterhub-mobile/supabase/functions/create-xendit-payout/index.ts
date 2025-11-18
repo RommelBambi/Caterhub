@@ -182,6 +182,9 @@ serve(async (req) => {
       amount: amount,
       currency: 'PHP',
       // Add callback URL for webhook notifications
+      // Webhook URL: https://qiudzzioqgdusoyylktr.supabase.co/functions/v1/xendit-webhook
+      // NOTE: Xendit also requires webhook URLs to be configured in their dashboard for payout events
+      // Configure in Xendit Dashboard: Settings > Webhooks > Payouts v2
       callback_url: `${supabaseUrl}/functions/v1/xendit-webhook`,
       // Note: email_to and metadata are optional, but included for tracking
       ...(user.email && { email_to: [user.email] }),
@@ -237,6 +240,7 @@ serve(async (req) => {
           description: `Withdrawal to ${paymentMethod === 'gcash' ? 'GCash' : 'PayMaya'}`,
           amount: amount,
           currency: 'PHP',
+          // Webhook URL: https://qiudzzioqgdusoyylktr.supabase.co/functions/v1/xendit-webhook
           callback_url: `${supabaseUrl}/functions/v1/xendit-webhook`,
           ...(user.email && { email_to: [user.email] }),
           metadata: {

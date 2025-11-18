@@ -391,6 +391,56 @@ export async function fetchServices(): Promise<Service[]> {
 }
 
 
+/**
+ * Fetch featured services - only caterers with active premium subscriptions
+ */
+export async function fetchFeaturedServices(limit = 6): Promise<Service[]> {
+  console.log(`[fetchFeaturedServices] Fetching ${limit} featured services (premium subscribers only)...`);
+  
+  try {
+    // Fetch all services first
+    const allServices = await fetchServices();
+    
+    if (allServices.length === 0) {
+      console.warn('[fetchFeaturedServices] No services available');
+      return [];
+    }
+    
+    // Get all caterer IDs with active subscriptions
+    const { data: activeSubscriptions, error: subError } = await supabase
+      .from('caterer_subscriptions')
+      .select('caterer_id')
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString()); // Only non-expired subscriptions
+    
+    if (subError) {
+      console.error('[fetchFeaturedServices] Error fetching subscriptions:', subError);
+      // If we can't fetch subscriptions, return empty array (featured section should only show subscribed caterers)
+      return [];
+    }
+    
+    const subscribedCatererIds = new Set(
+      (activeSubscriptions || []).map((sub: any) => sub.caterer_id)
+    );
+    
+    console.log(`[fetchFeaturedServices] Found ${subscribedCatererIds.size} caterers with active subscriptions`);
+    
+    // Filter services to only include subscribed caterers
+    const featuredServices = allServices.filter(
+      (service) => service.user_id && subscribedCatererIds.has(service.user_id)
+    );
+    
+    // Limit to requested number
+    const result = featuredServices.slice(0, limit);
+    
+    console.log(`[fetchFeaturedServices] Returning ${result.length} featured services`);
+    return result;
+  } catch (error) {
+    console.error('[fetchFeaturedServices] Error:', error);
+    return [];
+  }
+}
+
 export async function fetchTopServices(by: 'likes' | 'bookings', limit = 8): Promise<Service[]> {
   console.log(`[fetchTopServices] Fetching top ${limit} services by ${by}...`);
   

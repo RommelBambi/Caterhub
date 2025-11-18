@@ -18,6 +18,7 @@ import { useAuth } from '../../store/auth';
 import {
   fetchServices,
   fetchTopServices,
+  fetchFeaturedServices,
   addFavorite,
   removeFavorite,
   getMyFavorites,
@@ -71,12 +72,13 @@ export default function HomeScreen({ navigation }: any) {
         setLoading(true);
         console.log('[HomeScreen] Starting to fetch services...');
         
-        const [services, topBookedRaw] = await Promise.all([
+        const [services, topBookedRaw, featuredServices] = await Promise.all([
           fetchServices(),
           fetchTopServices('bookings', 8),
+          fetchFeaturedServices(6),
         ]);
 
-        console.log(`[HomeScreen] Fetched ${services.length} services, ${topBookedRaw.length} top booked`);
+        console.log(`[HomeScreen] Fetched ${services.length} services, ${topBookedRaw.length} top booked, ${featuredServices.length} featured`);
 
         // Show all services for "Most Popular" section, sorted by bookings count
         const topBooked = (topBookedRaw || []).sort(
@@ -86,7 +88,7 @@ export default function HomeScreen({ navigation }: any) {
         if (!mounted) return;
         
         setAll(services);
-        setFeatured(services.slice(0, 6));
+        setFeatured(featuredServices); // Only show subscribed caterers in featured section
         setMostBooked(topBooked);
 
         console.log(`[HomeScreen] Set ${services.length} all services, ${services.slice(0, 6).length} featured, ${topBooked.length} most booked`);
@@ -134,6 +136,7 @@ export default function HomeScreen({ navigation }: any) {
   }, [user]);
 
   // Refresh favorites when returning to Home (fixes heart mismatch after navigating back)
+  // Note: Tab reset logic is handled in MainTabs.tsx tabPress listeners
   useFocusEffect(
     React.useCallback(() => {
       let alive = true;

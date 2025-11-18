@@ -20,6 +20,7 @@ interface AnalyticsData {
   totalUsers: number;
   totalBookings: number;
   totalRevenue: number;
+  subscriptionRevenue: number;
   avgBookingValue: number;
   totalCaterers: number;
   pendingApplications: number;
@@ -60,8 +61,18 @@ export default function AnalyticsPage() {
         .from('partner_applications')
         .select('id, status, business_name, user_id');
 
+      // Fetch subscription revenue from active subscriptions
+      const { data: subscriptionsData, error: subscriptionsError } = await supabase
+        .from('caterer_subscriptions')
+        .select('amount')
+        .eq('status', 'active');
+
       if (usersError || bookingsError || applicationsError) {
         throw usersError || bookingsError || applicationsError;
+      }
+
+      if (subscriptionsError) {
+        console.warn('Subscriptions fetch error:', subscriptionsError);
       }
 
       // Calculate analytics
@@ -154,10 +165,14 @@ export default function AnalyticsPage() {
       const completedBookings = bookings?.filter(b => b.status === 'COMPLETED').length || 0;
       const completionRate = totalBookings > 0 ? (completedBookings / totalBookings) * 100 : 0;
 
+      // Calculate subscription revenue
+      const subscriptionRevenue = subscriptionsData?.reduce((sum, sub) => sum + (sub.amount || 0), 0) || 0;
+
       setAnalytics({
         totalUsers,
         totalBookings,
         totalRevenue,
+        subscriptionRevenue,
         avgBookingValue,
         totalCaterers,
         pendingApplications,
@@ -176,6 +191,7 @@ export default function AnalyticsPage() {
         totalUsers: 0,
         totalBookings: 0,
         totalRevenue: 0,
+        subscriptionRevenue: 0,
         avgBookingValue: 0,
         totalCaterers: 0,
         pendingApplications: 0,
@@ -274,6 +290,13 @@ export default function AnalyticsPage() {
             </Text>
             <Text style={styles.statSubtext}>Bookings completed</Text>
           </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Subscription Revenue</Text>
+            <Text style={[styles.statValue, { color: COLORS.warning }]}>
+              ₱{analytics.subscriptionRevenue.toLocaleString()}
+            </Text>
+            <Text style={styles.statSubtext}>From premium subscriptions</Text>
+          </View>
         </View>
       </View>
 
@@ -301,6 +324,13 @@ export default function AnalyticsPage() {
               {(analytics.bookingsByStatus['CONFIRMED'] || 0) + (analytics.bookingsByStatus['ON_THE_WAY'] || 0)}
             </Text>
             <Text style={styles.statSubtext}>Confirmed + On the way</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Total Revenue</Text>
+            <Text style={[styles.statValue, { color: COLORS.success }]}>
+              ₱{(analytics.totalRevenue + analytics.subscriptionRevenue).toLocaleString()}
+            </Text>
+            <Text style={styles.statSubtext}>Bookings + Subscriptions</Text>
           </View>
         </View>
       </View>

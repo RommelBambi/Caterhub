@@ -51,6 +51,8 @@ export default function BookingsList({ navigation }: any) {
 
   useFocusEffect(
     React.useCallback(() => {
+      // Load data when screen is focused
+      // Note: Tab reset logic is handled in MainTabs.tsx tabPress listeners
       load();
     }, [load])
   );

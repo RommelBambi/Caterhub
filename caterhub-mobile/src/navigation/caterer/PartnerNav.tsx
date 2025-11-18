@@ -7,14 +7,13 @@ import PartnerManagePackagesScreen from '../../screens/caterer/PartnerManagePack
 import PartnerSettingsScreen from '../../screens/caterer/PartnerSettingsScreen';
 import PartnerWalletScreen from '../../screens/caterer/PartnerWalletScreen';
 import PartnerWithdrawalScreen from '../../screens/caterer/PartnerWithdrawalScreen';
-import NotificationsScreen from '../../screens/shared/NotificationsScreen';
 import { useAuth } from '../../store/auth';
 
 export type PartnerStackParamList = {
   PartnerDashboard: undefined;
   PartnerOrders: undefined;
   PartnerManagePackages: undefined;
-  PartnerSettings: undefined;
+  PartnerSettings: { initialTab?: 'profile' | 'locations' | 'documents' | 'subscription' | 'account' } | undefined;
   PartnerWallet: undefined;
   PartnerWithdrawal: { availableBalance: number };
   PartnerOrderDetails: {
@@ -31,7 +30,6 @@ export type PartnerStackParamList = {
       totalPrice: string;
     };
   };
-  Notifications: undefined;
 };
 
 const Stack = createNativeStackNavigator<PartnerStackParamList>();
@@ -78,12 +76,6 @@ export default function PartnerNav() {
         name="PartnerOrderDetails"
         component={PartnerOrderDetailsScreen}
         options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="Notifications"
-        component={NotificationsScreen}
-        options={{ headerShown: false }}
-        initialParams={{ userRole: 'caterer' }}
       />
     </Stack.Navigator>
   );

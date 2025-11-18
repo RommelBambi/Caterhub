@@ -12,7 +12,7 @@ import {
   Modal,
   Image
 } from "react-native";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useNavigation, useFocusEffect, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
@@ -33,6 +33,15 @@ import { supabase } from "../../services/supabase";
 import { BusinessLocation } from "../../types/admin";
 import { COUNTRIES, PROVINCES_PH, getCitiesByProvince } from "../../constants/locations";
 import { COLORS } from "../../constants/colors";
+import { 
+  getActiveSubscription, 
+  createSubscription,
+  cancelSubscription,
+  SUBSCRIPTION_PRICES,
+  type SubscriptionPlan,
+  type CatererSubscription 
+} from "../../services/subscriptions";
+import SubscriptionPaymentModal from "../../components/caterer/SubscriptionPaymentModal";
 
 const DTI_PREFIX = 'DTI::';
 
@@ -42,7 +51,6 @@ type CatererProfile = {
   contactNumber: string;
   email?: string;
   website?: string;
-  address: string;
   about: string;
   facebook?: string;
   instagram?: string;
@@ -67,7 +75,6 @@ async function loadProfileFromSupabase(userId: string): Promise<CatererProfile |
       contactNumber: data.contact_number || "",
       email: data.email || undefined,
       website: data.website || undefined,
-      address: data.address || "",
       about: data.about || "",
       facebook: data.facebook || undefined,
       instagram: data.instagram || undefined,
@@ -97,7 +104,6 @@ async function saveProfileToSupabase(userId: string, data: CatererProfile): Prom
           contact_number: data.contactNumber,
           email: data.email || null,
           website: data.website || null,
-          address: data.address,
           about: data.about,
           facebook: data.facebook || null,
           instagram: data.instagram || null,
@@ -115,7 +121,6 @@ async function saveProfileToSupabase(userId: string, data: CatererProfile): Prom
           contact_number: data.contactNumber,
           email: data.email || null,
           website: data.website || null,
-          address: data.address,
           about: data.about,
           facebook: data.facebook || null,
           instagram: data.instagram || null,
@@ -133,14 +138,18 @@ async function saveProfileToSupabase(userId: string, data: CatererProfile): Prom
 export default function PartnerSettingsScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<PartnerStackParamList>>();
+  const route = useRoute();
   const { user, logout, changePassword, refreshUser } = useAuth();
+
+  // Get initial tab from route params
+  const routeParams = route.params as { initialTab?: 'profile' | 'locations' | 'documents' | 'subscription' | 'account' } | undefined;
+  const initialTabFromRoute = routeParams?.initialTab;
 
   // editable fields
   const [businessName, setBusinessName] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [email, setEmail] = useState("");
   const [website, setWebsite] = useState("");
-  const [address, setAddress] = useState("");
   const [about, setAbout] = useState("");
   const [facebook, setFacebook] = useState("");
   const [instagram, setInstagram] = useState("");
@@ -171,7 +180,9 @@ export default function PartnerSettingsScreen() {
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null); // Track when documents were last saved
 
   const [loaded, setLoaded] = useState(false);
-  const [activeTab, setActiveTab] = useState<'profile' | 'locations' | 'documents' | 'account'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'locations' | 'documents' | 'subscription' | 'account'>(
+    initialTabFromRoute || 'profile'
+  );
 
   // Change email state
   const [showChangeEmail, setShowChangeEmail] = useState(false);
@@ -206,6 +217,14 @@ export default function PartnerSettingsScreen() {
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
   const [deleteAccountPasswordError, setDeleteAccountPasswordError] = useState("");
+
+  // Subscription state
+  const [activeSubscription, setActiveSubscription] = useState<CatererSubscription | null>(null);
+  const [loadingSubscription, setLoadingSubscription] = useState(false);
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPlanType, setSelectedPlanType] = useState<SubscriptionPlan | null>(null);
+  const [pendingSubscriptionId, setPendingSubscriptionId] = useState<number | null>(null);
 
   // Save confirmation and success modals
   const [showSaveConfirmationModal, setShowSaveConfirmationModal] = useState(false);
@@ -255,7 +274,6 @@ export default function PartnerSettingsScreen() {
               setContactNumber(prof.contactNumber ?? "");
               setEmail(prof.email ?? user.email ?? "");
               setWebsite(prof.website ?? "");
-              setAddress(prof.address ?? "");
               setAbout(prof.about ?? "");
               setFacebook(prof.facebook ?? "");
               setInstagram(prof.instagram ?? "");
@@ -264,7 +282,6 @@ export default function PartnerSettingsScreen() {
               // Default values if no profile exists
               setContactNumber("");
               setWebsite("");
-              setAddress("");
               setAbout("");
               setFacebook("");
               setInstagram("");
@@ -733,6 +750,119 @@ export default function PartnerSettingsScreen() {
     }
   };
 
+  // Handle subscription
+  const handleSubscribe = async (planType: SubscriptionPlan) => {
+    if (!user) return;
+
+    setSubscriptionError(null);
+
+    try {
+      // Create subscription record
+      const subscription = await createSubscription(user.id, planType);
+
+      // Show payment modal
+      setSelectedPlanType(planType);
+      setPendingSubscriptionId(subscription.id);
+      setShowPaymentModal(true);
+    } catch (error: any) {
+      console.error('Error creating subscription:', error);
+      setSubscriptionError(error.message || 'Failed to create subscription. Please try again.');
+      Alert.alert('Error', error.message || 'Failed to create subscription. Please try again.');
+    }
+  };
+
+  // Load subscription status
+  const loadSubscriptionStatus = async () => {
+    if (!user) return;
+    
+    setLoadingSubscription(true);
+    try {
+      // Check for active subscription
+      const subscription = await getActiveSubscription(user.id);
+      setActiveSubscription(subscription);
+      
+      // If no active subscription, check for pending payment
+      if (!subscription) {
+        const { data: pendingSub } = await supabase
+          .from('caterer_subscriptions')
+          .select('*')
+          .eq('caterer_id', user.id)
+          .eq('status', 'pending_payment')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        // If there's a pending subscription, wait a bit and check again (webhook might be processing)
+        if (pendingSub) {
+          console.log('[PartnerSettingsScreen] Found pending subscription, will check again in 2 seconds');
+          setTimeout(async () => {
+            const updatedSub = await getActiveSubscription(user.id);
+            if (updatedSub) {
+              setActiveSubscription(updatedSub);
+            }
+          }, 2000);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading subscription:', error);
+    } finally {
+      setLoadingSubscription(false);
+    }
+  };
+
+  const handlePaymentSuccess = async () => {
+    // Wait a moment for webhook to process, then reload
+    setTimeout(async () => {
+      await loadSubscriptionStatus();
+    }, 1500);
+    setShowPaymentModal(false);
+    setSelectedPlanType(null);
+    setPendingSubscriptionId(null);
+  };
+
+  // Reload subscription when subscription tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (activeTab === 'subscription' && user) {
+        loadSubscriptionStatus();
+      }
+    }, [activeTab, user?.id])
+  );
+
+  // Handle cancel subscription
+  const handleCancelSubscription = async () => {
+    if (!activeSubscription) return;
+
+    Alert.alert(
+      'Cancel Subscription',
+      `Are you sure you want to cancel your ${activeSubscription.plan_type === 'monthly' ? 'monthly' : 'yearly'} premium subscription? You will lose access to the featured section when your current subscription expires.`,
+      [
+        { text: 'Keep Subscription', style: 'cancel' },
+        {
+          text: 'Cancel Subscription',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoadingSubscription(true);
+              await cancelSubscription(activeSubscription.id);
+              Alert.alert(
+                'Subscription Cancelled',
+                'Your subscription has been cancelled. You will remain featured until your subscription expires.',
+                [{ text: 'OK' }]
+              );
+              await loadSubscriptionStatus();
+            } catch (error: any) {
+              console.error('Error cancelling subscription:', error);
+              Alert.alert('Error', error.message || 'Failed to cancel subscription. Please try again.');
+            } finally {
+              setLoadingSubscription(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Helper function to determine if a file is new or old based on upload date
   const isFileNew = (file: UploadedFile): boolean => {
     if (!file.uploadedAt || !lastSavedAt) {
@@ -770,7 +900,6 @@ export default function PartnerSettingsScreen() {
         contactNumber: contactNumber.trim(),
         email: email.trim() || undefined,
         website: website.trim() || undefined,
-        address: address.trim(),
         about: about.trim(),
         facebook: facebook.trim() || undefined,
         instagram: instagram.trim() || undefined,
@@ -808,6 +937,26 @@ export default function PartnerSettingsScreen() {
         if (updateError) {
           console.error('Error updating partner application:', updateError);
           throw updateError;
+        }
+      }
+
+      // Update username in users table to match business name
+      if (businessName.trim()) {
+        const { error: usernameError } = await supabase
+          .from('users')
+          .update({
+            username: businessName.trim(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', user.id);
+
+        if (usernameError) {
+          console.error('Error updating username:', usernameError);
+          // Don't throw - username update failure shouldn't block profile save
+          // But log it for debugging
+        } else {
+          // Refresh user data to sync local state
+          await refreshUser();
         }
       }
 
@@ -1211,36 +1360,63 @@ export default function PartnerSettingsScreen() {
   };
 
   const removeProfileImage = async () => {
-    Alert.alert(
-      "Remove Profile Image",
-      "Are you sure you want to remove your profile image?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              if (!profileImage) {
-                Alert.alert("Error", "No profile image to remove.");
-                return;
+    const confirmDelete = () => {
+      if (Platform.OS === 'web') {
+        return window.confirm("Are you sure you want to remove your profile image?");
+      } else {
+        return new Promise<boolean>((resolve) => {
+          Alert.alert(
+            "Remove Profile Image",
+            "Are you sure you want to remove your profile image?",
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+              {
+                text: "Remove",
+                style: "destructive",
+                onPress: () => resolve(true),
               }
+            ]
+          );
+        });
+      }
+    };
 
-              // Verify session
-              const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-              if (sessionError || !session) {
-                const { data: { user: authUser } } = await supabase.auth.getUser();
-                if (!authUser) {
-                  Alert.alert("Error", "Please log in again to delete images.");
-                  return;
-                }
-              }
+    const confirmed = await confirmDelete();
+    if (!confirmed) return;
 
-              const currentUserId = session?.user?.id || user?.id;
-              if (!currentUserId) {
-                Alert.alert("Error", "User ID not found. Please log in again.");
-                return;
-              }
+    try {
+      if (!profileImage) {
+        if (Platform.OS === 'web') {
+          window.alert("Error: No profile image to remove.");
+        } else {
+          Alert.alert("Error", "No profile image to remove.");
+        }
+        return;
+      }
+
+      // Verify session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          if (Platform.OS === 'web') {
+            window.alert("Error: Please log in again to delete images.");
+          } else {
+            Alert.alert("Error", "Please log in again to delete images.");
+          }
+          return;
+        }
+      }
+
+      const currentUserId = session?.user?.id || user?.id;
+      if (!currentUserId) {
+        if (Platform.OS === 'web') {
+          window.alert("Error: User ID not found. Please log in again.");
+        } else {
+          Alert.alert("Error", "User ID not found. Please log in again.");
+        }
+        return;
+      }
 
               // Extract path from URL - format: .../avatars/profiles/userId/filename
               let oldPath: string | null = null;
@@ -1263,77 +1439,92 @@ export default function PartnerSettingsScreen() {
                 }
               }
 
-              if (!oldPath) {
-                console.error('[DELETE LOGO] Could not extract path from URL:', profileImage);
-                Alert.alert("Error", `Could not determine file path from URL.\n\nPlease check the browser console for details.`);
-                return;
-              }
-
-              // Remove query parameters
-              oldPath = oldPath.split('?')[0].split('#')[0];
-              console.log('[DELETE LOGO] Final path to delete:', oldPath);
-              console.log('[DELETE LOGO] Expected pattern: profiles/' + currentUserId + '/%');
-
-              // Delete from storage
-              console.log('[DELETE LOGO] Calling supabase.storage.from("avatars").remove([...])');
-              const { data: deleteData, error: deleteError } = await supabase.storage
-                .from('avatars')
-                .remove([oldPath]);
-
-              if (deleteError) {
-                console.error('[DELETE LOGO] Storage delete error:', deleteError);
-                console.error('[DELETE LOGO] Delete error details:', JSON.stringify(deleteError, null, 2));
-                console.error('[DELETE LOGO] Attempted path:', oldPath);
-                
-                const errorMessage = deleteError.message || '';
-                const errorCode = (deleteError as any)?.code || '';
-                
-                if (errorMessage.includes('row-level security') || 
-                    errorMessage.includes('RLS') ||
-                    errorMessage.includes('permission') ||
-                    errorCode === 'PGRST301' ||
-                    errorCode === '42501') {
-                  Alert.alert(
-                    "Permission Denied", 
-                    `Cannot delete logo. The file path may not match the RLS policy.\n\nPath: ${oldPath}\n\nExpected: profiles/${currentUserId}/%\n\nPlease check your Supabase storage RLS policies for DELETE operations on profiles folder.`
-                  );
-                  return;
-                }
-                
-                if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
-                  console.log('[DELETE LOGO] File not found, assuming already deleted');
-                  // Continue to update database
-                } else {
-                  throw deleteError;
-                }
-              } else {
-                console.log('[DELETE LOGO] File deleted successfully:', deleteData);
-              }
-              
-              // Update database
-              setProfileImage(null);
-              const { error: updateError } = await supabase
-                .from('users')
-                .update({ profile_image_url: null })
-                .eq('id', currentUserId);
-
-              if (updateError) {
-                console.error('[DELETE LOGO] Error removing profile image URL:', updateError);
-                Alert.alert("Error", "Failed to remove profile image URL. Please try again.");
-              } else {
-                console.log('[DELETE LOGO] Database updated successfully');
-                Alert.alert("Success", "Profile image removed successfully.");
-              }
-            } catch (error: any) {
-              console.error('[DELETE LOGO] Error removing profile image:', error);
-              console.error('[DELETE LOGO] Error stack:', error?.stack);
-              const errorMessage = error?.message || 'Failed to remove profile image. Please try again.';
-              Alert.alert("Error", errorMessage);
-            }
-          }
+      if (!oldPath) {
+        console.error('[DELETE LOGO] Could not extract path from URL:', profileImage);
+        const errorMsg = `Could not determine file path from URL.\n\nPlease check the browser console for details.`;
+        if (Platform.OS === 'web') {
+          window.alert("Error: " + errorMsg);
+        } else {
+          Alert.alert("Error", errorMsg);
         }
-      ]
-    );
+        return;
+      }
+
+      // Remove query parameters
+      oldPath = oldPath.split('?')[0].split('#')[0];
+      console.log('[DELETE LOGO] Final path to delete:', oldPath);
+      console.log('[DELETE LOGO] Expected pattern: profiles/' + currentUserId + '/%');
+
+      // Delete from storage
+      console.log('[DELETE LOGO] Calling supabase.storage.from("avatars").remove([...])');
+      const { data: deleteData, error: deleteError } = await supabase.storage
+        .from('avatars')
+        .remove([oldPath]);
+
+      if (deleteError) {
+        console.error('[DELETE LOGO] Storage delete error:', deleteError);
+        console.error('[DELETE LOGO] Delete error details:', JSON.stringify(deleteError, null, 2));
+        console.error('[DELETE LOGO] Attempted path:', oldPath);
+        
+        const errorMessage = deleteError.message || '';
+        const errorCode = (deleteError as any)?.code || '';
+        
+        if (errorMessage.includes('row-level security') || 
+            errorMessage.includes('RLS') ||
+            errorMessage.includes('permission') ||
+            errorCode === 'PGRST301' ||
+            errorCode === '42501') {
+          const errorMsg = `Cannot delete logo. The file path may not match the RLS policy.\n\nPath: ${oldPath}\n\nExpected: profiles/${currentUserId}/%\n\nPlease check your Supabase storage RLS policies for DELETE operations on profiles folder.`;
+          if (Platform.OS === 'web') {
+            window.alert("Permission Denied: " + errorMsg);
+          } else {
+            Alert.alert("Permission Denied", errorMsg);
+          }
+          return;
+        }
+        
+        if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
+          console.log('[DELETE LOGO] File not found, assuming already deleted');
+          // Continue to update database
+        } else {
+          throw deleteError;
+        }
+      } else {
+        console.log('[DELETE LOGO] File deleted successfully:', deleteData);
+      }
+      
+      // Update database
+      setProfileImage(null);
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ profile_image_url: null })
+        .eq('id', currentUserId);
+
+      if (updateError) {
+        console.error('[DELETE LOGO] Error removing profile image URL:', updateError);
+        if (Platform.OS === 'web') {
+          window.alert("Error: Failed to remove profile image URL. Please try again.");
+        } else {
+          Alert.alert("Error", "Failed to remove profile image URL. Please try again.");
+        }
+      } else {
+        console.log('[DELETE LOGO] Database updated successfully');
+        if (Platform.OS === 'web') {
+          window.alert("Success: Profile image removed successfully.");
+        } else {
+          Alert.alert("Success", "Profile image removed successfully.");
+        }
+      }
+    } catch (error: any) {
+      console.error('[DELETE LOGO] Error removing profile image:', error);
+      console.error('[DELETE LOGO] Error stack:', error?.stack);
+      const errorMessage = error?.message || 'Failed to remove profile image. Please try again.';
+      if (Platform.OS === 'web') {
+        window.alert("Error: " + errorMessage);
+      } else {
+        Alert.alert("Error", errorMessage);
+      }
+    }
   };
 
   // Sample images functions
@@ -1415,6 +1606,12 @@ export default function PartnerSettingsScreen() {
 
   const pickSampleImage = async () => {
     try {
+      // Check if limit is reached
+      if (sampleImages.length >= 10) {
+        Alert.alert('Limit Reached', 'You can only upload up to 10 sample images. Please remove an existing image before adding a new one.');
+        return;
+      }
+
       if (Platform.OS !== 'web') {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
@@ -1463,7 +1660,6 @@ export default function PartnerSettingsScreen() {
           // Create new profile if it doesn't exist
           await saveProfileToSupabase(user.id, {
             contactNumber: contactNumber || '',
-            address: address || '',
             about: about || '',
             sampleImages: newSampleImages,
           });
@@ -1497,165 +1693,207 @@ export default function PartnerSettingsScreen() {
   };
 
   const removeSampleImage = async (index: number) => {
-    Alert.alert(
-      "Remove Sample Image",
-      "Are you sure you want to remove this sample image?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const imageUrl = sampleImages[index];
-              if (!imageUrl) {
-                Alert.alert("Error", "Image URL not found.");
-                return;
+    const confirmDelete = () => {
+      if (Platform.OS === 'web') {
+        return window.confirm("Are you sure you want to remove this sample image?");
+      } else {
+        return new Promise<boolean>((resolve) => {
+          Alert.alert(
+            "Remove Sample Image",
+            "Are you sure you want to remove this sample image?",
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+              {
+                text: "Remove",
+                style: "destructive",
+                onPress: () => resolve(true),
               }
+            ]
+          );
+        });
+      }
+    };
 
-              // Verify session and get user ID
-              const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-              if (sessionError || !session) {
-                const { data: { user: authUser } } = await supabase.auth.getUser();
-                if (!authUser) {
-                  Alert.alert("Error", "Please log in again to delete images.");
-                  return;
-                }
-              }
+    const confirmed = await confirmDelete();
+    if (!confirmed) return;
 
-              const currentUserId = session?.user?.id || user?.id;
-              if (!currentUserId) {
-                Alert.alert("Error", "User ID not found. Please log in again.");
-                return;
-              }
+    try {
+      const imageUrl = sampleImages[index];
+      if (!imageUrl) {
+        if (Platform.OS === 'web') {
+          window.alert("Error: Image URL not found.");
+        } else {
+          Alert.alert("Error", "Image URL not found.");
+        }
+        return;
+      }
 
-              // Extract path from URL - handle different URL formats
-              let oldPath: string | null = null;
-              
-              console.log('[DELETE] Attempting to extract path from URL:', imageUrl);
-              console.log('[DELETE] Current user ID:', currentUserId);
-              
-              const urlParts = imageUrl.split('/');
-              const avatarsIndex = urlParts.findIndex(part => part === 'avatars');
-              
-              if (avatarsIndex >= 0 && avatarsIndex < urlParts.length - 1) {
-                // Get path after 'avatars' - this is the storage path we need
-                oldPath = urlParts.slice(avatarsIndex + 1).join('/');
-                console.log('[DELETE] Extracted path (method 1):', oldPath);
-              } else {
-                // If URL doesn't contain 'avatars', check if it's already a relative path
-                if (imageUrl.startsWith('sample-images/')) {
-                  oldPath = imageUrl;
-                  console.log('[DELETE] Using URL as direct path:', oldPath);
-                } else {
-                  // Try to find 'public' and get path after it
-                  const publicIndex = urlParts.findIndex(part => part === 'public');
-                  if (publicIndex >= 0 && publicIndex < urlParts.length - 1) {
-                    // Skip 'public' and get everything after
-                    oldPath = urlParts.slice(publicIndex + 1).join('/');
-                    console.log('[DELETE] Extracted path (method 2):', oldPath);
-                  }
-                }
-              }
+      // Verify session and get user ID
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          if (Platform.OS === 'web') {
+            window.alert("Error: Please log in again to delete images.");
+          } else {
+            Alert.alert("Error", "Please log in again to delete images.");
+          }
+          return;
+        }
+      }
 
-              if (!oldPath) {
-                console.error('[DELETE] Could not extract path from URL:', imageUrl);
-                console.error('[DELETE] URL parts:', urlParts);
-                Alert.alert("Error", `Could not determine file path from URL.\n\nURL: ${imageUrl.substring(0, 100)}...\n\nPlease check the browser console for details.`);
-                return;
-              }
-              
-              // Ensure the path doesn't have query parameters or fragments
-              oldPath = oldPath.split('?')[0].split('#')[0];
-              
-              // Verify the path contains the user's ID (security check)
-              if (!oldPath.includes(currentUserId)) {
-                console.warn('[DELETE] Path does not contain user ID. Path:', oldPath, 'User ID:', currentUserId);
-                // Still try to delete, but log the warning
-              }
-              
-              console.log('[DELETE] Final path to delete:', oldPath);
-              console.log('[DELETE] Expected pattern: sample-images/' + currentUserId + '/%');
+      const currentUserId = session?.user?.id || user?.id;
+      if (!currentUserId) {
+        if (Platform.OS === 'web') {
+          window.alert("Error: User ID not found. Please log in again.");
+        } else {
+          Alert.alert("Error", "User ID not found. Please log in again.");
+        }
+        return;
+      }
 
-              // Delete from storage
-              console.log('[DELETE] Calling supabase.storage.from("avatars").remove([...])');
-              const { data: deleteData, error: deleteError } = await supabase.storage
-                .from('avatars')
-                .remove([oldPath]);
-
-              if (deleteError) {
-                console.error('[DELETE] Storage delete error:', deleteError);
-                console.error('[DELETE] Delete error details:', JSON.stringify(deleteError, null, 2));
-                console.error('[DELETE] Attempted path:', oldPath);
-                console.error('[DELETE] User ID:', currentUserId);
-                console.error('[DELETE] Expected pattern: sample-images/' + currentUserId + '/%');
-                
-                // Check if it's an RLS policy error
-                const errorMessage = deleteError.message || '';
-                const errorCode = (deleteError as any)?.code || '';
-                
-                if (errorMessage.includes('row-level security') || 
-                    errorMessage.includes('RLS') ||
-                    errorMessage.includes('permission') ||
-                    errorCode === 'PGRST301' ||
-                    errorCode === '42501') {
-                  Alert.alert(
-                    "Permission Denied", 
-                    `Cannot delete image. The file path may not match the RLS policy.\n\nPath: ${oldPath}\n\nExpected: sample-images/${currentUserId}/%\n\nPlease check your Supabase storage RLS policies.`
-                  );
-                  return;
-                }
-                
-                // Check for file not found
-                if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
-                  // File might already be deleted, just update the UI
-                  console.log('[DELETE] File not found, assuming already deleted');
-                  const newSampleImages = sampleImages.filter((_, i) => i !== index);
-                  setSampleImages(newSampleImages);
-                  
-                  // Save to database
-                  const prof = await loadProfileFromSupabase(user?.id || '');
-                  if (prof && user?.id) {
-                    await saveProfileToSupabase(user.id, {
-                      ...prof,
-                      sampleImages: newSampleImages,
-                    });
-                  }
-                  
-                  Alert.alert("Success", "Sample image removed successfully.");
-                  return;
-                }
-                
-                throw deleteError;
-              }
-              
-              console.log('[DELETE] File deleted successfully:', deleteData);
-              
-              // Update local state
-              const newSampleImages = sampleImages.filter((_, i) => i !== index);
-              setSampleImages(newSampleImages);
-              
-              // Save to database
-              const prof = await loadProfileFromSupabase(user?.id || '');
-              if (prof && user?.id) {
-                await saveProfileToSupabase(user.id, {
-                  ...prof,
-                  sampleImages: newSampleImages,
-                });
-                console.log('[DELETE] Database updated successfully');
-              }
-              
-              Alert.alert("Success", "Sample image removed successfully.");
-            } catch (error: any) {
-              console.error('[DELETE] Error removing sample image:', error);
-              console.error('[DELETE] Error stack:', error?.stack);
-              const errorMessage = error?.message || 'Failed to remove sample image. Please try again.';
-              Alert.alert("Error", errorMessage);
-            }
+      // Extract path from URL - handle different URL formats
+      let oldPath: string | null = null;
+      
+      console.log('[DELETE] Attempting to extract path from URL:', imageUrl);
+      console.log('[DELETE] Current user ID:', currentUserId);
+      
+      const urlParts = imageUrl.split('/');
+      const avatarsIndex = urlParts.findIndex(part => part === 'avatars');
+      
+      if (avatarsIndex >= 0 && avatarsIndex < urlParts.length - 1) {
+        // Get path after 'avatars' - this is the storage path we need
+        oldPath = urlParts.slice(avatarsIndex + 1).join('/');
+        console.log('[DELETE] Extracted path (method 1):', oldPath);
+      } else {
+        // If URL doesn't contain 'avatars', check if it's already a relative path
+        if (imageUrl.startsWith('sample-images/')) {
+          oldPath = imageUrl;
+          console.log('[DELETE] Using URL as direct path:', oldPath);
+        } else {
+          // Try to find 'public' and get path after it
+          const publicIndex = urlParts.findIndex(part => part === 'public');
+          if (publicIndex >= 0 && publicIndex < urlParts.length - 1) {
+            // Skip 'public' and get everything after
+            oldPath = urlParts.slice(publicIndex + 1).join('/');
+            console.log('[DELETE] Extracted path (method 2):', oldPath);
           }
         }
-      ]
-    );
+      }
+
+      if (!oldPath) {
+        console.error('[DELETE] Could not extract path from URL:', imageUrl);
+        console.error('[DELETE] URL parts:', urlParts);
+        const errorMsg = `Could not determine file path from URL.\n\nURL: ${imageUrl.substring(0, 100)}...\n\nPlease check the browser console for details.`;
+        if (Platform.OS === 'web') {
+          window.alert("Error: " + errorMsg);
+        } else {
+          Alert.alert("Error", errorMsg);
+        }
+        return;
+      }
+      
+      // Ensure the path doesn't have query parameters or fragments
+      oldPath = oldPath.split('?')[0].split('#')[0];
+      
+      // Verify the path contains the user's ID (security check)
+      if (!oldPath.includes(currentUserId)) {
+        console.warn('[DELETE] Path does not contain user ID. Path:', oldPath, 'User ID:', currentUserId);
+        // Still try to delete, but log the warning
+      }
+      
+      console.log('[DELETE] Final path to delete:', oldPath);
+      console.log('[DELETE] Expected pattern: sample-images/' + currentUserId + '/%');
+
+      // Delete from storage
+      console.log('[DELETE] Calling supabase.storage.from("avatars").remove([...])');
+      const { data: deleteData, error: deleteError } = await supabase.storage
+        .from('avatars')
+        .remove([oldPath]);
+
+      if (deleteError) {
+        console.error('[DELETE] Storage delete error:', deleteError);
+        console.error('[DELETE] Delete error details:', JSON.stringify(deleteError, null, 2));
+        console.error('[DELETE] Attempted path:', oldPath);
+        console.error('[DELETE] User ID:', currentUserId);
+        console.error('[DELETE] Expected pattern: sample-images/' + currentUserId + '/%');
+        
+        // Check if it's an RLS policy error
+        const errorMessage = deleteError.message || '';
+        const errorCode = (deleteError as any)?.code || '';
+        
+        if (errorMessage.includes('row-level security') || 
+            errorMessage.includes('RLS') ||
+            errorMessage.includes('permission') ||
+            errorCode === 'PGRST301' ||
+            errorCode === '42501') {
+          const errorMsg = `Cannot delete image. The file path may not match the RLS policy.\n\nPath: ${oldPath}\n\nExpected: sample-images/${currentUserId}/%\n\nPlease check your Supabase storage RLS policies.`;
+          if (Platform.OS === 'web') {
+            window.alert("Permission Denied: " + errorMsg);
+          } else {
+            Alert.alert("Permission Denied", errorMsg);
+          }
+          return;
+        }
+        
+        // Check for file not found
+        if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
+          // File might already be deleted, just update the UI
+          console.log('[DELETE] File not found, assuming already deleted');
+          const newSampleImages = sampleImages.filter((_, i) => i !== index);
+          setSampleImages(newSampleImages);
+          
+          // Save to database
+          const prof = await loadProfileFromSupabase(user?.id || '');
+          if (prof && user?.id) {
+            await saveProfileToSupabase(user.id, {
+              ...prof,
+              sampleImages: newSampleImages,
+            });
+          }
+          
+          if (Platform.OS === 'web') {
+            window.alert("Success: Sample image removed successfully.");
+          } else {
+            Alert.alert("Success", "Sample image removed successfully.");
+          }
+          return;
+        }
+        
+        throw deleteError;
+      }
+      
+      console.log('[DELETE] File deleted successfully:', deleteData);
+      
+      // Update local state
+      const newSampleImages = sampleImages.filter((_, i) => i !== index);
+      setSampleImages(newSampleImages);
+      
+      // Save to database
+      const prof = await loadProfileFromSupabase(user?.id || '');
+      if (prof && user?.id) {
+        await saveProfileToSupabase(user.id, {
+          ...prof,
+          sampleImages: newSampleImages,
+        });
+        console.log('[DELETE] Database updated successfully');
+      }
+      
+      if (Platform.OS === 'web') {
+        window.alert("Success: Sample image removed successfully.");
+      } else {
+        Alert.alert("Success", "Sample image removed successfully.");
+      }
+    } catch (error: any) {
+      console.error('[DELETE] Error removing sample image:', error);
+      console.error('[DELETE] Error stack:', error?.stack);
+      const errorMessage = error?.message || 'Failed to remove sample image. Please try again.';
+      if (Platform.OS === 'web') {
+        window.alert("Error: " + errorMessage);
+      } else {
+        Alert.alert("Error", errorMessage);
+      }
+    }
   };
 
   // Delete account function
@@ -1807,6 +2045,25 @@ export default function PartnerSettingsScreen() {
               </Text>
             </Pressable>
             <Pressable
+              style={[styles.tab, activeTab === 'subscription' && styles.tabActive]}
+              onPress={() => {
+                setActiveTab('subscription');
+                // Refresh subscription status when switching to subscription tab
+                if (user) {
+                  loadSubscriptionStatus();
+                }
+              }}
+            >
+              <Ionicons
+                name={activeTab === 'subscription' ? 'star' : 'star-outline'}
+                size={18}
+                color={activeTab === 'subscription' ? COLORS.primary : COLORS.textLight}
+              />
+              <Text style={[styles.tabText, activeTab === 'subscription' && styles.tabTextActive]}>
+                Premium
+              </Text>
+            </Pressable>
+            <Pressable
               style={[styles.tab, activeTab === 'account' && styles.tabActive]}
               onPress={() => setActiveTab('account')}
             >
@@ -1884,7 +2141,7 @@ export default function PartnerSettingsScreen() {
 
                     {profileImage && (
                       <Pressable
-                        onPress={removeProfileImage}
+                        onPress={() => removeProfileImage()}
                         style={[styles.imageActionButton, styles.imageActionButtonDanger]}
                         disabled={uploadingImage}
                       >
@@ -1902,7 +2159,7 @@ export default function PartnerSettingsScreen() {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Sample Images</Text>
                 <Text style={styles.cardSubtitle}>
-                  Upload sample images of your catering work. These will appear in the image carousel on your service details page for customers to browse.
+                  Upload sample images of your catering work. These will appear in the image carousel on your service details page for customers to browse. Maximum 10 images allowed.
                 </Text>
 
                 <View style={styles.sampleImagesSection}>
@@ -1927,20 +2184,22 @@ export default function PartnerSettingsScreen() {
                         </Pressable>
                       </View>
                     ))}
-                    <Pressable
-                      style={styles.sampleImageAddButton}
-                      onPress={pickSampleImage}
-                      disabled={uploadingSampleImage}
-                    >
-                      {uploadingSampleImage ? (
-                        <ActivityIndicator size="small" color={COLORS.primary} />
-                      ) : (
-                        <>
-                          <Ionicons name="add" size={32} color={COLORS.primary} />
-                          <Text style={styles.sampleImageAddText}>Add Image</Text>
-                        </>
-                      )}
-                    </Pressable>
+                    {sampleImages.length < 10 && (
+                      <Pressable
+                        style={styles.sampleImageAddButton}
+                        onPress={pickSampleImage}
+                        disabled={uploadingSampleImage}
+                      >
+                        {uploadingSampleImage ? (
+                          <ActivityIndicator size="small" color={COLORS.primary} />
+                        ) : (
+                          <>
+                            <Ionicons name="add" size={32} color={COLORS.primary} />
+                            <Text style={styles.sampleImageAddText}>Add Image</Text>
+                          </>
+                        )}
+                      </Pressable>
+                    )}
                   </ScrollView>
                 </View>
               </View>
@@ -2010,17 +2269,6 @@ export default function PartnerSettingsScreen() {
                     onChangeText={setWebsite}
                     autoCapitalize="none"
                   />
-                </View>
-
-                <View style={styles.formGroup}>
-            <Text style={styles.label}>Address / Service Area</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Tayabas / Lucena / nearby areas"
-              placeholderTextColor="#9ca3af"
-              value={address}
-              onChangeText={setAddress}
-            />
                 </View>
 
                 <View style={styles.formGroup}>
@@ -2144,9 +2392,6 @@ export default function PartnerSettingsScreen() {
                       )}
                       {email && (
                         <Text style={styles.previewMetaText}>✉️ {email}</Text>
-                      )}
-                      {address && (
-                        <Text style={styles.previewMetaText}>📍 {address}</Text>
                       )}
                       {website && (
                         <Text style={styles.previewMetaText}>🌐 {website}</Text>
@@ -2473,6 +2718,159 @@ export default function PartnerSettingsScreen() {
                     {savingLocations ? "Saving..." : "Save Documents"}
                   </Text>
                 </Pressable>
+              </View>
+            </>
+          )}
+
+          {activeTab === 'subscription' && (
+            <>
+              <View style={styles.card}>
+                <View style={styles.subscriptionHeader}>
+                  <Ionicons name="star" size={32} color={COLORS.primary} />
+                  <Text style={styles.cardTitle}>Premium Subscription</Text>
+                </View>
+                <Text style={styles.cardSubtitle}>
+                  Get featured in our premium section and increase your visibility to customers.
+                </Text>
+
+                {loadingSubscription ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={styles.loadingText}>Loading subscription status...</Text>
+                  </View>
+                ) : activeSubscription ? (
+                  <View style={styles.activeSubscriptionCard}>
+                    <View style={styles.subscriptionStatusBadge}>
+                      <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+                      <Text style={styles.subscriptionStatusText}>Active Premium</Text>
+                    </View>
+                    <View style={styles.subscriptionInfo}>
+                      <Text style={styles.subscriptionInfoLabel}>Plan:</Text>
+                      <Text style={styles.subscriptionInfoValue}>
+                        {activeSubscription.plan_type === 'monthly' ? 'Monthly' : 'Yearly'}
+                      </Text>
+                    </View>
+                    <View style={styles.subscriptionInfo}>
+                      <Text style={styles.subscriptionInfoLabel}>Amount:</Text>
+                      <Text style={styles.subscriptionInfoValue}>
+                        ₱{activeSubscription.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
+                    </View>
+                    {activeSubscription.expires_at && (
+                      <View style={styles.subscriptionInfo}>
+                        <Text style={styles.subscriptionInfoLabel}>Expires:</Text>
+                        <Text style={styles.subscriptionInfoValue}>
+                          {new Date(activeSubscription.expires_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </Text>
+                      </View>
+                    )}
+                    {activeSubscription.started_at && (
+                      <View style={styles.subscriptionInfo}>
+                        <Text style={styles.subscriptionInfoLabel}>Started:</Text>
+                        <Text style={styles.subscriptionInfoValue}>
+                          {new Date(activeSubscription.started_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </Text>
+                      </View>
+                    )}
+                    
+                    {/* Cancel Subscription Button */}
+                    <TouchableOpacity
+                      style={styles.cancelSubscriptionButton}
+                      onPress={handleCancelSubscription}
+                      disabled={loadingSubscription}
+                    >
+                      <Ionicons name="close-circle" size={18} color="#ef4444" />
+                      <Text style={styles.cancelSubscriptionText}>Cancel Subscription</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.subscriptionPlans}>
+                      <Pressable
+                        style={styles.subscriptionPlanCard}
+                        onPress={() => handleSubscribe('monthly')}
+                      >
+                        <View style={styles.planHeader}>
+                          <Text style={styles.planName}>Monthly Plan</Text>
+                          <View style={styles.planBadge}>
+                            <Text style={styles.planBadgeText}>Popular</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.planPrice}>₱{SUBSCRIPTION_PRICES.monthly}</Text>
+                        <Text style={styles.planPeriod}>per month</Text>
+                        <View style={styles.planFeatures}>
+                          <View style={styles.planFeature}>
+                            <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+                            <Text style={styles.planFeatureText}>Featured in Premium Section</Text>
+                          </View>
+                          <View style={styles.planFeature}>
+                            <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+                            <Text style={styles.planFeatureText}>Increased Visibility</Text>
+                          </View>
+                          <View style={styles.planFeature}>
+                            <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+                            <Text style={styles.planFeatureText}>Priority Support</Text>
+                          </View>
+                        </View>
+                        <Pressable
+                          style={styles.subscribeButton}
+                        >
+                          <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
+                        </Pressable>
+                      </Pressable>
+
+                      <Pressable
+                        style={[styles.subscriptionPlanCard, styles.yearlyPlanCard]}
+                        onPress={() => handleSubscribe('yearly')}
+                      >
+                        <View style={styles.planHeader}>
+                          <Text style={styles.planName}>Yearly Plan</Text>
+                          <View style={[styles.planBadge, styles.yearlyBadge]}>
+                            <Text style={styles.planBadgeText}>Best Value</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.planPrice}>₱{SUBSCRIPTION_PRICES.yearly}</Text>
+                        <Text style={styles.planPeriod}>per year</Text>
+                        <Text style={styles.planSavings}>
+                          Save ₱{(SUBSCRIPTION_PRICES.monthly * 12 - SUBSCRIPTION_PRICES.yearly).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}!
+                        </Text>
+                        <View style={styles.planFeatures}>
+                          <View style={styles.planFeature}>
+                            <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+                            <Text style={styles.planFeatureText}>Featured in Premium Section</Text>
+                          </View>
+                          <View style={styles.planFeature}>
+                            <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+                            <Text style={styles.planFeatureText}>Increased Visibility</Text>
+                          </View>
+                          <View style={styles.planFeature}>
+                            <Ionicons name="checkmark-circle" size={16} color="#22c55e" />
+                            <Text style={styles.planFeatureText}>Priority Support</Text>
+                          </View>
+                        </View>
+                        <Pressable
+                          style={[styles.subscribeButton, styles.yearlyButton]}
+                        >
+                          <Text style={styles.subscribeButtonText}>Subscribe Now</Text>
+                        </Pressable>
+                      </Pressable>
+                    </View>
+                    {subscriptionError && (
+                      <View style={styles.errorContainer}>
+                        <Ionicons name="alert-circle" size={20} color="#ef4444" />
+                        <Text style={styles.subscriptionErrorText}>{subscriptionError}</Text>
+                      </View>
+                    )}
+                  </>
+                )}
               </View>
             </>
           )}
@@ -3241,6 +3639,21 @@ export default function PartnerSettingsScreen() {
           }
         />
       )}
+
+      {/* Subscription Payment Modal */}
+      {selectedPlanType && pendingSubscriptionId && (
+        <SubscriptionPaymentModal
+          visible={showPaymentModal}
+          onClose={() => {
+            setShowPaymentModal(false);
+            setSelectedPlanType(null);
+            setPendingSubscriptionId(null);
+          }}
+          planType={selectedPlanType}
+          subscriptionId={pendingSubscriptionId}
+          onPaymentSuccess={handlePaymentSuccess}
+        />
+      )}
     </View>
   );
 }
@@ -3945,6 +4358,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 2,
+    zIndex: 10,
+    ...(Platform.OS === 'web' && {
+      cursor: 'pointer',
+      pointerEvents: 'auto',
+    }),
   },
   sampleImageAddButton: {
     width: 120,
@@ -4191,6 +4609,191 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: Platform.OS === 'web' ? 14 : 15
-  }
+  },
+  // Subscription Styles
+  subscriptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+  activeSubscriptionCard: {
+    backgroundColor: '#f0fdf4',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#22c55e',
+    marginTop: 16,
+  },
+  subscriptionStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  subscriptionStatusText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#22c55e',
+  },
+  subscriptionInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  subscriptionInfoLabel: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    fontWeight: '500',
+  },
+  subscriptionInfoValue: {
+    fontSize: 14,
+    color: COLORS.text,
+    fontWeight: '600',
+  },
+  subscriptionPlans: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 24,
+    flexWrap: 'wrap',
+  },
+  subscriptionPlanCard: {
+    flex: 1,
+    minWidth: 200,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  yearlyPlanCard: {
+    borderColor: COLORS.primary,
+    backgroundColor: '#fffbf0',
+  },
+  planHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  planName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  planBadge: {
+    backgroundColor: COLORS.primary + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  yearlyBadge: {
+    backgroundColor: '#f59e0b' + '20',
+  },
+  planBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  planPrice: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  planPeriod: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 12,
+  },
+  planSavings: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f59e0b',
+    marginBottom: 16,
+  },
+  planFeatures: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  planFeature: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  planFeatureText: {
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  subscribeButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  yearlyButton: {
+    backgroundColor: '#f59e0b',
+  },
+  subscribeButtonDisabled: {
+    opacity: 0.6,
+  },
+  subscribeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fee2e2',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  subscriptionErrorText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#ef4444',
+  },
+  cancelSubscriptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    backgroundColor: '#fff',
+  },
+  cancelSubscriptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ef4444',
+  },
 });
 

@@ -11,7 +11,6 @@ import BookingsPage from '../../components/admin/BookingsPage';
 import PaymentsPage from '../../components/admin/PaymentsPage';
 import AnalyticsPage from '../../components/admin/AnalyticsPage';
 import SettingsPage from '../../components/admin/SettingsPage';
-import RefundsPage from '../../components/admin/RefundsPage';
 import TicketsPage from '../../components/admin/TicketsPage';
 import { supabase } from '../../services/supabase';
 
@@ -107,6 +106,7 @@ export default function AdminDashboardScreen() {
     totalUsers: 0,
     activeBookings: 0,
     revenue: 0,
+    subscriptionRevenue: 0,
     loading: true
   });
 
@@ -119,7 +119,6 @@ export default function AdminDashboardScreen() {
     { id: "payments", label: "Payments", icon: "card-outline" },
     { id: "analytics", label: "Analytics", icon: "bar-chart-outline" },
     { id: "settings", label: "Settings", icon: "settings-outline" },
-    { id: "refunds", label: "Refunds", icon: "return-down-back-outline" },
   ];
 
   const fetchDashboardStats = async () => {
@@ -131,7 +130,7 @@ export default function AdminDashboardScreen() {
 
       if (usersError) throw usersError;
 
-      // Fetch active bookings count (this month)
+      // Fetch active bookings count (this month) - using correct uppercase status values
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
@@ -140,28 +139,60 @@ export default function AdminDashboardScreen() {
         .from('bookings')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', startOfMonth.toISOString())
-        .in('status', ['confirmed', 'pending']);
+        .in('status', ['CONFIRMED', 'PENDING', 'ON_THE_WAY']);
 
       if (bookingsError) console.warn('Bookings fetch error:', bookingsError);
 
-      // Fetch revenue (last 30 days)
+      // Fetch revenue from completed bookings (last 30 days) - calculate from actual booking data
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      const { data: paymentsData, error: paymentsError } = await supabase
-        .from('payments')
-        .select('amount')
+      const { data: bookingsData, error: bookingsDataError } = await supabase
+        .from('bookings')
+        .select('deposit_amount, remaining_amount, delivery_fee, created_at, status')
         .gte('created_at', thirtyDaysAgo.toISOString())
-        .eq('status', 'completed');
+        .eq('status', 'COMPLETED');
 
-      if (paymentsError) console.warn('Payments fetch error:', paymentsError);
+      if (bookingsDataError) console.warn('Bookings data fetch error:', bookingsDataError);
 
-      const totalRevenue = paymentsData?.reduce((sum, payment) => sum + (payment.amount || 0), 0) || 0;
+      // Calculate revenue from completed bookings
+      let totalRevenue = 0;
+      if (bookingsData) {
+        totalRevenue = bookingsData.reduce((sum, booking) => {
+          const deposit = booking.deposit_amount || 0;
+          const remaining = booking.remaining_amount || 0;
+          const deliveryFee = booking.delivery_fee || 0;
+          return sum + deposit + remaining + deliveryFee;
+        }, 0);
+      }
+
+      // Fallback: Also try to get revenue from payments table if bookings data is not available
+      if (totalRevenue === 0) {
+        const { data: paymentsData, error: paymentsError } = await supabase
+          .from('payments')
+          .select('amount')
+          .gte('created_at', thirtyDaysAgo.toISOString())
+          .eq('status', 'completed');
+
+        if (paymentsError) console.warn('Payments fetch error:', paymentsError);
+        totalRevenue = paymentsData?.reduce((sum, payment) => sum + (payment.amount || 0), 0) || 0;
+      }
+
+      // Fetch subscription revenue from active subscriptions
+      const { data: subscriptionsData, error: subscriptionsError } = await supabase
+        .from('caterer_subscriptions')
+        .select('amount')
+        .eq('status', 'active');
+
+      if (subscriptionsError) console.warn('Subscriptions fetch error:', subscriptionsError);
+
+      const subscriptionRevenue = subscriptionsData?.reduce((sum, sub) => sum + (sub.amount || 0), 0) || 0;
 
       setDashboardStats({
         totalUsers: usersCount || 0,
         activeBookings: bookingsCount || 0,
         revenue: totalRevenue,
+        subscriptionRevenue: subscriptionRevenue,
         loading: false
       });
     } catch (error: any) {
@@ -173,6 +204,13 @@ export default function AdminDashboardScreen() {
   React.useEffect(() => {
     fetchDashboardStats();
   }, []);
+
+  // Refresh dashboard stats when navigating back to dashboard page
+  React.useEffect(() => {
+    if (currentPage === 'dashboard') {
+      fetchDashboardStats();
+    }
+  }, [currentPage]);
 
   const handleApproveApplication = async (applicationId: string) => {
     try {
@@ -280,6 +318,21 @@ export default function AdminDashboardScreen() {
                   </View>
                 </View>
               </View>
+
+              <View style={[styles.statCard, styles.statCardWarning]}>
+                <View style={styles.statCardContent}>
+                  <View style={styles.statCardLeft}>
+                    <Text style={styles.statLabel}>SUBSCRIPTION REVENUE</Text>
+                    <Text style={[styles.statValue, { color: '#f59e0b' }]}>
+                      {dashboardStats.loading ? '...' : `₱${dashboardStats.subscriptionRevenue.toLocaleString()}`}
+                    </Text>
+                    <Text style={styles.statSub}>From subscribed caterers</Text>
+                  </View>
+                  <View style={[styles.statIconContainer, { backgroundColor: '#FEF3C7' }]}>
+                    <Ionicons name="star" size={24} color="#f59e0b" />
+                  </View>
+                </View>
+              </View>
             </View>
 
             {/* Quick Actions */}
@@ -378,12 +431,6 @@ export default function AdminDashboardScreen() {
         return (
           <View style={styles.sectionCard}>
             <SettingsPage />
-          </View>
-        );
-      case "refunds":
-        return (
-          <View style={styles.sectionCard}>
-            <RefundsPage />
           </View>
         );
       default:
@@ -653,6 +700,9 @@ const styles = StyleSheet.create({
     borderLeftWidth: 0
   },
   statCardInfo: {
+    borderLeftWidth: 0
+  },
+  statCardWarning: {
     borderLeftWidth: 0
   },
   statCardContent: {
