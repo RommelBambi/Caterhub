@@ -401,9 +401,9 @@ export default function HomeScreen({ navigation }: any) {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.serviceName}>{svc.name}</Text>
                         {(svc.pricePerHead ?? 0) > 0 && (
-                          <Text style={styles.servicePrice}>
+                        <Text style={styles.servicePrice}>
                             ₱{svc.pricePerHead} per head
-                          </Text>
+                        </Text>
                         )}
                         <View
                           style={{
@@ -601,9 +601,9 @@ export default function HomeScreen({ navigation }: any) {
                              {svc.name}
                            </Text>
                            {(svc.pricePerHead ?? 0) > 0 && (
-                             <Text style={styles.nearbyPrice} numberOfLines={1}>
+                           <Text style={styles.nearbyPrice} numberOfLines={1}>
                                ₱{svc.pricePerHead} per head
-                             </Text>
+                           </Text>
                            )}
                            <View
                              style={{
@@ -690,9 +690,9 @@ export default function HomeScreen({ navigation }: any) {
                      <View style={{ flex: 1 }}>
                        <Text style={styles.serviceName}>{svc.name}</Text>
                        {(svc.pricePerHead ?? 0) > 0 && (
-                         <Text style={styles.servicePrice}>
-                           price start at {svc.pricePerHead} per head
-                         </Text>
+                       <Text style={styles.servicePrice}>
+                         price start at {svc.pricePerHead} per head
+                       </Text>
                        )}
                        <View
                          style={{
@@ -810,9 +810,9 @@ export default function HomeScreen({ navigation }: any) {
                       {svc.name}
                     </Text>
                     {(svc.pricePerHead ?? 0) > 0 && (
-                      <Text style={styles.servicePrice} numberOfLines={1}>
+                    <Text style={styles.servicePrice} numberOfLines={1}>
                         ₱{svc.pricePerHead} per head
-                      </Text>
+                    </Text>
                     )}
                     <View
                       style={{

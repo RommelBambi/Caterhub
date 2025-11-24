@@ -130,17 +130,14 @@ export default function AnalyticsPage() {
             totalRevenue += amount;
           }
 
-          // Calculate platform fee revenue - include both COMPLETED and CONFIRMED
-          // (CONFIRMED bookings may have platform fees calculated already)
-          let platformFee = booking.platform_fee_amount || 0;
+          // Calculate platform fee revenue using current tier percentage (3% for BASE)
+          // Recalculate for consistency with current tier system
+          const currentFeePercentage = 3.00; // Current tier fee (BASE = 3%)
+          let platformFee = 0;
           
-          // If platform_fee_amount is null/0, calculate it from percentage
-          if (platformFee === 0 || !booking.platform_fee_amount) {
-            // Use platform_fee_percentage from booking, or default to 3%
-            const feePercentage = booking.platform_fee_percentage || 3.00;
-            if (amount > 0) {
-              platformFee = amount * (feePercentage / 100);
-            }
+          if (amount > 0) {
+            // Recalculate using current tier percentage instead of historical fees
+            platformFee = amount * (currentFeePercentage / 100);
           }
           
           // Only count platform fees from bookings with actual amounts

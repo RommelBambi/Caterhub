@@ -23,42 +23,42 @@ export async function geocodeAddress(
   // Helper function to try a geocoding query
   const tryGeocode = async (query: string): Promise<GeocodeResult | null> => {
     try {
-      const encodedQuery = encodeURIComponent(query);
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedQuery}&limit=1&countrycodes=ph`;
-      
+    const encodedQuery = encodeURIComponent(query);
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedQuery}&limit=1&countrycodes=ph`;
+    
       console.log(`[geocodeAddress] Trying query: "${query}"`);
-      
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Caterhub-Mobile-App', // Required by Nominatim
-        },
-      });
-      
-      if (!response.ok) {
-        return null;
-      }
-      
-      const data = await response.json();
-      
-      if (!Array.isArray(data) || data.length === 0) {
-        return null;
-      }
-      
-      const result = data[0];
-      const lat = parseFloat(result.lat);
-      const lon = parseFloat(result.lon);
-      
-      if (isNaN(lat) || isNaN(lon)) {
-        return null;
-      }
-      
-      console.log(`[geocodeAddress] ✅ Geocoded "${query}" to ${lat}, ${lon}`);
-      
-      return {
-        latitude: lat,
-        longitude: lon,
-        address: result.display_name || query,
-      };
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Caterhub-Mobile-App', // Required by Nominatim
+      },
+    });
+    
+    if (!response.ok) {
+      return null;
+    }
+    
+    const data = await response.json();
+    
+    if (!Array.isArray(data) || data.length === 0) {
+      return null;
+    }
+    
+    const result = data[0];
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    
+    if (isNaN(lat) || isNaN(lon)) {
+      return null;
+    }
+    
+    console.log(`[geocodeAddress] ✅ Geocoded "${query}" to ${lat}, ${lon}`);
+    
+    return {
+      latitude: lat,
+      longitude: lon,
+      address: result.display_name || query,
+    };
     } catch (error) {
       return null;
     }

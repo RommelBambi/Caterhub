@@ -3198,15 +3198,6 @@ export default function PartnerSettingsScreen() {
                   </View>
                 )}
 
-                <View style={styles.accountInfoRow}>
-                  <View style={styles.accountInfoLeft}>
-                    <Text style={styles.accountInfoLabel}>Account Status</Text>
-                    <Text style={[styles.accountInfoValue, styles.accountStatusActive]}>
-                      {user.role === "CATER" ? "✓ Verified" : "Pending Verification"}
-                    </Text>
-                  </View>
-                </View>
-
                 {!isWeb && (
                   <>
                     <View style={styles.logoutSection}>

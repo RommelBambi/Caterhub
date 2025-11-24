@@ -183,21 +183,29 @@ export default function PartnerWalletScreen() {
         }
       });
 
-      const avgFeePercentage = feePercentages.length > 0
-        ? feePercentages.reduce((a, b) => a + b, 0) / feePercentages.length
-        : null;
-
-      // Get current tier from monthly GMV or default to BASE
+      // Get current tier and fee percentage from monthly GMV
+      // The tiered system: BASE = 3%, TIER_1 = 2%, TIER_2 = 1%
       const currentMonth = new Date();
       currentMonth.setDate(1);
       const { data: gmvData } = await supabase
         .from('caterer_monthly_gmv')
-        .select('next_month_fee_tier')
+        .select('next_month_fee_tier, next_month_fee_percentage')
         .eq('caterer_id', user.id)
         .eq('month', currentMonth.toISOString().split('T')[0])
         .maybeSingle();
 
       const currentTier = gmvData?.next_month_fee_tier || 'BASE';
+      // Use the current tier's fee percentage instead of averaging historical fees
+      // This shows what fee percentage applies to new bookings
+      const currentFeePercentage = gmvData?.next_month_fee_percentage || 3.00;
+
+      // Recalculate platform fees using current tier percentage instead of historical fees
+      // Gross Revenue = Deposits + Remaining
+      const grossRevenue = totalDeposits + totalRemaining;
+      // Calculate platform fees using current tier percentage
+      const recalculatedPlatformFees = grossRevenue * (currentFeePercentage / 100);
+      // Recalculate net earnings based on current tier fees
+      const recalculatedNetEarnings = grossRevenue - recalculatedPlatformFees;
 
       // Fetch withdrawal requests to calculate available balance
       const { data: withdrawalsData, error: withdrawalsError } = await supabase
@@ -216,8 +224,8 @@ export default function PartnerWalletScreen() {
         0
       );
       
-      // Calculate available balance (earnings after platform fees, minus pending withdrawals)
-      const availableBalance = Math.max(0, totalEarnings - totalPendingWithdrawals);
+      // Calculate available balance (recalculated net earnings minus pending withdrawals)
+      const availableBalance = Math.max(0, recalculatedNetEarnings - totalPendingWithdrawals);
 
       // Debug logging
       console.log('[PartnerWalletScreen] Earnings calculation:', {
@@ -242,9 +250,9 @@ export default function PartnerWalletScreen() {
         completed_bookings: completedBookings.length,
         total_deposits_received: totalDeposits,
         total_remaining_received: totalRemaining,
-        total_earnings: availableBalance, // This is now the available balance
-        total_platform_fees_paid: totalPlatformFees,
-        avg_fee_percentage: avgFeePercentage,
+        total_earnings: availableBalance, // Available balance after current tier fees
+        total_platform_fees_paid: recalculatedPlatformFees, // Recalculated using current tier percentage
+        avg_fee_percentage: currentFeePercentage, // Current tier's fee percentage
         current_tier: currentTier,
       });
 
@@ -461,12 +469,18 @@ export default function PartnerWalletScreen() {
                   <Text style={[styles.summaryValue, { color: COLORS.primary }]}>
                     {formatCurrency(earnings.total_earnings)}
                   </Text>
+                  <Text style={[styles.summarySubtext, { fontSize: 11, marginTop: 4 }]}>
+                    Net (after fees)
+                  </Text>
                 </View>
 
                 <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Platform Fees</Text>
+                  <Text style={styles.summaryLabel}>Platform Fees Paid</Text>
                   <Text style={[styles.summaryValue, { color: COLORS.danger }]}>
                     {formatCurrency(earnings.total_platform_fees_paid)}
+                  </Text>
+                  <Text style={[styles.summarySubtext, { fontSize: 11, marginTop: 4 }]}>
+                    Historical total
                   </Text>
                 </View>
 
@@ -502,11 +516,24 @@ export default function PartnerWalletScreen() {
                     {formatCurrency(earnings.total_remaining_received)}
                   </Text>
                 </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>Gross Revenue:</Text>
+                  <Text style={[styles.breakdownValue, { fontWeight: '700' }]}>
+                    {formatCurrency((earnings.total_deposits_received || 0) + (earnings.total_remaining_received || 0))}
+                  </Text>
+                </View>
+                <View style={[styles.breakdownRow, { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#e5e7eb' }]}>
+                  <Text style={styles.breakdownLabel}>Platform Fees Paid:</Text>
+                  <Text style={[styles.breakdownValue, { color: COLORS.danger }]}>
+                    {formatCurrency(earnings.total_platform_fees_paid)}
+                  </Text>
+                </View>
                 {earnings.avg_fee_percentage && (
                   <View style={styles.breakdownRow}>
-                    <Text style={styles.breakdownLabel}>Avg. Platform Fee:</Text>
+                    <Text style={styles.breakdownLabel}>Current Platform Fee:</Text>
                     <Text style={styles.breakdownValue}>
                       {earnings.avg_fee_percentage.toFixed(2)}%
+                      <Text style={{ fontSize: 12, color: '#6b7280', fontWeight: '400' }}></Text>
                     </Text>
                   </View>
                 )}
@@ -805,6 +832,11 @@ const styles = StyleSheet.create({
     fontSize: Platform.OS === 'web' ? 20 : 22,
     fontWeight: "700",
     color: "#111827"
+  },
+  summarySubtext: {
+    fontSize: 11,
+    color: "#9ca3af",
+    marginTop: 4
   },
   tierBadge: {
     alignSelf: 'flex-start',

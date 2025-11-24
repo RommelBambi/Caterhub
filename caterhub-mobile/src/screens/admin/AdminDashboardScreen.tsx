@@ -158,30 +158,25 @@ export default function AdminDashboardScreen() {
       }
 
       // Calculate platform fee revenue from bookings
-      // This is the actual revenue the platform earns (not total booking value)
+      // Recalculate using current tier percentage (3% for BASE) for consistency
+      // This shows what revenue would be if all bookings used current tier fee
       let totalRevenue = 0;
+      const currentFeePercentage = 3.00; // Current tier fee (BASE = 3%)
+      
       if (bookingsData && bookingsData.length > 0) {
         console.log('[AdminDashboard] Found bookings:', bookingsData.length);
         totalRevenue = bookingsData.reduce((sum, booking) => {
-          let platformFee = booking.platform_fee_amount || 0;
+          const deposit = booking.deposit_amount || 0;
+          const remaining = booking.remaining_amount || 0;
+          const deliveryFee = booking.delivery_fee || 0;
+          const totalAmount = deposit + remaining + deliveryFee;
           
-          // If platform_fee_amount is not set, calculate it from the booking amounts
-          if (platformFee === 0 && booking.platform_fee_percentage) {
-            const deposit = booking.deposit_amount || 0;
-            const remaining = booking.remaining_amount || 0;
-            const deliveryFee = booking.delivery_fee || 0;
-            const totalAmount = deposit + remaining + deliveryFee;
-            platformFee = totalAmount * (booking.platform_fee_percentage / 100);
-            console.log('[AdminDashboard] Calculated platform fee:', {
-              totalAmount,
-              percentage: booking.platform_fee_percentage,
-              platformFee
-            });
-          }
+          // Recalculate platform fee using current tier percentage
+          const platformFee = totalAmount * (currentFeePercentage / 100);
           
           return sum + platformFee;
         }, 0);
-        console.log('[AdminDashboard] Total platform revenue:', totalRevenue);
+        console.log('[AdminDashboard] Total platform revenue (recalculated with', currentFeePercentage + '%):', totalRevenue);
       } else {
         console.log('[AdminDashboard] No bookings found in last 30 days');
       }
