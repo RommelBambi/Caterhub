@@ -5,6 +5,30 @@ import { geocodeAddress } from './geocoding';
 // Cache for geocoded addresses to avoid repeated API calls
 const geocodeCache = new Map<string, { latitude: number; longitude: number }>();
 
+// Hard-coded coordinates for known caterers when geocoding fails
+const KNOWN_CATERER_LOCATIONS: Record<string, { name: string, latitude: number, longitude: number }> = {
+  // Romulo's Catering in Lucena City (approximate coordinates)
+  "Romulo's Catering": { name: "Romulo's Catering", latitude: 13.9427, longitude: 121.6218 },
+  
+  // Add more caterers as needed
+};
+
+/**
+ * Helper function to get coordinates for known caterers
+ * This is a fallback when geocoding fails
+ */
+function getKnownCatererCoordinates(businessName: string): { latitude: number, longitude: number } | null {
+  const knownCaterer = KNOWN_CATERER_LOCATIONS[businessName];
+  if (knownCaterer) {
+    console.log(`[getKnownCatererCoordinates] ✅ Using hard-coded coordinates for ${businessName}`);
+    return { 
+      latitude: knownCaterer.latitude, 
+      longitude: knownCaterer.longitude 
+    };
+  }
+  return null;
+}
+
 
 
 export type DishOption = { id: string; name: string };
@@ -165,6 +189,16 @@ export async function fetchServices(): Promise<Service[]> {
                 console.log(`[fetchServices] ✅ Geocoded location: ${lat}, ${lng}`);
               } else {
                 console.warn(`[fetchServices] ⚠️ Failed to geocode location: ${loc.address}`);
+                
+                // Try fallback to hard-coded coordinates for known caterers
+                if (app.business_name) {
+                  const knownCoords = getKnownCatererCoordinates(app.business_name);
+                  if (knownCoords) {
+                    lat = knownCoords.latitude;
+                    lng = knownCoords.longitude;
+                    console.log(`[fetchServices] ✅ Using fallback hard-coded coordinates for ${app.business_name}: ${lat}, ${lng}`);
+                  }
+                }
               }
               
               // Add delay between geocoding requests (1.1 seconds to respect rate limits)

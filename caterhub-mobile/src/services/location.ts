@@ -16,24 +16,45 @@ export interface ServiceWithLocation {
 
 // Calculate distance between two coordinates using Haversine formula
 export function calculateDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
+  lat1: number | null | undefined,
+  lon1: number | null | undefined,
+  lat2: number | null | undefined,
+  lon2: number | null | undefined
 ): number {
-  if (!lat1 || !lon1 || !lat2 || !lon2) {
-    return Infinity; // Return large distance if coordinates are missing
+  // Check if coordinates are valid numbers
+  if (lat1 == null || lon1 == null || lat2 == null || lon2 == null || 
+      isNaN(Number(lat1)) || isNaN(Number(lon1)) || 
+      isNaN(Number(lat2)) || isNaN(Number(lon2))) {
+    console.warn(`[calculateDistance] Invalid coordinates:`, { lat1, lon1, lat2, lon2 });
+    return Infinity; // Return large distance if coordinates are missing or invalid
   }
   
+  // Convert to numbers to ensure proper calculation
+  const latitude1 = Number(lat1);
+  const longitude1 = Number(lon1);
+  const latitude2 = Number(lat2);
+  const longitude2 = Number(lon2);
+  
   const R = 6371; // Radius of the Earth in kilometers
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const dLat = (latitude2 - latitude1) * Math.PI / 180;
+  const dLon = (longitude2 - longitude1) * Math.PI / 180;
   const a = 
     Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.cos(latitude1 * Math.PI / 180) * Math.cos(latitude2 * Math.PI / 180) * 
     Math.sin(dLon/2) * Math.sin(dLon/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   const distance = R * c; // Distance in kilometers
+  
+  // Log distance calculations for debugging
+  if (distance === Infinity || isNaN(distance)) {
+    console.warn(`[calculateDistance] Calculated invalid distance:`, { 
+      from: `${latitude1},${longitude1}`, 
+      to: `${latitude2},${longitude2}`, 
+      result: distance 
+    });
+    return Infinity;
+  }
+  
   return distance;
 }
 
