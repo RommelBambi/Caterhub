@@ -1,0 +1,1 @@
+React is used as the UI framework for CaterHub not only because it enables building reusable component-based interfaces, but with its capabilities for managing application state, handling user interactions, and creating responsive screens for both web and mobile platforms.

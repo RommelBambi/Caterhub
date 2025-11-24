@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Modal, Pressable, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Modal, Pressable, Alert, Linking, Platform, TouchableOpacity } from 'react-native';
 import { supabase } from '../../services/supabase';
 
 interface PartnerApplication {
@@ -113,7 +113,7 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Application Details</Text>
@@ -122,7 +122,11 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
             </Pressable>
           </View>
 
-          <ScrollView style={styles.scrollContent}>
+          <ScrollView 
+            style={styles.scrollContent}
+            nestedScrollEnabled={true}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Status */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Status</Text>
@@ -220,31 +224,49 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
 
           {/* Actions */}
           {application.status === 'Pending' && (
-            <View style={styles.modalActions}>
-              <Pressable
+            <View style={styles.modalActions} pointerEvents="box-none">
+              <TouchableOpacity
                 style={[styles.modalActionButton, styles.rejectButton]}
-                onPress={() => {
-                  onReject(application.id);
-                  onClose();
+                onPress={async () => {
+                  console.log('[ApplicationDetailModal] Reject button clicked');
+                  Alert.alert('Test', 'Reject button was clicked!');
+                  try {
+                    await onReject(application.id);
+                    onClose();
+                  } catch (error) {
+                    console.error('Error rejecting application:', error);
+                    // Don't close on error
+                  }
                 }}
+                activeOpacity={0.7}
               >
                 <Text style={styles.rejectButtonText}>Reject</Text>
-              </Pressable>
-              <Pressable
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[styles.modalActionButton, styles.approveButton]}
-                onPress={() => {
-                  onApprove(application.id);
-                  onClose();
+                onPress={async () => {
+                  console.log('[ApplicationDetailModal] Approve button PRESSED - TouchableOpacity');
+                  Alert.alert('Test', 'Approve button was clicked!');
+                  try {
+                    console.log('[ApplicationDetailModal] Approve button clicked');
+                    await onApprove(application.id);
+                    console.log('[ApplicationDetailModal] Approve completed, closing modal');
+                    onClose();
+                  } catch (error) {
+                    console.error('[ApplicationDetailModal] Error approving application:', error);
+                    // Don't close on error
+                  }
                 }}
+                activeOpacity={0.7}
               >
                 <Text style={styles.approveButtonText}>Approve</Text>
-              </Pressable>
+              </TouchableOpacity>
             </View>
           )}
           {/* Allow changing approved applications back to rejected */}
           {application.status === 'Approved' && (
-            <View style={styles.modalActions}>
-              <Pressable
+            <View style={styles.modalActions} pointerEvents="box-none">
+              <TouchableOpacity
                 style={[styles.modalActionButton, styles.rejectButton]}
                 onPress={() => {
                   Alert.alert(
@@ -255,23 +277,29 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
                       {
                         text: 'Change to Rejected',
                         style: 'destructive',
-                        onPress: () => {
-                          onReject(application.id);
-                          onClose();
+                        onPress: async () => {
+                          try {
+                            await onReject(application.id);
+                            onClose();
+                          } catch (error) {
+                            console.error('Error rejecting application:', error);
+                            // Don't close on error
+                          }
                         }
                       }
                     ]
                   );
                 }}
+                activeOpacity={0.7}
               >
                 <Text style={styles.rejectButtonText}>Change to Rejected</Text>
-              </Pressable>
+              </TouchableOpacity>
             </View>
           )}
           {/* Allow changing rejected applications back to approved */}
           {application.status === 'Rejected' && (
-            <View style={styles.modalActions}>
-              <Pressable
+            <View style={styles.modalActions} pointerEvents="box-none">
+              <TouchableOpacity
                 style={[styles.modalActionButton, styles.approveButton]}
                 onPress={() => {
                   Alert.alert(
@@ -281,21 +309,29 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
                       { text: 'Cancel', style: 'cancel' },
                       {
                         text: 'Approve',
-                        onPress: () => {
-                          onApprove(application.id);
-                          onClose();
+                        onPress: async () => {
+                          try {
+                            console.log('[ApplicationDetailModal] Approve button clicked (from Rejected)');
+                            await onApprove(application.id);
+                            console.log('[ApplicationDetailModal] Approve completed, closing modal');
+                            onClose();
+                          } catch (error) {
+                            console.error('[ApplicationDetailModal] Error approving application:', error);
+                            // Don't close on error
+                          }
                         }
                       }
                     ]
                   );
                 }}
+                activeOpacity={0.7}
               >
                 <Text style={styles.approveButtonText}>Approve Application</Text>
-              </Pressable>
+              </TouchableOpacity>
             </View>
           )}
         </View>
-      </View>
+      </Pressable>
     </Modal>
   );
 }
@@ -334,6 +370,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 8,
+    flexDirection: 'column',
+    overflow: 'hidden',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -363,6 +401,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+    flex: 1,
   },
   section: {
     marginBottom: 24,
@@ -433,12 +472,29 @@ const styles = StyleSheet.create({
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: COLORS_ADMIN.border,
+    backgroundColor: COLORS_ADMIN.white,
+    zIndex: 10,
+    elevation: 5, // For Android
+    ...Platform.select({
+      web: {
+        position: 'relative' as const,
+        pointerEvents: 'auto' as const,
+      },
+    }),
   },
   modalActionButton: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44, // Ensure minimum touch target size
+    ...Platform.select({
+      web: {
+        cursor: 'pointer',
+        userSelect: 'none',
+      },
+    }),
   },
   approveButton: {
     backgroundColor: COLORS_ADMIN.success,

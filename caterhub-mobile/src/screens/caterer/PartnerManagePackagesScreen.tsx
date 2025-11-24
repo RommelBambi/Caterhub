@@ -24,13 +24,24 @@ import { supabase } from "../../services/supabase";
 import { isWeb } from "../../utils/platform";
 import { Platform } from "react-native";
 
-type CategoryKey = "pork" | "beef" | "chicken" | "vegetable" | "beverages";
+type CategoryKey =
+  | "pork"
+  | "beef"
+  | "chicken"
+  | "rice"
+  | "soup"
+  | "vegetable"
+  | "dessert"
+  | "beverages";
 
 const CATEGORY_LABEL: Record<CategoryKey, string> = {
   pork: "Pork",
   beef: "Beef",
   chicken: "Chicken",
+  rice: "Rice",
+  soup: "Soup",
   vegetable: "Vegetable",
+  dessert: "Dessert",
   beverages: "Beverages"
 };
 
@@ -50,6 +61,7 @@ type CateringPackage = {
   price: string;
   sections: PackageSection[];
   inclusions: PackageInclusion[];
+  selection_mode?: 'FIXED_MENU' | 'CHOICE_BASED';
 };
 
 export default function PartnerManagePackagesScreen() {
@@ -69,6 +81,7 @@ export default function PartnerManagePackagesScreen() {
   // editable fields for current work-in-progress package
   const [pkgName, setPkgName] = useState("");
   const [pkgPrice, setPkgPrice] = useState("");
+  const [selectionMode, setSelectionMode] = useState<'FIXED_MENU' | 'CHOICE_BASED'>('CHOICE_BASED');
 
   // sections (Pork, Beef, etc.) in the order caterer added them
   const [sections, setSections] = useState<PackageSection[]>([]);
@@ -130,6 +143,7 @@ export default function PartnerManagePackagesScreen() {
         price: pkg.price,
         sections: pkg.sections || [],
         inclusions: pkg.inclusions || [],
+        selection_mode: pkg.selection_mode || 'CHOICE_BASED',
       }));
 
       setPackages(transformedPackages);
@@ -150,6 +164,7 @@ export default function PartnerManagePackagesScreen() {
     setEditingPackageId(null);
     setPkgName("");
     setPkgPrice("");
+    setSelectionMode('CHOICE_BASED');
     setSections([]);
     setInclusions([]);
     setNewSectionCategory("pork");
@@ -166,6 +181,7 @@ export default function PartnerManagePackagesScreen() {
     setEditingPackageId(pkg.id);
     setPkgName(pkg.name);
     setPkgPrice(pkg.price);
+    setSelectionMode(pkg.selection_mode || 'CHOICE_BASED');
     setSections(pkg.sections || []);
     setInclusions(pkg.inclusions || []);
     setNewSectionCategory("pork");
@@ -177,7 +193,8 @@ export default function PartnerManagePackagesScreen() {
       name: pkg.name,
       price: pkg.price,
       sections: JSON.parse(JSON.stringify(pkg.sections || [])), // Deep copy
-      inclusions: JSON.parse(JSON.stringify(pkg.inclusions || [])) // Deep copy
+      inclusions: JSON.parse(JSON.stringify(pkg.inclusions || [])), // Deep copy
+      selection_mode: pkg.selection_mode || 'CHOICE_BASED'
     });
   }, []);
 
@@ -211,6 +228,9 @@ export default function PartnerManagePackagesScreen() {
                 const filtered = packages.filter((p) => p.id !== id);
                 setPackages(filtered);
 
+                // Reload from Supabase to ensure list is in sync
+                await loadPackagesFromSupabase();
+
                 if (editingPackageId === id) {
                   handleNewPackage();
                 }
@@ -225,20 +245,53 @@ export default function PartnerManagePackagesScreen() {
         ]
       );
     },
-    [editingPackageId, handleNewPackage, packages, user]
+    [editingPackageId, handleNewPackage, packages, user, loadPackagesFromSupabase]
   );
 
   // add a new category section at the bottom
   const handleAddSection = useCallback(() => {
-    // allow duplicates (multiple Pork sections etc.) for flexibility
+    // For FIXED_MENU, use a generic category; for CHOICE_BASED, use selected category
+    const categoryToUse = selectionMode === 'FIXED_MENU' ? 'pork' : newSectionCategory;
     const newSec: PackageSection = {
-      category: newSectionCategory,
+      category: categoryToUse,
       dishes: []
     };
 
     setSections((prev) => [...prev, newSec]);
     setNewSectionCategory("pork");
-  }, [newSectionCategory]);
+  }, [newSectionCategory, selectionMode]);
+
+  // Auto-create section when switching to FIXED_MENU
+  // Only run when selectionMode changes, not on every render
+  const prevSelectionModeRef = useRef(selectionMode);
+  useEffect(() => {
+    // Only process if selectionMode actually changed
+    if (prevSelectionModeRef.current !== selectionMode) {
+      prevSelectionModeRef.current = selectionMode;
+      
+      if (selectionMode === 'FIXED_MENU') {
+        setSections((currentSections) => {
+          if (currentSections.length === 0) {
+            // Automatically create a single section for Fixed Menu
+            const newSec: PackageSection = {
+              category: 'pork', // Generic category, won't be displayed for Fixed Menu
+              dishes: []
+            };
+            return [newSec];
+          } else if (currentSections.length > 1) {
+            // If switching to FIXED_MENU with multiple sections, consolidate all dishes into first section
+            const allDishes = currentSections.flatMap(sec => sec.dishes);
+            const consolidated: PackageSection = {
+              category: 'pork',
+              dishes: allDishes
+            };
+            return [consolidated];
+          }
+          return currentSections;
+        });
+      }
+    }
+  }, [selectionMode]); // Remove sections.length from dependencies to avoid unnecessary re-runs
 
   // remove an entire section (ex: remove the whole "Pork" block)
   const handleRemoveSection = useCallback((index: number) => {
@@ -294,7 +347,7 @@ export default function PartnerManagePackagesScreen() {
   }
 
   // save package to Supabase
-  async function handleSavePackage(overrideName?: string, overridePrice?: string) {
+  const handleSavePackage = useCallback(async (overrideName?: string, overridePrice?: string) => {
     if (!user) return;
 
     const nameToUse = overrideName !== undefined ? overrideName : pkgName;
@@ -337,6 +390,7 @@ export default function PartnerManagePackagesScreen() {
         price: priceToUse.trim(),
         sections: sections,
         inclusions: inclusions,
+        selection_mode: selectionMode,
         is_active: true,
       };
 
@@ -372,6 +426,7 @@ export default function PartnerManagePackagesScreen() {
         price: savedPackage.price,
         sections: savedPackage.sections || [],
         inclusions: savedPackage.inclusions || [],
+        selection_mode: savedPackage.selection_mode || 'CHOICE_BASED',
       };
 
       // Update local state - sync parent state with saved values
@@ -414,7 +469,7 @@ export default function PartnerManagePackagesScreen() {
       console.error('Error saving package:', error);
       Alert.alert('Error', error?.message || 'Failed to save package');
     }
-  }
+  }, [user, pkgName, pkgPrice, sections, inclusions, selectionMode, editingPackageId, packages, handleNewPackage, loadPackagesFromSupabase]);
 
   // -------- subcomponents --------
 
@@ -454,6 +509,24 @@ export default function PartnerManagePackagesScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.savedName}>{pkg.name}</Text>
               <Text style={styles.savedPrice}>{pkg.price}</Text>
+
+              <View style={styles.savedBadgeContainer}>
+                <View style={[
+                  styles.savedBadge,
+                  (pkg.selection_mode || 'CHOICE_BASED') === 'FIXED_MENU' 
+                    ? styles.savedBadgeFixed 
+                    : styles.savedBadgeChoice
+                ]}>
+                  <Text style={[
+                    styles.savedBadgeText,
+                    (pkg.selection_mode || 'CHOICE_BASED') === 'FIXED_MENU' 
+                      ? styles.savedBadgeTextFixed 
+                      : styles.savedBadgeTextChoice
+                  ]}>
+                    {(pkg.selection_mode || 'CHOICE_BASED') === 'FIXED_MENU' ? 'Fixed Menu' : 'Choice-Based'}
+                  </Text>
+                </View>
+              </View>
 
               <Text style={styles.savedSubtitle}>
                 {pkg.sections.length} section
@@ -598,8 +671,107 @@ export default function PartnerManagePackagesScreen() {
                 ? "Roast Beef"
                 : section.category === "chicken"
                 ? "Chicken BBQ"
+                : section.category === "rice"
+                ? "Garlic Rice"
+                : section.category === "soup"
+                ? "Cream of Mushroom Soup"
+                : section.category === "dessert"
+                ? "Leche Flan"
                 : "Chopsuey"
             }`}
+            placeholderTextColor="#9ca3af"
+            value={draft}
+            blurOnSubmit={false}
+            autoCorrect={false}
+            autoCapitalize="none"
+            editable={true}
+            onChangeText={setDraft}
+          />
+
+          <Pressable
+            style={styles.addBtn}
+            onPress={() => { handleAddDishToSection(sectionIndex, draft); setDraft(""); }}
+          >
+            <Text style={styles.addBtnText}>+ Add Dish</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  });
+
+  // Fixed Menu section block (no category selection, just dishes)
+  const FixedMenuSectionBlock = memo(function FixedMenuSectionBlock(
+    { section, sectionIndex }: { section: PackageSection; sectionIndex: number }
+  ) {
+    const [draft, setDraft] = useState("");
+
+    return (
+      <View style={styles.sectionInnerCard}>
+        {/* Dishes list */}
+        {section.dishes.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>
+              No dishes yet. Add dishes below.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.tableWrapper}>
+            <View style={[styles.row, styles.headerRow]}>
+              <Text
+                style={[styles.cell, styles.headerText, { flex: 1 }]}
+              >
+                #
+              </Text>
+              <Text
+                style={[styles.cell, styles.headerText, { flex: 5 }]}
+              >
+                Dish
+              </Text>
+              <Text
+                style={[styles.cell, styles.headerText, { flex: 2 }]}
+              >
+                Remove
+              </Text>
+            </View>
+
+            {section.dishes.map((dish, dishIndex) => (
+              <View
+                key={sectionIndex + "-" + dishIndex + "-" + dish}
+                style={[
+                  styles.row,
+                  dishIndex === section.dishes.length - 1
+                    ? styles.lastRow
+                    : styles.bodyRow
+                ]}
+              >
+                <Text style={[styles.cell, { flex: 1 }]}>
+                  {dishIndex + 1}
+                </Text>
+                <Text style={[styles.cell, { flex: 5 }]}>{dish}</Text>
+                <View style={[styles.cell, { flex: 2 }]}>
+                  <Pressable
+                    style={styles.removeBtn}
+                    onPress={() =>
+                      handleRemoveDish(sectionIndex, dishIndex)
+                    }
+                  >
+                    <Text style={styles.removeText}>Remove</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Add dish */}
+        <Text style={styles.label}>
+          Add a dish to this package
+        </Text>
+
+        <View style={styles.addDishRow}>
+          <TextInput
+            style={[styles.input, styles.addDishInput]}
+            placeholder="e.g. Beef Caldereta, Pork Adobo, etc."
             placeholderTextColor="#9ca3af"
             value={draft}
             blurOnSubmit={false}
@@ -628,16 +800,33 @@ export default function PartnerManagePackagesScreen() {
     onSave: (name: string, price: string) => void;
     originalPackage: CateringPackage | null;
   }) {
-    const [localName, setLocalName] = useState(pkgName);
-    const [localPrice, setLocalPrice] = useState(pkgPrice);
+    // Initialize local state only once, using function initializer to capture initial values
+    const [localName, setLocalName] = useState(() => pkgName);
+    const [localPrice, setLocalPrice] = useState(() => pkgPrice);
     const [localIncName, setLocalIncName] = useState("");
     const [localIncPrice, setLocalIncPrice] = useState("");
 
-    // When switching edit target, sync local drafts from parent once
+    // When switching edit target (editingPackageId changes), sync local drafts from parent
+    // Only sync when editingPackageId changes, not when pkgName/pkgPrice change
+    // This prevents clearing user input when selection mode or sections change
+    const prevEditingPackageIdRef = useRef<string | null>(editingPackageId);
+    const isInitialMountRef = useRef(true);
+    
     useEffect(() => {
-      setLocalName(pkgName);
-      setLocalPrice(pkgPrice);
-    }, [editingPackageId, pkgName, pkgPrice]);
+      // On initial mount, don't sync (already initialized with useState)
+      if (isInitialMountRef.current) {
+        isInitialMountRef.current = false;
+        return;
+      }
+      
+      // Only sync when editingPackageId actually changes (switching between packages)
+      if (prevEditingPackageIdRef.current !== editingPackageId) {
+        prevEditingPackageIdRef.current = editingPackageId;
+        setLocalName(pkgName);
+        setLocalPrice(pkgPrice);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editingPackageId]); // Only depend on editingPackageId - sync pkgName/pkgPrice when package changes
 
     useEffect(() => {
       console.log('[PackageEditor] mounted');
@@ -689,8 +878,11 @@ export default function PartnerManagePackagesScreen() {
         if (current.name !== original.name || current.price !== original.price) return true;
       }
 
+      // Compare selection_mode
+      if (selectionMode !== (originalPackage.selection_mode || 'CHOICE_BASED')) return true;
+
       return false;
-    }, [editingPackageId, originalPackage, localName, localPrice, sections, inclusions]);
+    }, [editingPackageId, originalPackage, localName, localPrice, sections, inclusions, selectionMode]);
 
     const saveWithDrafts = useCallback(() => {
       // Pass local drafts directly to save function to avoid async state update issues
@@ -717,6 +909,45 @@ export default function PartnerManagePackagesScreen() {
           </Pressable>
         </View>
 
+        {/* Package Type Selection */}
+        <Text style={styles.label}>Package Type</Text>
+        <View style={styles.packageTypeContainer}>
+          <Pressable
+            style={[
+              styles.packageTypeOption,
+              selectionMode === 'FIXED_MENU' && styles.packageTypeOptionActive
+            ]}
+            onPress={() => setSelectionMode('FIXED_MENU')}
+          >
+            <Text style={[
+              styles.packageTypeText,
+              selectionMode === 'FIXED_MENU' && styles.packageTypeTextActive
+            ]}>
+              Fixed Menu
+            </Text>
+            <Text style={styles.packageTypeDescription}>
+              Customer gets all dishes listed (no customization)
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.packageTypeOption,
+              selectionMode === 'CHOICE_BASED' && styles.packageTypeOptionActive
+            ]}
+            onPress={() => setSelectionMode('CHOICE_BASED')}
+          >
+            <Text style={[
+              styles.packageTypeText,
+              selectionMode === 'CHOICE_BASED' && styles.packageTypeTextActive
+            ]}>
+              Choice-Based
+            </Text>
+            <Text style={styles.packageTypeDescription}>
+              Customer chooses from available dishes in each category
+            </Text>
+          </Pressable>
+        </View>
+
         {/* Package name */}
         <Text style={styles.label}>Package Name</Text>
         <TextInput
@@ -732,10 +963,10 @@ export default function PartnerManagePackagesScreen() {
         />
 
         {/* Package price */}
-        <Text style={styles.label}>Base Price</Text>
+        <Text style={styles.label}>Price</Text>
         <TextInput
           style={styles.input}
-          placeholder="e.g. ₱250/head or ₱12,500"
+          placeholder="e.g. ₱250/head"
           placeholderTextColor="#9ca3af"
           value={localPrice}
           blurOnSubmit={false}
@@ -746,67 +977,99 @@ export default function PartnerManagePackagesScreen() {
         />
 
         {/* Sections */}
-        <Text style={styles.label}>Food Sections in this package</Text>
+        <Text style={styles.label}>
+          {selectionMode === 'FIXED_MENU' 
+            ? 'Menu Items in this package (all dishes will be included)' 
+            : 'Food Sections in this package'}
+        </Text>
 
-        {sections.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>
-              No sections yet. Add one below.
-            </Text>
-            <Text style={styles.emptyText}>
-              Example: Pork section, Beef section, etc.
-            </Text>
-          </View>
+        {selectionMode === 'FIXED_MENU' ? (
+          // For Fixed Menu: Show simple dish list without category selection
+          sections.length > 0 ? (
+            <View style={{ marginBottom: 16 }}>
+              {sections.map((section, idx) => (
+                <FixedMenuSectionBlock
+                  key={idx + "-" + section.category}
+                  section={section}
+                  sectionIndex={idx}
+                />
+              ))}
+            </View>
+          ) : (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>
+                No dishes yet. Add dishes below.
+              </Text>
+            </View>
+          )
         ) : (
-          <View style={{ marginBottom: 16 }}>
-            {sections.map((section, idx) => (
-              <SectionBlock
-                key={idx + "-" + section.category}
-                section={section}
-                sectionIndex={idx}
-              />
-            ))}
-          </View>
+          // For Choice-Based: Show sections with categories
+          <>
+            {sections.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyText}>
+                  No sections yet. Add one below.
+                </Text>
+                <Text style={styles.emptyText}>
+                  Example: Pork section, Beef section, etc.
+                </Text>
+              </View>
+            ) : (
+              <View style={{ marginBottom: 16 }}>
+                {sections.map((section, idx) => (
+                  <SectionBlock
+                    key={idx + "-" + section.category}
+                    section={section}
+                    sectionIndex={idx}
+                  />
+                ))}
+              </View>
+            )}
+          </>
         )}
 
-        {/* Add New Section */}
-        <Text style={styles.label}>Add New Section</Text>
-        <View style={styles.addSectionRow}>
-          <View style={styles.categoryPickerRow}>
-            {(["pork", "beef", "chicken", "vegetable", "beverages"] as CategoryKey[]).map(
-              (cat) => (
-                <Pressable
-                  key={cat}
-                  style={[
-                    styles.catChoiceBtn,
-                    newSectionCategory === cat &&
-                      styles.catChoiceBtnActive
-                  ]}
-                  onPress={() => setNewSectionCategory(cat)}
-                >
-                  <Text
-                    style={[
-                      styles.catChoiceText,
-                      newSectionCategory === cat &&
-                        styles.catChoiceTextActive
-                    ]}
-                  >
-                    {CATEGORY_LABEL[cat]}
-                  </Text>
-                </Pressable>
-              )
-            )}
-          </View>
+        {/* Add New Section - Only show for Choice-Based */}
+        {selectionMode === 'CHOICE_BASED' && (
+          <>
+            <Text style={styles.label}>Add New Section</Text>
+            <View style={styles.addSectionRow}>
+              <View style={styles.categoryPickerRow}>
+                {(["pork", "beef", "chicken", "rice", "soup", "vegetable", "dessert", "beverages"] as CategoryKey[]).map(
+                  (cat) => (
+                    <Pressable
+                      key={cat}
+                      style={[
+                        styles.catChoiceBtn,
+                        newSectionCategory === cat &&
+                          styles.catChoiceBtnActive
+                      ]}
+                      onPress={() => setNewSectionCategory(cat)}
+                    >
+                      <Text
+                        style={[
+                          styles.catChoiceText,
+                          newSectionCategory === cat &&
+                            styles.catChoiceTextActive
+                        ]}
+                      >
+                        {CATEGORY_LABEL[cat]}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
+              </View>
 
-          <Pressable
-            style={styles.addSectionMainBtn}
-            onPress={handleAddSection}
-          >
-            <Text style={styles.addSectionMainBtnText}>
-              + Add Section
-            </Text>
-          </Pressable>
-        </View>
+              <Pressable
+                style={styles.addSectionMainBtn}
+                onPress={handleAddSection}
+              >
+                <Text style={styles.addSectionMainBtnText}>
+                  + Add Section
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        )}
 
         {/* Inclusions / Add-ons */}
         <Text style={[styles.label, { marginTop: 20 }]}>
@@ -1494,6 +1757,68 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6b7280",
     lineHeight: 18
+  },
+  packageTypeContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 16
+  },
+  packageTypeOption: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "#fff"
+  },
+  packageTypeOptionActive: {
+    borderColor: "#9333ea",
+    backgroundColor: "#fdf2ff"
+  },
+  packageTypeText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#374151",
+    marginBottom: 4
+  },
+  packageTypeTextActive: {
+    color: "#9333ea"
+  },
+  packageTypeDescription: {
+    fontSize: 11,
+    color: "#6b7280",
+    lineHeight: 16
+  },
+  savedBadgeContainer: {
+    marginTop: 4,
+    marginBottom: 8
+  },
+  savedBadge: {
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    marginBottom: 4
+  },
+  savedBadgeFixed: {
+    backgroundColor: "#dbeafe",
+    borderWidth: 1,
+    borderColor: "#3b82f6"
+  },
+  savedBadgeChoice: {
+    backgroundColor: "#f3e8ff",
+    borderWidth: 1,
+    borderColor: "#9333ea"
+  },
+  savedBadgeText: {
+    fontSize: 11,
+    fontWeight: "600"
+  },
+  savedBadgeTextFixed: {
+    color: "#1e40af"
+  },
+  savedBadgeTextChoice: {
+    color: "#7e22ce"
   }
 });
 

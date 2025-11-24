@@ -19,9 +19,13 @@ export default function CustomizePackage({ route, navigation }: any) {
   // Get sections from raw package data (database format) or categories (legacy format)
   const sections = pkg._raw?.sections || [];
   const categories = pkg.categories || [];
+  const selectionMode = pkg._raw?.selection_mode || 'CHOICE_BASED';
 
-  // If we have sections (new format), convert to category-like structure for selection
-  const selectionCategories: PackageCategory[] = sections.length > 0
+  // If FIXED_MENU, show all dishes as a fixed list (no selection needed)
+  // If CHOICE_BASED, convert to category-like structure for selection
+  const selectionCategories: PackageCategory[] = selectionMode === 'FIXED_MENU'
+    ? [] // No selection needed for fixed menu
+    : sections.length > 0
     ? sections.map((section: any, idx: number) => ({
         id: `section_${idx}`,
         name: section.category || 'Category',
@@ -38,9 +42,12 @@ export default function CustomizePackage({ route, navigation }: any) {
     setChoices(prev => ({ ...prev, [categoryId]: optionId }));
   };
 
-  const allRequiredChosen = selectionCategories.every((cat: PackageCategory) =>
-    cat.required === false ? true : !!choices[cat.id]
-  );
+  // For FIXED_MENU, no selection is required
+  const allRequiredChosen = selectionMode === 'FIXED_MENU' 
+    ? true 
+    : selectionCategories.every((cat: PackageCategory) =>
+        cat.required === false ? true : !!choices[cat.id]
+      );
 
   const goNext = () => {
     const picked = selectionCategories.map((cat: PackageCategory) => {
@@ -77,7 +84,33 @@ export default function CustomizePackage({ route, navigation }: any) {
         </Text>
         <Text style={styles.subtitle}>{service.name}</Text>
 
-        {selectionCategories.length > 0 ? (
+        {/* Show fixed menu for FIXED_MENU packages */}
+        {selectionMode === 'FIXED_MENU' && sections.length > 0 ? (
+          <Card style={styles.catCard}>
+            <Card.Content>
+              <Text style={styles.catTitle}>Fixed Menu - All Dishes Included</Text>
+              {sections.map((section: any, sectionIdx: number) => (
+                <View key={sectionIdx} style={styles.fixedMenuSection}>
+                  <Text style={styles.fixedMenuCategory}>
+                    {String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}
+                  </Text>
+                  {section.dishes && section.dishes.length > 0 ? (
+                    <View style={styles.fixedMenuDishes}>
+                      {section.dishes.map((dish: string, dishIdx: number) => (
+                        <View key={dishIdx} style={styles.fixedMenuDish}>
+                          <Text style={styles.fixedMenuDishText}>• {dish}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              ))}
+              <Text style={styles.muted}>
+                This package includes all listed dishes. No customization needed.
+              </Text>
+            </Card.Content>
+          </Card>
+        ) : selectionCategories.length > 0 ? (
           selectionCategories.map((cat: PackageCategory) => (
             <Card key={cat.id} style={styles.catCard}>
               <Card.Content>
@@ -163,9 +196,9 @@ export default function CustomizePackage({ route, navigation }: any) {
       <View style={styles.footer}>
         <Button
           mode="contained"
-          style={{ flex: 1, backgroundColor: (allRequiredChosen || selectionCategories.length === 0) ? '#FF8000' : '#ccc' }}
+          style={{ flex: 1, backgroundColor: allRequiredChosen ? '#FF8000' : '#ccc' }}
           onPress={goNext}
-          disabled={selectionCategories.length > 0 && !allRequiredChosen}
+          disabled={!allRequiredChosen}
         >
           Continue to booking
         </Button>
@@ -216,5 +249,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderColor: '#e5e7eb',
+  },
+  fixedMenuSection: {
+    marginBottom: 16,
+  },
+  fixedMenuCategory: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  fixedMenuDishes: {
+    marginLeft: 8,
+  },
+  fixedMenuDish: {
+    marginBottom: 4,
+  },
+  fixedMenuDishText: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
   },
 });

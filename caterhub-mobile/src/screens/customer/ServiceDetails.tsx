@@ -278,6 +278,7 @@ export default function ServiceDetails({ route, navigation }: any) {
                   const sections = (pkg as any)._raw?.sections || [];
                   const inclusions = (pkg as any)._raw?.inclusions || [];
                   const categories = pkg.categories || [];
+                  const selectionMode = (pkg as any)._raw?.selection_mode || 'CHOICE_BASED';
                   
                   return (
                     <Card key={pkg.id} style={styles.pkgCard}>
@@ -287,13 +288,24 @@ export default function ServiceDetails({ route, navigation }: any) {
                           <Text style={styles.pkgPrice}>{`₱ ${pkg.pricePerHead}`}</Text>
                         </View>
 
+                        {/* Package type indicator */}
+                        {selectionMode === 'FIXED_MENU' && (
+                          <View style={{ marginBottom: 8 }}>
+                            <Text style={{ fontSize: 12, color: '#3b82f6', fontWeight: '600' }}>
+                              Fixed Menu Package
+                            </Text>
+                          </View>
+                        )}
+
                         {/* Display sections (food categories with dishes) */}
                         {sections.length > 0 && (
                           <>
                             {sections.map((section: any, sectionIdx: number) => (
                               <View key={sectionIdx} style={styles.sectionBlock}>
                                 <Text style={styles.packageSectionTitle}>
-                                  {`Choice of ${String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}`}
+                                  {selectionMode === 'FIXED_MENU'
+                                    ? `${String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}`
+                                    : `Choice of ${String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}`}
                                 </Text>
                                 {/* Dish options are intentionally hidden on the card. They will be shown in the customization flow. */}
                               </View>

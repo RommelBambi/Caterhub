@@ -321,6 +321,7 @@ export interface Database {
           price: string;
           sections: any; // JSONB array of PackageSection
           inclusions: any; // JSONB array of PackageInclusion
+          selection_mode: 'FIXED_MENU' | 'CHOICE_BASED';
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -332,6 +333,7 @@ export interface Database {
           price: string;
           sections?: any;
           inclusions?: any;
+          selection_mode?: 'FIXED_MENU' | 'CHOICE_BASED';
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -343,6 +345,7 @@ export interface Database {
           price?: string;
           sections?: any;
           inclusions?: any;
+          selection_mode?: 'FIXED_MENU' | 'CHOICE_BASED';
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;

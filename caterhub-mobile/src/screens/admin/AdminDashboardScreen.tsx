@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Pressable, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../store/auth';
 import { isWeb } from '../../utils/platform';
@@ -167,16 +167,8 @@ export default function AdminDashboardScreen() {
       }
 
       // Fallback: Also try to get revenue from payments table if bookings data is not available
-      if (totalRevenue === 0) {
-        const { data: paymentsData, error: paymentsError } = await supabase
-          .from('payments')
-          .select('amount')
-          .gte('created_at', thirtyDaysAgo.toISOString())
-          .eq('status', 'completed');
-
-        if (paymentsError) console.warn('Payments fetch error:', paymentsError);
-        totalRevenue = paymentsData?.reduce((sum, payment) => sum + (payment.amount || 0), 0) || 0;
-      }
+      // Note: Payments are stored in bookings table, not a separate payments table
+      // Revenue is already calculated from bookings above
 
       // Fetch subscription revenue from active subscriptions
       const { data: subscriptionsData, error: subscriptionsError } = await supabase
@@ -214,35 +206,91 @@ export default function AdminDashboardScreen() {
 
   const handleApproveApplication = async (applicationId: string) => {
     try {
-      const { error } = await supabase
+      console.log('[Admin] Attempting to approve application:', applicationId);
+      
+      const { data, error } = await supabase
         .from('partner_applications')
         .update({ status: 'Approved', updated_at: new Date().toISOString() })
-        .eq('id', applicationId);
+        .eq('id', applicationId)
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Admin] Error approving application:', error);
+        console.error('[Admin] Error code:', error.code);
+        console.error('[Admin] Error message:', error.message);
+        console.error('[Admin] Error details:', JSON.stringify(error, null, 2));
+        
+        // Check for RLS policy issues
+        if (error.code === '42501' || error.message?.includes('permission') || error.message?.includes('policy')) {
+          Alert.alert(
+            'Permission Denied',
+            'You do not have permission to update application status. Please check your admin role and RLS policies.\n\nError: ' + error.message
+          );
+        } else {
+          Alert.alert('Error', 'Failed to approve application: ' + (error.message || 'Unknown error'));
+        }
+        return;
+      }
+
+      if (!data) {
+        console.warn('[Admin] Update succeeded but no data returned');
+        Alert.alert('Warning', 'Update may have succeeded but could not verify. Please refresh the page.');
+      } else {
+        console.log('[Admin] Successfully approved application:', data.id, 'New status:', data.status);
+        // ADD THIS: Show success message
+        Alert.alert('Success', 'Application approved successfully!');
+      }
       
       // Trigger refresh of the recruitment page
       setRefreshTrigger(prev => prev + 1);
     } catch (error: any) {
-      console.error('Error approving application:', error);
-      alert(error?.message || 'Failed to approve application');
+      console.error('[Admin] Unexpected error approving application:', error);
+      Alert.alert('Error', 'Failed to approve application: ' + (error?.message || 'Unknown error'));
     }
   };
 
   const handleRejectApplication = async (applicationId: string) => {
     try {
-      const { error } = await supabase
+      console.log('[Admin] Attempting to reject application:', applicationId);
+      
+      const { data, error } = await supabase
         .from('partner_applications')
         .update({ status: 'Rejected', updated_at: new Date().toISOString() })
-        .eq('id', applicationId);
+        .eq('id', applicationId)
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Admin] Error rejecting application:', error);
+        console.error('[Admin] Error code:', error.code);
+        console.error('[Admin] Error message:', error.message);
+        console.error('[Admin] Error details:', JSON.stringify(error, null, 2));
+        
+        // Check for RLS policy issues
+        if (error.code === '42501' || error.message?.includes('permission') || error.message?.includes('policy')) {
+          Alert.alert(
+            'Permission Denied',
+            'You do not have permission to update application status. Please check your admin role and RLS policies.\n\nError: ' + error.message
+          );
+        } else {
+          Alert.alert('Error', 'Failed to reject application: ' + (error.message || 'Unknown error'));
+        }
+        return;
+      }
+
+      if (!data) {
+        console.warn('[Admin] Update succeeded but no data returned');
+        Alert.alert('Warning', 'Update may have succeeded but could not verify. Please refresh the page.');
+      } else {
+        console.log('[Admin] Successfully rejected application:', data.id, 'New status:', data.status);
+      }
       
       // Trigger refresh of the recruitment page
       setRefreshTrigger(prev => prev + 1);
     } catch (error: any) {
-      console.error('Error rejecting application:', error);
-      alert(error?.message || 'Failed to reject application');
+      console.error('[Admin] Unexpected error rejecting application:', error);
+      Alert.alert('Error', 'Failed to reject application: ' + (error?.message || 'Unknown error'));
     }
   };
 
