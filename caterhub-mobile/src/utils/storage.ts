@@ -182,16 +182,8 @@ export async function saveForm(f: PartnerForm): Promise<void> {
 
 export async function clearForm(): Promise<void> {
   try {
-    // Clear from Supabase if user is logged in
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase
-        .from('partner_applications')
-        .update({ status: 'Rejected' }) // Soft delete by changing status
-        .eq('user_id', user.id)
-        .eq('status', 'Pending');
-    }
-    // Also clear local storage
+    // Only clear local storage - DO NOT update database status
+    // The application has already been submitted and should remain in 'Pending' status
     await storage.removeItem(STORAGE_KEYS.FORM);
   } catch (error) {
     console.error('Error clearing form:', error);
