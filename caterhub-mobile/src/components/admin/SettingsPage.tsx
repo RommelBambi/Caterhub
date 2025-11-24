@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert } from 'react-native';
 
 const COLORS = {
   primary: "#FF8000",
@@ -19,35 +19,11 @@ export default function SettingsPage() {
   const [platformSettings, setPlatformSettings] = useState({
     platformName: 'CaterHub',
     supportEmail: 'support@caterhub.com',
-    commissionRate: '15',
-    minBookingAmount: '5000',
-    maxBookingAmount: '500000',
-  });
-
-  const [notificationSettings, setNotificationSettings] = useState({
-    emailNotifications: true,
-    smsNotifications: false,
-    newBookingAlerts: true,
-    paymentAlerts: true,
-    applicationAlerts: true,
-  });
-
-  const [securitySettings, setSecuritySettings] = useState({
-    twoFactorAuth: false,
-    sessionTimeout: '30',
-    passwordExpiry: '90',
   });
 
   const handleSavePlatformSettings = () => {
+    // TODO: Implement actual save to database
     Alert.alert('Success', 'Platform settings saved successfully');
-  };
-
-  const handleSaveNotificationSettings = () => {
-    Alert.alert('Success', 'Notification settings saved successfully');
-  };
-
-  const handleSaveSecuritySettings = () => {
-    Alert.alert('Success', 'Security settings saved successfully');
   };
 
   return (
@@ -64,7 +40,9 @@ export default function SettingsPage() {
               style={styles.input}
               value={platformSettings.platformName}
               onChangeText={(text) => setPlatformSettings({ ...platformSettings, platformName: text })}
+              placeholder="CaterHub"
             />
+            <Text style={styles.helpText}>Name displayed to users</Text>
           </View>
 
           <View style={styles.formGroup}>
@@ -74,163 +52,36 @@ export default function SettingsPage() {
               value={platformSettings.supportEmail}
               onChangeText={(text) => setPlatformSettings({ ...platformSettings, supportEmail: text })}
               keyboardType="email-address"
+              placeholder="support@caterhub.com"
             />
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Commission Rate (%)</Text>
-            <TextInput
-              style={styles.input}
-              value={platformSettings.commissionRate}
-              onChangeText={(text) => setPlatformSettings({ ...platformSettings, commissionRate: text })}
-              keyboardType="numeric"
-            />
-            <Text style={styles.helpText}>Platform commission on each completed booking</Text>
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Minimum Booking Amount (₱)</Text>
-            <TextInput
-              style={styles.input}
-              value={platformSettings.minBookingAmount}
-              onChangeText={(text) => setPlatformSettings({ ...platformSettings, minBookingAmount: text })}
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Maximum Booking Amount (₱)</Text>
-            <TextInput
-              style={styles.input}
-              value={platformSettings.maxBookingAmount}
-              onChangeText={(text) => setPlatformSettings({ ...platformSettings, maxBookingAmount: text })}
-              keyboardType="numeric"
-            />
+            <Text style={styles.helpText}>Contact email for customer support</Text>
           </View>
 
           <Pressable style={styles.saveButton} onPress={handleSavePlatformSettings}>
-            <Text style={styles.saveButtonText}>Save Platform Settings</Text>
+            <Text style={styles.saveButtonText}>Save Settings</Text>
           </Pressable>
         </View>
       </View>
 
-      {/* Notification Settings */}
+      {/* Platform Fee Information */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notification Settings</Text>
+        <Text style={styles.sectionTitle}>Platform Fee Structure</Text>
         <View style={styles.card}>
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabel}>
-              <Text style={styles.label}>Email Notifications</Text>
-              <Text style={styles.helpText}>Receive notifications via email</Text>
-            </View>
-            <Switch
-              value={notificationSettings.emailNotifications}
-              onValueChange={(value) => setNotificationSettings({ ...notificationSettings, emailNotifications: value })}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor={COLORS.white}
-            />
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Base Fee:</Text>
+            <Text style={styles.infoValue}>3%</Text>
           </View>
-
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabel}>
-              <Text style={styles.label}>SMS Notifications</Text>
-              <Text style={styles.helpText}>Receive notifications via SMS</Text>
-            </View>
-            <Switch
-              value={notificationSettings.smsNotifications}
-              onValueChange={(value) => setNotificationSettings({ ...notificationSettings, smsNotifications: value })}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor={COLORS.white}
-            />
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>At 300k+ GMV:</Text>
+            <Text style={styles.infoValue}>2% (next month)</Text>
           </View>
-
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabel}>
-              <Text style={styles.label}>New Booking Alerts</Text>
-              <Text style={styles.helpText}>Get notified of new bookings</Text>
-            </View>
-            <Switch
-              value={notificationSettings.newBookingAlerts}
-              onValueChange={(value) => setNotificationSettings({ ...notificationSettings, newBookingAlerts: value })}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor={COLORS.white}
-            />
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>At 500k+ GMV:</Text>
+            <Text style={styles.infoValue}>1% (next month)</Text>
           </View>
-
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabel}>
-              <Text style={styles.label}>Payment Alerts</Text>
-              <Text style={styles.helpText}>Get notified of payment activities</Text>
-            </View>
-            <Switch
-              value={notificationSettings.paymentAlerts}
-              onValueChange={(value) => setNotificationSettings({ ...notificationSettings, paymentAlerts: value })}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor={COLORS.white}
-            />
-          </View>
-
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabel}>
-              <Text style={styles.label}>Application Alerts</Text>
-              <Text style={styles.helpText}>Get notified of new partner applications</Text>
-            </View>
-            <Switch
-              value={notificationSettings.applicationAlerts}
-              onValueChange={(value) => setNotificationSettings({ ...notificationSettings, applicationAlerts: value })}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor={COLORS.white}
-            />
-          </View>
-
-          <Pressable style={styles.saveButton} onPress={handleSaveNotificationSettings}>
-            <Text style={styles.saveButtonText}>Save Notification Settings</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Security Settings */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Security Settings</Text>
-        <View style={styles.card}>
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabel}>
-              <Text style={styles.label}>Two-Factor Authentication</Text>
-              <Text style={styles.helpText}>Add an extra layer of security</Text>
-            </View>
-            <Switch
-              value={securitySettings.twoFactorAuth}
-              onValueChange={(value) => setSecuritySettings({ ...securitySettings, twoFactorAuth: value })}
-              trackColor={{ false: COLORS.border, true: COLORS.primary }}
-              thumbColor={COLORS.white}
-            />
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Session Timeout (minutes)</Text>
-            <TextInput
-              style={styles.input}
-              value={securitySettings.sessionTimeout}
-              onChangeText={(text) => setSecuritySettings({ ...securitySettings, sessionTimeout: text })}
-              keyboardType="numeric"
-            />
-            <Text style={styles.helpText}>Auto logout after inactivity</Text>
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Password Expiry (days)</Text>
-            <TextInput
-              style={styles.input}
-              value={securitySettings.passwordExpiry}
-              onChangeText={(text) => setSecuritySettings({ ...securitySettings, passwordExpiry: text })}
-              keyboardType="numeric"
-            />
-            <Text style={styles.helpText}>Force password change after this period</Text>
-          </View>
-
-          <Pressable style={styles.saveButton} onPress={handleSaveSecuritySettings}>
-            <Text style={styles.saveButtonText}>Save Security Settings</Text>
-          </Pressable>
+          <Text style={styles.helpText}>
+            Platform fees are automatically calculated based on caterer GMV. Fees are tiered and applied to the next month after reaching thresholds.
+          </Text>
         </View>
       </View>
 
@@ -243,16 +94,8 @@ export default function SettingsPage() {
             <Text style={styles.infoValue}>1.0.0</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Environment:</Text>
-            <Text style={styles.infoValue}>Production</Text>
-          </View>
-          <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Database:</Text>
             <Text style={styles.infoValue}>Supabase PostgreSQL</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Last Updated:</Text>
-            <Text style={styles.infoValue}>{new Date().toLocaleDateString()}</Text>
           </View>
         </View>
       </View>
@@ -309,19 +152,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textLight,
     marginTop: 4,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    marginBottom: 12,
-  },
-  switchLabel: {
-    flex: 1,
-    marginRight: 16,
   },
   saveButton: {
     backgroundColor: COLORS.primary,

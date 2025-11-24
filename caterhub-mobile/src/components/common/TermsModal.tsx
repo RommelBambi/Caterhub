@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,8 @@ import {
   Modal,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getActiveTerms, recordAcceptance } from '../../services/terms';
 
 const COLORS = {
   primary: '#FF8000',
@@ -28,48 +25,50 @@ interface TermsModalProps {
   requireAcceptance?: boolean;
 }
 
+// Static terms content
+const TERMS_CONTENT = {
+  title: 'Terms & Conditions',
+  content: `By using CaterHub, you agree to the following terms and conditions:
+
+1. Payment Terms
+• A 50% down payment is required to confirm your booking.
+• The remaining balance must be paid on the day of the event before service begins.
+• We accept GCash and PayMaya for online payments.
+• Cash payments are accepted for the remaining balance on the event day.
+
+2. Cancellation Policy
+• Cancellations made 14+ days before the event: Full refund of deposit
+• Cancellations 7-14 days before: 50% of deposit forfeited
+• Cancellations less than 7 days before: Full deposit forfeited
+• No-shows will be charged the full amount
+
+3. Changes to Booking
+• Guest count changes allowed up to 7 days before the event
+• Menu changes must be finalized at least 14 days before the event
+• Date changes are subject to availability
+• Additional charges may apply for last-minute changes
+
+4. Service Details
+• Service time includes setup and teardown
+• Additional service hours available at extra cost
+• Client is responsible for providing adequate space and utilities
+
+5. Liability & Safety
+• Notify us of any food allergies or dietary restrictions in advance
+• We follow food safety standards but cannot guarantee allergen-free environments
+• Client is responsible for any damage to equipment caused by guests
+
+By clicking "I Agree", you acknowledge that you have read, understood, and agree to be bound by these terms and conditions.`,
+};
+
 export default function TermsModal({
   visible,
   onAccept,
   onDecline,
   requireAcceptance = false,
 }: TermsModalProps) {
-  const [terms, setTerms] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [accepting, setAccepting] = useState(false);
-
-  useEffect(() => {
-    if (visible) {
-      loadTerms();
-    }
-  }, [visible]);
-
-  const loadTerms = async () => {
-    try {
-      setLoading(true);
-      const activeTerms = await getActiveTerms();
-      setTerms(activeTerms);
-    } catch (error) {
-      console.error('Error loading terms:', error);
-      Alert.alert('Error', 'Failed to load Terms & Conditions');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAccept = async () => {
-    if (!terms) return;
-
-    try {
-      setAccepting(true);
-      await recordAcceptance(terms.id);
-      onAccept();
-    } catch (error) {
-      console.error('Error recording acceptance:', error);
-      Alert.alert('Error', 'Failed to record acceptance. Please try again.');
-    } finally {
-      setAccepting(false);
-    }
+  const handleAccept = () => {
+    onAccept();
   };
 
   return (
@@ -92,69 +91,37 @@ export default function TermsModal({
         </View>
 
         {/* Content */}
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Loading Terms & Conditions...</Text>
-          </View>
-        ) : terms ? (
-          <>
-            <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 20 }}>
-              <Text style={styles.title}>{terms.title}</Text>
-              <Text style={styles.version}>Version {terms.version}</Text>
-              <Text style={styles.effectiveDate}>
-                Effective Date: {new Date(terms.effective_date).toLocaleDateString()}
-              </Text>
+        <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 20 }}>
+          <Text style={styles.title}>{TERMS_CONTENT.title}</Text>
+          <View style={styles.divider} />
+          <Text style={styles.contentText}>{TERMS_CONTENT.content}</Text>
+        </ScrollView>
 
-              <View style={styles.divider} />
-
-              <Text style={styles.contentText}>{terms.content}</Text>
-            </ScrollView>
-
-            {/* Footer */}
-            <View style={styles.footer}>
-              {requireAcceptance && (
-                <Text style={styles.footerNote}>
-                  You must accept the Terms & Conditions to continue
-                </Text>
-              )}
-              <View style={styles.buttonRow}>
-                {!requireAcceptance && (
-                  <TouchableOpacity
-                    style={[styles.button, styles.declineButton]}
-                    onPress={onDecline}
-                  >
-                    <Text style={styles.declineButtonText}>Close</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={[styles.button, styles.acceptButton, accepting && styles.buttonDisabled]}
-                  onPress={handleAccept}
-                  disabled={accepting}
-                >
-                  {accepting ? (
-                    <ActivityIndicator color={COLORS.white} />
-                  ) : (
-                    <>
-                      <Ionicons name="checkmark-circle" size={20} color={COLORS.white} />
-                      <Text style={styles.acceptButtonText}>Accept</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </>
-        ) : (
-          <View style={styles.errorContainer}>
-            <Ionicons name="alert-circle" size={48} color={COLORS.textLight} />
-            <Text style={styles.errorText}>No Terms & Conditions available</Text>
+        {/* Footer */}
+        <View style={styles.footer}>
+          {requireAcceptance && (
+            <Text style={styles.footerNote}>
+              You must accept the Terms & Conditions to continue
+            </Text>
+          )}
+          <View style={styles.buttonRow}>
             {!requireAcceptance && (
-              <TouchableOpacity style={styles.button} onPress={onDecline}>
-                <Text style={styles.acceptButtonText}>Close</Text>
+              <TouchableOpacity
+                style={[styles.button, styles.declineButton]}
+                onPress={onDecline}
+              >
+                <Text style={styles.declineButtonText}>Close</Text>
               </TouchableOpacity>
             )}
+            <TouchableOpacity
+              style={[styles.button, styles.acceptButton]}
+              onPress={handleAccept}
+            >
+              <Ionicons name="checkmark-circle" size={20} color={COLORS.white} />
+              <Text style={styles.acceptButtonText}>Accept</Text>
+            </TouchableOpacity>
           </View>
-        )}
+        </View>
       </View>
     </Modal>
   );
@@ -185,16 +152,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.text,
   },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-    color: COLORS.textLight,
-  },
   content: {
     flex: 1,
     paddingHorizontal: 20,
@@ -204,16 +161,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: COLORS.text,
-    marginBottom: 8,
-  },
-  version: {
-    fontSize: 14,
-    color: COLORS.textLight,
-    marginBottom: 4,
-  },
-  effectiveDate: {
-    fontSize: 14,
-    color: COLORS.textLight,
     marginBottom: 16,
   },
   divider: {
@@ -268,20 +215,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: COLORS.white,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: COLORS.textLight,
-    marginTop: 16,
-    marginBottom: 24,
   },
 });

@@ -88,22 +88,48 @@ export function calculateDeliveryFeeFromCoordinates(
 
 /**
  * Calculate delivery fee from addresses (geocodes addresses first)
+ * Accepts optional address components for better geocoding accuracy
  */
 export async function calculateDeliveryFeeFromAddresses(
   customerAddress: string,
   catererLat: number,
   catererLng: number,
   guests: number,
-  config: DeliveryFeeConfig = DEFAULT_CONFIG
+  config: DeliveryFeeConfig = DEFAULT_CONFIG,
+  addressComponents?: {
+    city?: string;
+    province?: string;
+    barangay?: string;
+    postalCode?: string;
+    country?: string;
+  }
 ): Promise<number | null> {
   try {
-    // Geocode customer address
-    const geocodeResult = await geocodeAddress(customerAddress);
+    // Geocode customer address with all available components for better accuracy
+    const geocodeResult = await geocodeAddress(
+      customerAddress,
+      addressComponents?.city,
+      addressComponents?.province,
+      addressComponents?.country || 'Philippines',
+      addressComponents?.barangay,
+      addressComponents?.postalCode
+    );
     
     if (!geocodeResult) {
-      console.warn('[calculateDeliveryFeeFromAddresses] Failed to geocode customer address');
+      console.warn('[calculateDeliveryFeeFromAddresses] Failed to geocode customer address:', {
+        address: customerAddress,
+        city: addressComponents?.city,
+        province: addressComponents?.province,
+        barangay: addressComponents?.barangay
+      });
       return null;
     }
+    
+    console.log('[calculateDeliveryFeeFromAddresses] Successfully geocoded address:', {
+      address: customerAddress,
+      coordinates: `${geocodeResult.latitude}, ${geocodeResult.longitude}`,
+      catererLocation: `${catererLat}, ${catererLng}`
+    });
     
     // Calculate distance
     const distance = calculateDistance(
@@ -113,8 +139,13 @@ export async function calculateDeliveryFeeFromAddresses(
       catererLng
     );
     
+    console.log('[calculateDeliveryFeeFromAddresses] Calculated distance:', distance.toFixed(2), 'km');
+    
     // Calculate fee
-    return calculateDeliveryFee(distance, guests, config);
+    const fee = calculateDeliveryFee(distance, guests, config);
+    console.log('[calculateDeliveryFeeFromAddresses] Calculated delivery fee:', fee);
+    
+    return fee;
   } catch (error) {
     console.error('[calculateDeliveryFeeFromAddresses] Error:', error);
     return null;
@@ -124,18 +155,43 @@ export async function calculateDeliveryFeeFromAddresses(
 /**
  * Get the closest caterer location to customer address
  * Returns the location with minimum distance
+ * Accepts optional address components for better geocoding accuracy
  */
 export async function getClosestCatererLocation(
   customerAddress: string,
-  catererLocations: Array<{ latitude: number; longitude: number; address?: string }>
+  catererLocations: Array<{ latitude: number; longitude: number; address?: string }>,
+  addressComponents?: {
+    city?: string;
+    province?: string;
+    barangay?: string;
+    postalCode?: string;
+    country?: string;
+  }
 ): Promise<{ location: { latitude: number; longitude: number }; distance: number } | null> {
   try {
-    // Geocode customer address
-    const geocodeResult = await geocodeAddress(customerAddress);
+    // Geocode customer address with all available components for better accuracy
+    const geocodeResult = await geocodeAddress(
+      customerAddress,
+      addressComponents?.city,
+      addressComponents?.province,
+      addressComponents?.country || 'Philippines',
+      addressComponents?.barangay,
+      addressComponents?.postalCode
+    );
     
     if (!geocodeResult || !catererLocations || catererLocations.length === 0) {
+      console.warn('[getClosestCatererLocation] Failed to geocode or no caterer locations:', {
+        geocodeResult: !!geocodeResult,
+        catererLocationsCount: catererLocations?.length || 0
+      });
       return null;
     }
+    
+    console.log('[getClosestCatererLocation] Successfully geocoded customer address:', {
+      address: customerAddress,
+      coordinates: `${geocodeResult.latitude}, ${geocodeResult.longitude}`,
+      catererLocationsCount: catererLocations.length
+    });
     
     // Find closest location
     let minDistance = Infinity;
@@ -158,8 +214,14 @@ export async function getClosestCatererLocation(
     }
     
     if (!closestLocation) {
+      console.warn('[getClosestCatererLocation] No valid caterer location found');
       return null;
     }
+    
+    console.log('[getClosestCatererLocation] Found closest location:', {
+      distance: minDistance.toFixed(2) + ' km',
+      location: `${closestLocation.latitude}, ${closestLocation.longitude}`
+    });
     
     return {
       location: closestLocation,

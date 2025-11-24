@@ -400,9 +400,11 @@ export default function HomeScreen({ navigation }: any) {
                       />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.serviceName}>{svc.name}</Text>
-                        <Text style={styles.servicePrice}>
-                          ₱{svc.pricePerHead || 0} per head
-                        </Text>
+                        {(svc.pricePerHead ?? 0) > 0 && (
+                          <Text style={styles.servicePrice}>
+                            ₱{svc.pricePerHead} per head
+                          </Text>
+                        )}
                         <View
                           style={{
                             flexDirection: 'row',
@@ -548,7 +550,7 @@ export default function HomeScreen({ navigation }: any) {
                         {svc.name}
                       </Text>
                       <Text style={styles.metaText}>
-                        📅 {svc.bookingsCount ?? 0} bookings
+                        {svc.bookingsCount ?? 0} bookings
                       </Text>
                     </View>
                   </Card>
@@ -598,9 +600,11 @@ export default function HomeScreen({ navigation }: any) {
                            <Text style={styles.nearbyName} numberOfLines={1}>
                              {svc.name}
                            </Text>
-                           <Text style={styles.nearbyPrice} numberOfLines={1}>
-                             ₱{svc.pricePerHead || 0} per head
-                           </Text>
+                           {(svc.pricePerHead ?? 0) > 0 && (
+                             <Text style={styles.nearbyPrice} numberOfLines={1}>
+                               ₱{svc.pricePerHead} per head
+                             </Text>
+                           )}
                            <View
                              style={{
                                flexDirection: 'row',
@@ -685,9 +689,11 @@ export default function HomeScreen({ navigation }: any) {
                     />
                      <View style={{ flex: 1 }}>
                        <Text style={styles.serviceName}>{svc.name}</Text>
-                       <Text style={styles.servicePrice}>
-                         price start at {svc.pricePerHead} per head
-                       </Text>
+                       {(svc.pricePerHead ?? 0) > 0 && (
+                         <Text style={styles.servicePrice}>
+                           price start at {svc.pricePerHead} per head
+                         </Text>
+                       )}
                        <View
                          style={{
                            flexDirection: 'row',
@@ -803,9 +809,11 @@ export default function HomeScreen({ navigation }: any) {
                     <Text style={styles.serviceName} numberOfLines={1}>
                       {svc.name}
                     </Text>
-                    <Text style={styles.servicePrice} numberOfLines={1}>
-                      ₱{svc.pricePerHead || 0} per head
-                    </Text>
+                    {(svc.pricePerHead ?? 0) > 0 && (
+                      <Text style={styles.servicePrice} numberOfLines={1}>
+                        ₱{svc.pricePerHead} per head
+                      </Text>
+                    )}
                     <View
                       style={{
                         flexDirection: 'row',

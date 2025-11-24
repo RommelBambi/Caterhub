@@ -1,6 +1,7 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Modal, Pressable, Alert, Linking, Platform, TouchableOpacity } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, Modal, Pressable, Alert, Linking, Platform, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { supabase } from '../../services/supabase';
+import { WebView } from 'react-native-webview';
 
 interface PartnerApplication {
   id: string;
@@ -43,8 +44,8 @@ interface Props {
   application: PartnerApplication | null;
   visible: boolean;
   onClose: () => void;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
+  onApprove: (id: string) => void | Promise<void>;
+  onReject: (id: string) => void | Promise<void>;
 }
 
 const extractStoragePath = (docPath: string) =>
@@ -52,6 +53,20 @@ const extractStoragePath = (docPath: string) =>
 
 export default function ApplicationDetailModal({ application, visible, onClose, onApprove, onReject }: Props) {
   if (!application) return null;
+
+  const [pdfModalVisible, setPdfModalVisible] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [loadingPdf, setLoadingPdf] = useState(false);
+
+  // Debug: Log when component renders
+  console.log('[ApplicationDetailModal] Component rendered', {
+    visible,
+    applicationId: application.id,
+    status: application.status,
+    onApproveType: typeof onApprove,
+    onRejectType: typeof onReject,
+    onApproveFunction: onApprove?.toString?.()?.substring(0, 100) || 'N/A',
+  });
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -66,38 +81,59 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
 
   const getDocumentUrl = async (storagePath: string) => {
     try {
-      const { data } = await supabase.storage
+      // Try to get a signed URL (works for both public and private buckets)
+      const { data: signedData, error: signedError } = await supabase.storage
         .from('partner-documents')
-        .getPublicUrl(storagePath);
-      return data.publicUrl;
-    } catch (error) {
+        .createSignedUrl(storagePath, 3600); // 1 hour expiry
+      
+      if (signedError) {
+        console.error('Error getting signed URL:', signedError);
+        const errorMessage = signedError.message || '';
+        // If bucket doesn't exist, show helpful error
+        if (errorMessage.includes('Bucket not found') || errorMessage.includes('404') || errorMessage.includes('not found')) {
+          Alert.alert(
+            'Storage Bucket Not Found',
+            'The "partner-documents" storage bucket does not exist.\n\nPlease create it in your Supabase dashboard:\n1. Go to Storage\n2. Click "New bucket"\n3. Name it "partner-documents"\n4. Make it public or private (signed URLs will work for both)'
+          );
+          return null;
+        }
+        // Try public URL as fallback
+        const { data: publicData } = await supabase.storage
+          .from('partner-documents')
+          .getPublicUrl(storagePath);
+        return publicData.publicUrl;
+      }
+      
+      return signedData?.signedUrl || null;
+    } catch (error: any) {
       console.error('Error getting document URL:', error);
+      if (error?.message?.includes('Bucket not found') || error?.statusCode === 404) {
+        Alert.alert(
+          'Storage Bucket Not Found',
+          'The "partner-documents" storage bucket does not exist.\n\nPlease create it in your Supabase dashboard:\n1. Go to Storage\n2. Click "New bucket"\n3. Name it "partner-documents"\n4. Make it public or private (signed URLs will work for both)'
+        );
+      }
       return null;
     }
   };
 
   const handleViewDocument = async (docPath: string) => {
     try {
+      setLoadingPdf(true);
       const storagePath = extractStoragePath(docPath);
       const url = await getDocumentUrl(storagePath);
       if (url) {
-        // Open document in new window/tab on web, or use Linking on mobile
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-          window.open(url, '_blank');
-        } else {
-          const canOpen = await Linking.canOpenURL(url);
-          if (canOpen) {
-            await Linking.openURL(url);
-          } else {
-            Alert.alert('Error', 'Unable to open document URL');
-          }
-        }
+        // Show PDF in modal
+        setPdfUrl(url);
+        setPdfModalVisible(true);
       } else {
         Alert.alert('Error', 'Unable to load document');
       }
     } catch (error: any) {
       console.error('Error opening document:', error);
       Alert.alert('Error', error?.message || 'Unable to open document');
+    } finally {
+      setLoadingPdf(false);
     }
   };
 
@@ -113,8 +149,11 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
       transparent={true}
       onRequestClose={onClose}
     >
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <View style={styles.modalContent}>
+      <View style={styles.modalOverlay}>
+        <View 
+          style={styles.modalContent}
+          onStartShouldSetResponder={() => true}
+        >
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Application Details</Text>
             <Pressable onPress={onClose} style={styles.closeButton}>
@@ -224,19 +263,38 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
 
           {/* Actions */}
           {application.status === 'Pending' && (
-            <View style={styles.modalActions} pointerEvents="box-none">
+            <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalActionButton, styles.rejectButton]}
-                onPress={async () => {
-                  console.log('[ApplicationDetailModal] Reject button clicked');
-                  Alert.alert('Test', 'Reject button was clicked!');
-                  try {
-                    await onReject(application.id);
-                    onClose();
-                  } catch (error) {
-                    console.error('Error rejecting application:', error);
-                    // Don't close on error
+                onPress={() => {
+                  console.log('[ApplicationDetailModal] REJECT BUTTON CLICKED - onPress fired!');
+                  Alert.alert('Button Clicked!', 'Reject button was pressed!');
+                  
+                  if (!onReject) {
+                    console.error('[ApplicationDetailModal] onReject is not defined!');
+                    Alert.alert('Error', 'onReject function is not defined!');
+                    return;
                   }
+                  
+                  console.log('[ApplicationDetailModal] Calling onReject with ID:', application.id);
+                  const result = onReject(application.id);
+                  
+                  if (result instanceof Promise) {
+                    result.then(() => {
+                      console.log('[ApplicationDetailModal] onReject promise resolved');
+                      Alert.alert('Success', 'Application rejected!');
+                      onClose();
+                    }).catch((error: any) => {
+                      console.error('[ApplicationDetailModal] Error in onReject:', error);
+                      Alert.alert('Error', 'Failed to reject: ' + (error?.message || 'Unknown error'));
+                    });
+                  } else {
+                    console.log('[ApplicationDetailModal] onReject completed (synchronous)');
+                    onClose();
+                  }
+                }}
+                onPressIn={() => {
+                  console.log('[ApplicationDetailModal] Reject onPressIn triggered');
                 }}
                 activeOpacity={0.7}
               >
@@ -244,18 +302,60 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalActionButton, styles.approveButton]}
-                onPress={async () => {
-                  console.log('[ApplicationDetailModal] Approve button PRESSED - TouchableOpacity');
-                  Alert.alert('Test', 'Approve button was clicked!');
-                  try {
-                    console.log('[ApplicationDetailModal] Approve button clicked');
-                    await onApprove(application.id);
-                    console.log('[ApplicationDetailModal] Approve completed, closing modal');
-                    onClose();
-                  } catch (error) {
-                    console.error('[ApplicationDetailModal] Error approving application:', error);
-                    // Don't close on error
+                onPress={() => {
+                  // IMMEDIATE TEST - This should fire first
+                  console.log('[ApplicationDetailModal] BUTTON CLICKED - onPress fired!');
+                  Alert.alert('Button Clicked!', 'Approve button was pressed!');
+                  
+                  if (!onApprove) {
+                    console.error('[ApplicationDetailModal] onApprove is not defined!');
+                    Alert.alert('Error', 'onApprove function is not defined!');
+                    return;
                   }
+                  
+                  // Call onApprove
+                  console.log('[ApplicationDetailModal] Calling onApprove with ID:', application.id);
+                  console.log('[ApplicationDetailModal] onApprove function type:', typeof onApprove);
+                  console.log('[ApplicationDetailModal] onApprove function:', onApprove);
+                  
+                  if (!onApprove) {
+                    console.error('[ApplicationDetailModal] onApprove is null or undefined!');
+                    Alert.alert('Error', 'onApprove function is not available!');
+                    return;
+                  }
+                  
+                  try {
+                    console.log('[ApplicationDetailModal] About to call onApprove...');
+                    const result = onApprove(application.id);
+                    console.log('[ApplicationDetailModal] onApprove returned:', result);
+                    console.log('[ApplicationDetailModal] Is result a Promise?', result instanceof Promise);
+                    
+                    if (result instanceof Promise) {
+                      console.log('[ApplicationDetailModal] Waiting for promise to resolve...');
+                      result.then(() => {
+                        console.log('[ApplicationDetailModal] onApprove promise resolved successfully');
+                        Alert.alert('Success', 'Application approved!');
+                        onClose();
+                      }).catch((error: any) => {
+                        console.error('[ApplicationDetailModal] Error in onApprove promise:', error);
+                        console.error('[ApplicationDetailModal] Error code:', error?.code);
+                        console.error('[ApplicationDetailModal] Error message:', error?.message);
+                        console.error('[ApplicationDetailModal] Error details:', JSON.stringify(error, null, 2));
+                        Alert.alert('Error', 'Failed to approve: ' + (error?.message || 'Unknown error'));
+                      });
+                    } else {
+                      console.log('[ApplicationDetailModal] onApprove completed (synchronous)');
+                      onClose();
+                    }
+                  } catch (error: any) {
+                    console.error('[ApplicationDetailModal] Exception calling onApprove:', error);
+                    console.error('[ApplicationDetailModal] Exception type:', typeof error);
+                    console.error('[ApplicationDetailModal] Exception details:', JSON.stringify(error, null, 2));
+                    Alert.alert('Error', 'Exception calling onApprove: ' + (error?.message || 'Unknown error'));
+                  }
+                }}
+                onPressIn={() => {
+                  console.log('[ApplicationDetailModal] onPressIn triggered');
                 }}
                 activeOpacity={0.7}
               >
@@ -265,10 +365,11 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
           )}
           {/* Allow changing approved applications back to rejected */}
           {application.status === 'Approved' && (
-            <View style={styles.modalActions} pointerEvents="box-none">
+            <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalActionButton, styles.rejectButton]}
                 onPress={() => {
+                  console.log('[ApplicationDetailModal] Change to Rejected button clicked');
                   Alert.alert(
                     'Change Status to Rejected',
                     'Are you sure you want to change this approved application back to rejected? This will revoke the caterer\'s access.',
@@ -278,12 +379,35 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
                         text: 'Change to Rejected',
                         style: 'destructive',
                         onPress: async () => {
+                          console.log('[ApplicationDetailModal] Alert "Change to Rejected" button pressed');
+                          console.log('[ApplicationDetailModal] Calling onReject from Approved status');
+                          console.log('[ApplicationDetailModal] Application ID:', application.id);
+                          
+                          if (!onReject) {
+                            console.error('[ApplicationDetailModal] onReject is null or undefined!');
+                            Alert.alert('Error', 'onReject function is not available!');
+                            return;
+                          }
+                          
                           try {
-                            await onReject(application.id);
-                            onClose();
-                          } catch (error) {
-                            console.error('Error rejecting application:', error);
-                            // Don't close on error
+                            console.log('[ApplicationDetailModal] About to call onReject...');
+                            const result = onReject(application.id);
+                            console.log('[ApplicationDetailModal] onReject returned:', result);
+                            
+                            if (result instanceof Promise) {
+                              console.log('[ApplicationDetailModal] Waiting for promise to resolve...');
+                              await result;
+                              console.log('[ApplicationDetailModal] onReject promise resolved successfully');
+                              Alert.alert('Success', 'Application rejected!');
+                              onClose();
+                            } else {
+                              console.log('[ApplicationDetailModal] onReject completed (synchronous)');
+                              onClose();
+                            }
+                          } catch (error: any) {
+                            console.error('[ApplicationDetailModal] Exception calling onReject:', error);
+                            console.error('[ApplicationDetailModal] Error details:', JSON.stringify(error, null, 2));
+                            Alert.alert('Error', 'Exception calling onReject: ' + (error?.message || 'Unknown error'));
                           }
                         }
                       }
@@ -298,10 +422,11 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
           )}
           {/* Allow changing rejected applications back to approved */}
           {application.status === 'Rejected' && (
-            <View style={styles.modalActions} pointerEvents="box-none">
+            <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalActionButton, styles.approveButton]}
                 onPress={() => {
+                  console.log('[ApplicationDetailModal] Approve from Rejected button clicked');
                   Alert.alert(
                     'Change Status to Approved',
                     'Are you sure you want to approve this previously rejected application?',
@@ -310,14 +435,39 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
                       {
                         text: 'Approve',
                         onPress: async () => {
+                          console.log('[ApplicationDetailModal] Alert "Approve" button pressed');
+                          console.log('[ApplicationDetailModal] Calling onApprove from Rejected status');
+                          console.log('[ApplicationDetailModal] Application ID:', application.id);
+                          console.log('[ApplicationDetailModal] onApprove function:', onApprove);
+                          
+                          if (!onApprove) {
+                            console.error('[ApplicationDetailModal] onApprove is null or undefined!');
+                            Alert.alert('Error', 'onApprove function is not available!');
+                            return;
+                          }
+                          
                           try {
-                            console.log('[ApplicationDetailModal] Approve button clicked (from Rejected)');
-                            await onApprove(application.id);
-                            console.log('[ApplicationDetailModal] Approve completed, closing modal');
-                            onClose();
-                          } catch (error) {
-                            console.error('[ApplicationDetailModal] Error approving application:', error);
-                            // Don't close on error
+                            console.log('[ApplicationDetailModal] About to call onApprove...');
+                            const result = onApprove(application.id);
+                            console.log('[ApplicationDetailModal] onApprove returned:', result);
+                            console.log('[ApplicationDetailModal] Is result a Promise?', result instanceof Promise);
+                            
+                            if (result instanceof Promise) {
+                              console.log('[ApplicationDetailModal] Waiting for promise to resolve...');
+                              await result;
+                              console.log('[ApplicationDetailModal] onApprove promise resolved successfully');
+                              Alert.alert('Success', 'Application approved!');
+                              onClose();
+                            } else {
+                              console.log('[ApplicationDetailModal] onApprove completed (synchronous)');
+                              onClose();
+                            }
+                          } catch (error: any) {
+                            console.error('[ApplicationDetailModal] Exception calling onApprove:', error);
+                            console.error('[ApplicationDetailModal] Error code:', error?.code);
+                            console.error('[ApplicationDetailModal] Error message:', error?.message);
+                            console.error('[ApplicationDetailModal] Exception details:', JSON.stringify(error, null, 2));
+                            Alert.alert('Error', 'Exception calling onApprove: ' + (error?.message || 'Unknown error'));
                           }
                         }
                       }
@@ -331,7 +481,60 @@ export default function ApplicationDetailModal({ application, visible, onClose, 
             </View>
           )}
         </View>
-      </Pressable>
+      </View>
+
+      {/* PDF Viewer Modal */}
+      <Modal
+        visible={pdfModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setPdfModalVisible(false)}
+      >
+        <View style={styles.pdfModalOverlay}>
+          <View style={styles.pdfModalContent}>
+            <View style={styles.pdfModalHeader}>
+              <Text style={styles.pdfModalTitle}>Document Viewer</Text>
+              <Pressable 
+                onPress={() => {
+                  setPdfModalVisible(false);
+                  setPdfUrl(null);
+                }} 
+                style={styles.closeButton}
+              >
+                <Text style={styles.closeButtonText}>×</Text>
+              </Pressable>
+            </View>
+            {loadingPdf ? (
+              <View style={styles.pdfLoadingContainer}>
+                <ActivityIndicator size="large" color={COLORS_ADMIN.primary} />
+                <Text style={styles.pdfLoadingText}>Loading document...</Text>
+              </View>
+            ) : pdfUrl ? (
+              <View style={styles.pdfViewerContainer}>
+                {Platform.OS === 'web' ? (
+                  <PdfIframeViewer url={pdfUrl} />
+                ) : (
+                  <WebView
+                    source={{ uri: pdfUrl }}
+                    style={styles.webView}
+                    startInLoadingState={true}
+                    renderLoading={() => (
+                      <View style={styles.pdfLoadingContainer}>
+                        <ActivityIndicator size="large" color={COLORS_ADMIN.primary} />
+                        <Text style={styles.pdfLoadingText}>Loading PDF...</Text>
+                      </View>
+                    )}
+                  />
+                )}
+              </View>
+            ) : (
+              <View style={styles.pdfErrorContainer}>
+                <Text style={styles.pdfErrorText}>Unable to load document</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -348,6 +551,36 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
         )}
       </View>
     </View>
+  );
+}
+
+// PDF Iframe Viewer for Web
+function PdfIframeViewer({ url }: { url: string }) {
+  const containerRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && containerRef.current && typeof document !== 'undefined') {
+      const container = containerRef.current;
+      // Clear any existing iframe
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+      // Create new iframe
+      const iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.style.width = '100%';
+      iframe.style.height = '100%';
+      iframe.style.border = 'none';
+      iframe.title = 'PDF Viewer';
+      container.appendChild(iframe);
+    }
+  }, [url]);
+
+  return (
+    <View 
+      ref={containerRef}
+      style={styles.webView}
+    />
   );
 }
 
@@ -479,6 +712,7 @@ const styles = StyleSheet.create({
       web: {
         position: 'relative' as const,
         pointerEvents: 'auto' as const,
+        touchAction: 'manipulation' as const,
       },
     }),
   },
@@ -511,6 +745,71 @@ const styles = StyleSheet.create({
     color: COLORS_ADMIN.white,
     fontWeight: '600',
     fontSize: 16,
+  },
+  pdfModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pdfModalContent: {
+    backgroundColor: COLORS_ADMIN.white,
+    borderRadius: 16,
+    width: '95%',
+    height: '90%',
+    maxWidth: 1200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+    overflow: 'hidden',
+    flexDirection: 'column',
+  },
+  pdfModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS_ADMIN.border,
+  },
+  pdfModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS_ADMIN.text,
+  },
+  pdfViewerContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  webView: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  pdfLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  pdfLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: COLORS_ADMIN.textLight,
+  },
+  pdfErrorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  pdfErrorText: {
+    fontSize: 16,
+    color: COLORS_ADMIN.danger,
+    fontWeight: '500',
   },
 });
 

@@ -20,6 +20,7 @@ interface AnalyticsData {
   totalUsers: number;
   totalBookings: number;
   totalRevenue: number;
+  platformFeeRevenue: number;
   subscriptionRevenue: number;
   avgBookingValue: number;
   totalCaterers: number;
@@ -54,7 +55,8 @@ export default function AnalyticsPage() {
             price,
             caterer_id
           )
-        `);
+        `)
+        .order('created_at', { ascending: false });
 
       // Fetch partner applications (these are the "services")
       const { data: applications, error: applicationsError } = await supabase
@@ -81,8 +83,9 @@ export default function AnalyticsPage() {
 
       // Calculate revenue
       let totalRevenue = 0;
+      let platformFeeRevenue = 0;
       const serviceRevenue: { [key: string]: { count: number; revenue: number } } = {};
-      const monthlyRevenue: { [key: string]: number } = {};
+      const monthlyRevenue: { [key: string]: { revenue: number; label: string } } = {};
       const bookingsByStatus: { [key: string]: number } = {};
 
       // Create a map of caterer_id to business_name for quick lookup
@@ -94,44 +97,83 @@ export default function AnalyticsPage() {
       });
 
       bookings?.forEach((booking: any) => {
+        // Calculate amount - prioritize actual payment amounts over package price
         let amount = 0;
-        if (booking.packages?.price) {
-          // Extract price from package (format: "₱250/head" or "250")
+        const depositAmount = booking.deposit_amount || 0;
+        const remainingAmount = booking.remaining_amount || 0;
+        const deliveryFee = booking.delivery_fee || 0;
+        
+        // Use actual payment amounts if available (most accurate)
+        if (depositAmount > 0 || remainingAmount > 0) {
+          amount = depositAmount + remainingAmount + deliveryFee;
+        } else if (booking.packages?.price) {
+          // Fallback: Extract price from package (format: "₱250/head" or "250")
           const priceMatch = booking.packages.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
           if (priceMatch) {
             const pricePerHead = parseFloat(priceMatch[1].replace(/,/g, ''));
-            amount = pricePerHead * booking.guests;
+            amount = pricePerHead * booking.guests + deliveryFee;
           }
-        } else if (booking.deposit_amount && booking.remaining_amount) {
-          // Use deposit + remaining + delivery fee if available
-          amount = (booking.deposit_amount || 0) + (booking.remaining_amount || 0) + (booking.delivery_fee || 0);
-        } else if (booking.delivery_fee) {
-          // Fallback: use delivery fee if available
-          amount = booking.delivery_fee;
+        } else if (deliveryFee > 0) {
+          // Last resort: use delivery fee if available
+          amount = deliveryFee;
         }
 
-        if (booking.status === 'COMPLETED') {
-          totalRevenue += amount;
+        // Track by status (for all bookings)
+        const status = booking.status || 'PENDING';
+        bookingsByStatus[status] = (bookingsByStatus[status] || 0) + 1;
 
-          // Track by service (get business name from caterer_id)
-          const catererId = booking.packages?.caterer_id;
-          const serviceName = catererId ? (catererNameMap.get(catererId) || 'Unknown Service') : 'Unknown Service';
-          if (!serviceRevenue[serviceName]) {
-            serviceRevenue[serviceName] = { count: 0, revenue: 0 };
+        // Count revenue and platform fees from completed bookings
+        // Also include CONFIRMED bookings that might have platform fees calculated
+        if (booking.status === 'COMPLETED' || booking.status === 'CONFIRMED') {
+          // Only add to total revenue if completed
+          if (booking.status === 'COMPLETED') {
+            totalRevenue += amount;
           }
-          serviceRevenue[serviceName].count++;
-          serviceRevenue[serviceName].revenue += amount;
 
-          // Track by month
-          const month = new Date(booking.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
-          monthlyRevenue[month] = (monthlyRevenue[month] || 0) + amount;
+          // Calculate platform fee revenue - include both COMPLETED and CONFIRMED
+          // (CONFIRMED bookings may have platform fees calculated already)
+          let platformFee = booking.platform_fee_amount || 0;
+          
+          // If platform_fee_amount is null/0, calculate it from percentage
+          if (platformFee === 0 || !booking.platform_fee_amount) {
+            // Use platform_fee_percentage from booking, or default to 3%
+            const feePercentage = booking.platform_fee_percentage || 3.00;
+            if (amount > 0) {
+              platformFee = amount * (feePercentage / 100);
+            }
+          }
+          
+          // Only count platform fees from bookings with actual amounts
+          if (platformFee > 0) {
+            platformFeeRevenue += platformFee;
+          }
+
+          // Track by service (get business name from caterer_id) - only for completed
+          if (booking.status === 'COMPLETED') {
+            const catererId = booking.packages?.caterer_id;
+            const serviceName = catererId ? (catererNameMap.get(catererId) || 'Unknown Service') : 'Unknown Service';
+            if (!serviceRevenue[serviceName]) {
+              serviceRevenue[serviceName] = { count: 0, revenue: 0 };
+            }
+            serviceRevenue[serviceName].count++;
+            serviceRevenue[serviceName].revenue += amount;
+
+            // Track by month (use updated_at for completed bookings to get completion month)
+            const completionDate = booking.updated_at || booking.created_at;
+            const date = new Date(completionDate);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            const monthLabel = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+            if (!monthlyRevenue[monthKey]) {
+              monthlyRevenue[monthKey] = { revenue: 0, label: monthLabel };
+            }
+            monthlyRevenue[monthKey].revenue += amount;
+          }
         }
-
-        // Track by status
-        bookingsByStatus[booking.status] = (bookingsByStatus[booking.status] || 0) + 1;
       });
 
-      const avgBookingValue = totalBookings > 0 ? totalRevenue / totalBookings : 0;
+      // Calculate average booking value from completed bookings only
+      const completedBookingsCount = bookings?.filter(b => b.status === 'COMPLETED').length || 0;
+      const avgBookingValue = completedBookingsCount > 0 ? totalRevenue / completedBookingsCount : 0;
 
       // Top services
       const topServices = Object.entries(serviceRevenue)
@@ -139,22 +181,33 @@ export default function AnalyticsPage() {
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 5);
 
-      // Revenue by month
+      // Revenue by month - sort properly
       const revenueByMonth = Object.entries(monthlyRevenue)
-        .map(([month, revenue]) => ({ month, revenue }))
-        .sort((a, b) => new Date(a.month).getTime() - new Date(b.month).getTime())
+        .map(([monthKey, data]) => ({
+          month: data.label,
+          revenue: data.revenue,
+          sortKey: monthKey
+        }))
+        .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+        .map(({ month, revenue }) => ({ month, revenue })) // Remove sortKey
         .slice(-6); // Last 6 months
 
-      // User growth by month
-      const usersByMonth: { [key: string]: number } = {};
+      // User growth by month - use proper date sorting
+      const usersByMonth: { [key: string]: { count: number; label: string } } = {};
       users?.forEach((user: any) => {
-        const month = new Date(user.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
-        usersByMonth[month] = (usersByMonth[month] || 0) + 1;
+        const date = new Date(user.created_at);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const monthLabel = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+        if (!usersByMonth[monthKey]) {
+          usersByMonth[monthKey] = { count: 0, label: monthLabel };
+        }
+        usersByMonth[monthKey].count++;
       });
 
       const userGrowth = Object.entries(usersByMonth)
-        .map(([month, count]) => ({ month, count }))
-        .sort((a, b) => new Date(a.month).getTime() - new Date(b.month).getTime())
+        .map(([monthKey, data]) => ({ month: data.label, count: data.count, sortKey: monthKey }))
+        .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+        .map(({ month, count }) => ({ month, count })) // Remove sortKey
         .slice(-6);
 
       // Calculate caterer and application metrics
@@ -168,10 +221,22 @@ export default function AnalyticsPage() {
       // Calculate subscription revenue
       const subscriptionRevenue = subscriptionsData?.reduce((sum, sub) => sum + (sub.amount || 0), 0) || 0;
 
+      console.log('[AnalyticsPage] Calculated analytics:', {
+        totalUsers,
+        totalBookings,
+        totalRevenue,
+        platformFeeRevenue,
+        completedBookingsCount,
+        topServicesCount: topServices.length,
+        revenueByMonthCount: revenueByMonth.length,
+        topServices: topServices.map(s => ({ name: s.name, revenue: s.revenue })),
+      });
+
       setAnalytics({
         totalUsers,
         totalBookings,
         totalRevenue,
+        platformFeeRevenue,
         subscriptionRevenue,
         avgBookingValue,
         totalCaterers,
@@ -191,6 +256,7 @@ export default function AnalyticsPage() {
         totalUsers: 0,
         totalBookings: 0,
         totalRevenue: 0,
+        platformFeeRevenue: 0,
         subscriptionRevenue: 0,
         avgBookingValue: 0,
         totalCaterers: 0,
@@ -249,11 +315,11 @@ export default function AnalyticsPage() {
         <Text style={styles.sectionTitle}>Key Metrics</Text>
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Total Revenue</Text>
+            <Text style={styles.statLabel}>Booking Revenue</Text>
             <Text style={[styles.statValue, { color: COLORS.success }]}>
               ₱{analytics.totalRevenue.toLocaleString()}
             </Text>
-            <Text style={styles.statSubtext}>From completed bookings</Text>
+            <Text style={styles.statSubtext}>Total from completed bookings</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Total Bookings</Text>
@@ -314,9 +380,9 @@ export default function AnalyticsPage() {
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Platform Fee Revenue</Text>
             <Text style={[styles.statValue, { color: COLORS.info }]}>
-              ₱{(analytics.totalRevenue * 0.15).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              ₱{analytics.platformFeeRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
-            <Text style={styles.statSubtext}>15% platform fee</Text>
+            <Text style={styles.statSubtext}>Tiered platform fee (3% base, 2% at 300k+, 1% at 500k+)</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Active Bookings</Text>
@@ -326,11 +392,11 @@ export default function AnalyticsPage() {
             <Text style={styles.statSubtext}>Confirmed + On the way</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Total Revenue</Text>
+            <Text style={styles.statLabel}>Combined Revenue</Text>
             <Text style={[styles.statValue, { color: COLORS.success }]}>
-              ₱{(analytics.totalRevenue + analytics.subscriptionRevenue).toLocaleString()}
+              ₱{(analytics.platformFeeRevenue + analytics.subscriptionRevenue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
-            <Text style={styles.statSubtext}>Bookings + Subscriptions</Text>
+            <Text style={styles.statSubtext}>Platform fees + Subscriptions</Text>
           </View>
         </View>
       </View>
@@ -346,15 +412,15 @@ export default function AnalyticsPage() {
               <Text style={styles.emptyText}>No revenue data available</Text>
             ) : (
               analytics.revenueByMonth.map((item, index) => {
-                const maxRevenue = Math.max(...analytics.revenueByMonth.map(r => r.revenue));
-                const barWidth = maxRevenue > 0 ? (item.revenue / maxRevenue) * 100 : 0;
+                const maxRevenue = Math.max(...analytics.revenueByMonth.map(r => r.revenue || 0), 1);
+                const barWidth = maxRevenue > 0 ? ((item.revenue || 0) / maxRevenue) * 100 : 0;
                 return (
-                  <View key={index} style={styles.barRow}>
+                  <View key={`${item.month}-${index}`} style={styles.barRow}>
                     <Text style={styles.barLabel}>{item.month}</Text>
                     <View style={styles.barContainer}>
                       <View style={[styles.bar, { width: `${barWidth}%` }]} />
                     </View>
-                    <Text style={styles.barValue}>₱{item.revenue.toLocaleString()}</Text>
+                    <Text style={styles.barValue}>₱{(item.revenue || 0).toLocaleString()}</Text>
                   </View>
                 );
               })
@@ -432,7 +498,7 @@ export default function AnalyticsPage() {
                 <Text style={styles.statLabel}>{status}</Text>
                 <Text style={[styles.statValue, { color }]}>{count}</Text>
                 <Text style={styles.statSubtext}>
-                  {((count / analytics.totalBookings) * 100).toFixed(1)}% of total
+                  {analytics.totalBookings > 0 ? ((count / analytics.totalBookings) * 100).toFixed(1) : 0}% of total
                 </Text>
               </View>
             );

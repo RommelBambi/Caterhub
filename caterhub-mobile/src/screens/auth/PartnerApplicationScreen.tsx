@@ -184,6 +184,7 @@ function Step1({
       country: '',
       province: '',
       city: '',
+      barangay: '',
       postalCode: '',
       address: '',
     };
@@ -298,6 +299,13 @@ function Step1({
               onSelect={(value) => updateLocation(index, 'city', value)}
               searchable
               placeholder={!location.province ? "Select province first" : "Select city"}
+            />
+
+            <Field
+              label="Barangay"
+              value={location.barangay || ''}
+              onChangeText={(value) => updateLocation(index, 'barangay', value)}
+              placeholder="e.g., Barangay 123"
             />
 
             <Field
@@ -894,7 +902,13 @@ function Step3Compliance({
         value={form.agreeTerms}
         onToggle={() => setForm((s) => ({ ...s, agreeTerms: !s.agreeTerms }))}
         detail="Key policies you accept by partnering with us."
-        bullets={["Service levels & delivery windows", "Cancellations & refunds", "Payout schedule & fees", "Data privacy compliance"]}
+        bullets={[
+          "Service levels & delivery windows",
+          "Cancellations & refunds",
+          "Payout schedule & fees",
+          "Platform fee: 3% base, 2% at 300k+ GMV, 1% at 500k+ GMV (applied next month)",
+          "Data privacy compliance"
+        ]}
         icon="checkbox"
       />
 
@@ -1100,7 +1114,7 @@ function Step4Review({
 
       <View style={styles.navButtons}>
         <SquareNavButton
-          label="Submit Application"
+          label="Create Account & Submit"
           onPress={() => {
             if (!canSubmit) {
               Alert.alert(
@@ -1124,18 +1138,19 @@ function Step4Review({
 function Step5Account({
   form,
   back,
-  submit,
+  next,
+  onEmailPasswordChange,
 }: {
   form: PartnerForm;
   back: () => void;
-  submit: (email: string, password: string) => void;
+  next: () => void;
+  onEmailPasswordChange: (email: string, password: string) => void;
 }) {
   const [email, setEmail] = useState(form.ownerEmail || '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
 
   const validate = () => {
     if (!email.trim()) {
@@ -1157,25 +1172,21 @@ function Step5Account({
     return true;
   };
 
-  const handleSubmit = async () => {
+  const handleNext = () => {
     if (!validate()) return;
-    setLoading(true);
-    try {
-      await submit(email, password);
-    } catch (error) {
-      // Error handling is done in parent
-    } finally {
-      setLoading(false);
-    }
+    // Save email and password to parent state
+    onEmailPasswordChange(email, password);
+    // Update form with email
+    // Proceed to next step
+    next();
   };
 
-  const canCreateAccount =
+  const canProceed =
     !!email.trim() &&
     email.includes('@') &&
     email.includes('.') &&
     password.length >= 6 &&
-    password === confirmPassword &&
-    !loading;
+    password === confirmPassword;
 
   return (
     <Card pad={Platform.OS === 'web' ? 32 : 24} style={styles.stepCard}>
@@ -1248,17 +1259,17 @@ function Step5Account({
       <View style={styles.passwordHint}>
         <Ionicons name="information-circle-outline" size={16} color={COLORS.textLight} />
         <Text style={styles.passwordHintText}>
-          Your account will be created and your application will be submitted for admin approval.
+          Your account will be created when you submit your application in the review step.
         </Text>
       </View>
 
       <View style={styles.navButtons}>
         <SquareNavButton
-          label={loading ? "Creating Account..." : "Create Account & Submit"}
-          onPress={handleSubmit}
-          icon="checkmark-circle"
+          label="Next"
+          onPress={handleNext}
+          icon="arrow-forward"
           iconPosition="right"
-          disabled={!canCreateAccount}
+          disabled={!canProceed}
         />
       </View>
     </Card>
@@ -1281,8 +1292,8 @@ function WaitingApproval({ onBack, onGoToDashboard }: { onBack: () => void; onGo
         </Text>
         <View style={styles.successInfo}>
           <View style={[styles.successInfoItem, { marginBottom: 12 }]}>
-            <Ionicons name="mail" size={20} color={COLORS.primary} />
-            <Text style={styles.successInfoText}>Check your email for confirmation</Text>
+            <Ionicons name="notifications" size={20} color={COLORS.primary} />
+            <Text style={styles.successInfoText}>Check your notification for confirmation</Text>
           </View>
           <View style={styles.successInfoItem}>
             <Ionicons name="time" size={20} color={COLORS.primary} />
@@ -1319,6 +1330,8 @@ export default function PartnerApplicationScreen() {
   const { refreshUser, user, token } = useAuth();
   const [step, setStep] = useState<StepKey>("hero");
   const [form, setForm] = useState<PartnerForm>(EMPTY_PARTNER_FORM);
+  const [accountEmail, setAccountEmail] = useState<string>('');
+  const [accountPassword, setAccountPassword] = useState<string>('');
 
   const stepNumber = useMemo(() => {
     if (step === "hero") return 0;
@@ -1654,9 +1667,18 @@ export default function PartnerApplicationScreen() {
               next={next} 
               submit={async () => {
                 try {
-                  // Get current user
-                  const { data: { user } } = await supabase.auth.getUser();
-                  if (!user?.id) {
+                  // First, create account if user is not logged in
+                  let currentUserId: string | null = user?.id || null;
+                  if (!currentUserId) {
+                    // User is not logged in, create account first
+                    await handleAccountCreation(accountEmail, accountPassword);
+                    // Refresh to get the new user
+                    await refreshUser();
+                    const { data: { user: newUser } } = await supabase.auth.getUser();
+                    currentUserId = newUser?.id || null;
+                  }
+                  
+                  if (!currentUserId) {
                     Alert.alert("Error", "Please log in to submit your application.");
                     return;
                   }
@@ -1670,7 +1692,7 @@ export default function PartnerApplicationScreen() {
                         const timestamp = Date.now();
                         const sanitizedFileName = tempFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
                         const uniqueFileName = `${timestamp}-${sanitizedFileName}`;
-                        const storagePath = `${user.id}/${uniqueFileName}`;
+                        const storagePath = `${currentUserId}/${uniqueFileName}`;
 
                         // Read file - platform-specific handling
                         let fileData: Blob | { uri: string; type: string; name: string };
@@ -1720,7 +1742,7 @@ export default function PartnerApplicationScreen() {
                   };
                   
                   // Submit the application
-                  await sendApplicationToRecruitment(formWithUploads, user.id);
+                  await sendApplicationToRecruitment(formWithUploads, currentUserId);
                   
                   // Refresh auth state
                   await refreshUser();
@@ -1736,7 +1758,19 @@ export default function PartnerApplicationScreen() {
               }} 
             />
           )}
-          {step === "step6" && <Step5Account form={form} back={back} submit={handleAccountCreation} />}
+          {step === "step6" && (
+            <Step5Account 
+              form={form} 
+              back={back} 
+              next={next}
+              onEmailPasswordChange={(email, password) => {
+                setAccountEmail(email);
+                setAccountPassword(password);
+                // Also update form with email
+                setForm(prev => ({ ...prev, ownerEmail: email }));
+              }}
+            />
+          )}
           {step === "waiting" && (
             <WaitingApproval 
               onBack={() => {

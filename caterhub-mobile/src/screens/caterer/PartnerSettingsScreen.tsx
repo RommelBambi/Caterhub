@@ -178,6 +178,7 @@ export default function PartnerSettingsScreen() {
   const [uploading, setUploading] = useState(false);
   const [dtiUploading, setDtiUploading] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null); // Track when documents were last saved
+  const [applicationStatus, setApplicationStatus] = useState<'Pending' | 'Approved' | 'Rejected' | null>(null);
 
   const [loaded, setLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<'profile' | 'locations' | 'documents' | 'subscription' | 'account'>(
@@ -314,6 +315,13 @@ export default function PartnerSettingsScreen() {
             .single();
 
           if (isActive && application && !error) {
+            // Load application status
+            if (application.status) {
+              setApplicationStatus(application.status as 'Pending' | 'Approved' | 'Rejected');
+            } else {
+              setApplicationStatus('Pending');
+            }
+            
             // Load business name and owner information from partner_applications
             if (application.business_name) {
               setBusinessName(application.business_name);
@@ -397,6 +405,7 @@ export default function PartnerSettingsScreen() {
       country: '',
       province: '',
       city: '',
+      barangay: '',
       postalCode: '',
       address: '',
     };
@@ -2081,6 +2090,44 @@ export default function PartnerSettingsScreen() {
           {/* Tab Content */}
           {activeTab === 'profile' && (
             <>
+              {/* Application Status Banner */}
+              {applicationStatus && (
+                <View style={[
+                  styles.statusBanner,
+                  applicationStatus === 'Approved' && styles.statusBannerApproved,
+                  applicationStatus === 'Rejected' && styles.statusBannerRejected,
+                  applicationStatus === 'Pending' && styles.statusBannerPending,
+                ]}>
+                  <View style={styles.statusBannerContent}>
+                    <Ionicons 
+                      name={
+                        applicationStatus === 'Approved' ? 'checkmark-circle' :
+                        applicationStatus === 'Rejected' ? 'close-circle' :
+                        'time-outline'
+                      } 
+                      size={24} 
+                      color={
+                        applicationStatus === 'Approved' ? '#10b981' :
+                        applicationStatus === 'Rejected' ? '#ef4444' :
+                        '#f59e0b'
+                      } 
+                    />
+                    <View style={styles.statusBannerText}>
+                      <Text style={styles.statusBannerTitle}>
+                        {applicationStatus === 'Approved' ? 'Account Approved' :
+                         applicationStatus === 'Rejected' ? 'Account Rejected' :
+                         'Application Pending'}
+                      </Text>
+                      <Text style={styles.statusBannerSubtitle}>
+                        {applicationStatus === 'Approved' ? 'Your account has been approved. You can now receive bookings and manage your catering business.' :
+                         applicationStatus === 'Rejected' ? 'Your application has been rejected. Please contact support for more information.' :
+                         'Your application is being reviewed by our admin team. You will be notified once a decision is made.'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
               {/* Business Logo Card */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Business Logo</Text>
@@ -2493,6 +2540,15 @@ export default function PartnerSettingsScreen() {
                         onSelect={(value) => updateLocation(index, 'city', value)}
                         searchable
                         placeholder={!location.province ? "Select province first" : "Select city"}
+                      />
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Field
+                        label="Barangay"
+                        value={location.barangay || ''}
+                        onChangeText={(value) => updateLocation(index, 'barangay', value)}
+                        placeholder="e.g., Barangay 123"
                       />
                     </View>
 
@@ -3903,6 +3959,43 @@ const styles = StyleSheet.create({
   },
   accountStatusActive: {
     color: "#10b981"
+  },
+  statusBanner: {
+    marginBottom: 20,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+  },
+  statusBannerApproved: {
+    backgroundColor: '#10b98115',
+    borderColor: '#10b981',
+  },
+  statusBannerRejected: {
+    backgroundColor: '#ef444415',
+    borderColor: '#ef4444',
+  },
+  statusBannerPending: {
+    backgroundColor: '#f59e0b15',
+    borderColor: '#f59e0b',
+  },
+  statusBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  statusBannerText: {
+    flex: 1,
+  },
+  statusBannerTitle: {
+    fontSize: Platform.OS === 'web' ? 16 : 17,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  statusBannerSubtitle: {
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    color: '#4b5563',
+    lineHeight: Platform.OS === 'web' ? 18 : 20,
   },
   changeButton: {
     flexDirection: "row",

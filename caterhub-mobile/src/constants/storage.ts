@@ -20,6 +20,7 @@ export const EMPTY_PARTNER_FORM = {
       country: "",
       province: "",
       city: "",
+      barangay: "",
       postalCode: "",
       address: "",
     },
@@ -28,6 +29,7 @@ export const EMPTY_PARTNER_FORM = {
     country: string;
     province: string;
     city: string;
+    barangay?: string;
     postalCode: string;
     address: string;
     latitude?: number;

@@ -22,7 +22,9 @@ serve(async (req)=>{
     // Parse webhook payload
     const payload = await req.json();
     console.log('📥 Received Xendit webhook at:', new Date().toISOString());
-    console.log('📦 Webhook payload:', JSON.stringify(payload, null, 2));
+    console.log('📦 Webhook payload (full):', JSON.stringify(payload, null, 2));
+    console.log('📦 Webhook payload keys:', payload ? Object.keys(payload) : 'null');
+    console.log('📦 Webhook payload.data keys:', payload?.data ? Object.keys(payload.data) : 'null');
     // Handle webhook format
     let eventId;
     let eventType;
@@ -72,7 +74,12 @@ serve(async (req)=>{
       // Handle standard Xendit webhook format
       eventId = payload?.id || `evt_${Date.now()}`;
       eventType = payload?.event || 'unknown';
-      status = payload?.status || 'unknown';
+      // Check multiple possible locations for status
+      status = payload?.status || 
+               payload?.transaction_status ||
+               payload?.data?.status ||
+               payload?.data?.transaction_status ||
+               'unknown';
       
       // If we haven't already detected it as a payout, check for other payout indicators
       if (!payoutId && (eventType.includes('payout') || eventType.includes('disbursement'))) {
@@ -111,8 +118,24 @@ serve(async (req)=>{
         invoiceId = payload?.id;
         externalId = payload?.external_id;
       } else if (eventType.includes('ewallet')) {
-        chargeId = payload?.id;
-        externalId = payload?.reference_id;
+        // For eWallet webhooks, check both payload root and payload.data
+        chargeId = payload?.data?.id || payload?.id;
+        externalId = payload?.data?.reference_id || payload?.reference_id;
+        
+        // Also extract status from data if not already set
+        if (!status || status === 'unknown') {
+          status = payload?.data?.status || status;
+        }
+        
+        console.log('🔍 eWallet webhook detected in else block:', {
+          eventType,
+          chargeId,
+          externalId,
+          status,
+          payloadDataId: payload?.data?.id,
+          payloadDataReferenceId: payload?.data?.reference_id,
+          payloadDataStatus: payload?.data?.status
+        });
       }
     }
     // Save webhook to database
@@ -191,14 +214,37 @@ serve(async (req)=>{
     const invoiceId = webhook.xendit_invoice_id;
     const chargeId = webhook.xendit_charge_id;
     const externalId = webhook.external_id;
-    const status = webhook.status;
+    let status = webhook.status;
     const eventType = webhook.event_type;
+    
+    // Also check payload for status if webhook.status is not set or is 'unknown'
+    // Xendit sometimes puts status in payload.data.status or payload.status
+    // For eWallet webhooks, status is typically in payload.data.status
+    const payload = webhook.payload;
+    if ((!status || status === 'unknown') && payload) {
+      // Check data.status first (common for eWallet webhooks), then root level
+      status = payload.data?.status || 
+               payload.status || 
+               payload.transaction_status ||
+               payload.data?.transaction_status ||
+               payload.payment_status ||
+               payload.data?.payment_status ||
+               status || // Keep original if found
+               null;
+      console.log('📦 Extracted status from payload:', {
+        webhookStatus: webhook.status,
+        payloadDataStatus: payload.data?.status,
+        payloadStatus: payload.status,
+        payloadTransactionStatus: payload.transaction_status,
+        finalStatus: status
+      });
+    }
     
     // Extract payout ID from payload if it's a payout webhook
     // Xendit payout webhooks can have the payout ID in various places
     let payoutId = null;
     if (eventType.includes('payout') || eventType.includes('disbursement')) {
-      const payload = webhook.payload;
+      // payload already declared above
       // Try multiple possible locations for payout ID
       payoutId = payload?.id || 
                  payload?.data?.id || 
@@ -231,7 +277,7 @@ serve(async (req)=>{
       payloadPreview: webhook.payload ? JSON.stringify(webhook.payload).substring(0, 500) : 'null'
     });
     // Handle subscription payment webhooks (invoice.paid or ewallet.charge.succeeded for subscriptions)
-    const payload = webhook.payload;
+    // payload already declared above
     const metadata = payload?.metadata || payload?.data?.metadata;
     
     // Check if this is a subscription payment (invoice or eWallet)
@@ -668,52 +714,180 @@ serve(async (req)=>{
           const { data: bookings, error } = await supabase.from('bookings').select('*').eq('id', bookingId).limit(1);
           bookingError = error;
           booking = bookings?.[0];
-          console.log('Found booking by ID extraction:', {
-            bookingId,
-            found: !!booking
+          console.log('🔍 Found booking by ID extraction from external_id:', {
+            externalId,
+            extractedBookingId: bookingId,
+            found: !!booking,
+            bookingId: booking?.id,
+            bookingPaymentStatus: booking?.payment_status
           });
         }
+      }
+      
+      // Additional logging for debugging
+      if (!booking) {
+        console.error('❌ Booking NOT FOUND for webhook:', {
+          invoiceId,
+          chargeId,
+          externalId,
+          eventType,
+          status,
+          searchAttempts: 'invoice_id, charge_id, external_id, pattern_match'
+        });
+      } else {
+        console.log('✅ Booking FOUND:', {
+          bookingId: booking.id,
+          currentPaymentStatus: booking.payment_status,
+          currentStatus: booking.status,
+          depositPaid: booking.deposit_paid,
+          remainingPaid: booking.remaining_paid
+        });
       }
       if (bookingError) {
         throw bookingError;
       }
       if (booking) {
         let updateData = {};
-        // Handle different event types
-        switch(eventType){
-          case 'invoice.paid':
-          case 'ewallet.charge.succeeded':
-          case 'ewallet.capture':
+        
+        // Normalize event type and status for easier matching
+        const eventTypeLower = (eventType || '').toLowerCase();
+        const statusUpper = (status || '').toUpperCase();
+        
+        console.log('📋 Processing booking webhook:', {
+          bookingId: booking.id,
+          eventType,
+          eventTypeLower,
+          status,
+          statusUpper,
+          invoiceId,
+          chargeId,
+          externalId
+        });
+        
+        // Check if payment is successful based on event type OR status
+        // Xendit sends various event types for successful payments
+        // Also check payload for transaction_status which might be "SUCCESSFUL"
+        const payloadStatus = payload?.transaction_status || payload?.data?.transaction_status || '';
+        const payloadStatusUpper = (payloadStatus || '').toUpperCase();
+        
+        console.log('🔍 Checking payment success conditions:', {
+          eventTypeLower,
+          statusUpper,
+          payloadStatusUpper,
+          payloadKeys: payload ? Object.keys(payload) : [],
+          fullPayload: JSON.stringify(payload).substring(0, 1000)
+        });
+        
+        const isPaymentSuccess = 
+          eventTypeLower === 'invoice.paid' ||
+          eventTypeLower === 'invoice.succeeded' ||
+          eventTypeLower === 'ewallet.charge.succeeded' ||
+          eventTypeLower === 'ewallet.charge.completed' ||
+          eventTypeLower === 'ewallet.capture' ||
+          eventTypeLower === 'payment.succeeded' ||
+          statusUpper === 'PAID' ||
+          statusUpper === 'SUCCEEDED' ||
+          statusUpper === 'SUCCESSFUL' ||
+          statusUpper === 'COMPLETED' ||
+          statusUpper === 'SETTLED' ||
+          payloadStatusUpper === 'SUCCESSFUL' ||
+          payloadStatusUpper === 'SUCCEEDED' ||
+          payloadStatusUpper === 'PAID' ||
+          payloadStatusUpper === 'COMPLETED';
+        
+        const isPaymentFailed = 
+          eventTypeLower === 'invoice.expired' ||
+          eventTypeLower === 'invoice.failed' ||
+          eventTypeLower === 'ewallet.charge.failed' ||
+          eventTypeLower === 'payment.failed' ||
+          statusUpper === 'FAILED' ||
+          statusUpper === 'EXPIRED' ||
+          statusUpper === 'REJECTED';
+        
+        const isPaymentPending = 
+          eventTypeLower === 'invoice.created' ||
+          eventTypeLower === 'ewallet.charge.pending' ||
+          eventTypeLower === 'payment.pending' ||
+          statusUpper === 'PENDING';
+        
+        // Determine if this is a deposit payment or remaining payment
+        // Check if booking already has deposit_paid to determine payment type
+        const isRemainingPayment = booking.deposit_paid === true && booking.remaining_paid === false;
+        const isFullPayment = booking.deposit_paid === false && booking.remaining_paid === false && 
+                             (booking.total_amount === booking.deposit_amount || !booking.deposit_amount);
+        
+        // Handle different payment statuses
+        if (isPaymentSuccess) {
+          console.log('✅ Payment SUCCESS detected - updating booking to COMPLETED');
+          updateData = {
+            payment_status: 'COMPLETED',
+            paid_at: new Date().toISOString(),
+            status: 'CONFIRMED'
+          };
+          
+          // Update deposit/remaining payment flags based on payment type
+          if (isRemainingPayment) {
+            updateData.remaining_paid = true;
+            console.log('💰 Marking remaining payment as paid');
+          } else if (isFullPayment) {
+            updateData.deposit_paid = true;
+            updateData.remaining_paid = true;
+            console.log('💰 Marking full payment (both deposit and remaining) as paid');
+          } else {
+            // Default: deposit payment
+            updateData.deposit_paid = true;
+            console.log('💰 Marking deposit payment as paid');
+          }
+        } else if (isPaymentFailed) {
+          console.log('❌ Payment FAILED detected - updating booking to FAILED');
+          updateData = {
+            payment_status: 'FAILED',
+            deposit_paid: false,
+            remaining_paid: false,
+            status: 'PENDING'
+          };
+        } else if (isPaymentPending) {
+          console.log('⏳ Payment PENDING - keeping status as PENDING');
+          updateData = {
+            payment_status: 'PENDING',
+            deposit_paid: false
+          };
+        } else {
+          console.log('⚠️ Unknown payment status - eventType:', eventType, 'status:', status);
+          // For unknown statuses, check the status field directly
+          if (statusUpper === 'PAID' || statusUpper === 'SUCCEEDED' || statusUpper === 'COMPLETED') {
+            console.log('✅ Treating as success based on status field');
             updateData = {
               payment_status: 'COMPLETED',
               deposit_paid: true,
               paid_at: new Date().toISOString(),
               status: 'CONFIRMED'
             };
-            break;
-          case 'invoice.expired':
-          case 'ewallet.charge.failed':
-            updateData = {
-              payment_status: 'FAILED',
-              deposit_paid: false,
-              status: 'PENDING'
-            };
-            break;
-          case 'invoice.created':
-          case 'ewallet.charge.pending':
-            updateData = {
-              payment_status: 'PENDING',
-              deposit_paid: false
-            };
-            break;
+          }
         }
+        
         // Update booking if we have changes
         if (Object.keys(updateData).length > 0) {
-          const { error: updateError } = await supabase.from('bookings').update(updateData).eq('id', booking.id);
+          console.log('📝 Updating booking with data:', updateData);
+          const { data: updatedBooking, error: updateError } = await supabase
+            .from('bookings')
+            .update(updateData)
+            .eq('id', booking.id)
+            .select()
+            .single();
+          
           if (updateError) {
+            console.error('❌ Error updating booking:', updateError);
             throw updateError;
           }
-          console.log('Booking updated:', booking.id, updateData);
+          console.log('✅ Booking updated successfully:', {
+            bookingId: booking.id,
+            updatedFields: Object.keys(updateData),
+            newStatus: updatedBooking?.status,
+            newPaymentStatus: updatedBooking?.payment_status
+          });
+        } else {
+          console.log('ℹ️ No update needed for booking:', booking.id);
         }
       } else {
         console.log('No booking found for webhook:', {

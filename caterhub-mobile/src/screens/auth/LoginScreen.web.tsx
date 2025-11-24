@@ -56,8 +56,8 @@ export default function LoginScreen() {
                 style={styles.logo}
                 resizeMode="contain"
               />
-              <Text style={styles.title}>Partner & Admin Login</Text>
-              <Text style={styles.subtitle}>Login for partners and administrators (web only)</Text>
+              <Text style={styles.title}>Partners login</Text>
+              <Text style={styles.subtitle}>Login you account</Text>
             </View>
 
             <View style={styles.form}>

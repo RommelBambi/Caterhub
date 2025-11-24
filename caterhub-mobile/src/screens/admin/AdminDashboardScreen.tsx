@@ -143,27 +143,47 @@ export default function AdminDashboardScreen() {
 
       if (bookingsError) console.warn('Bookings fetch error:', bookingsError);
 
-      // Fetch revenue from completed bookings (last 30 days) - calculate from actual booking data
+      // Fetch platform fee revenue from completed bookings (last 30 days)
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
       const { data: bookingsData, error: bookingsDataError } = await supabase
         .from('bookings')
-        .select('deposit_amount, remaining_amount, delivery_fee, created_at, status')
+        .select('platform_fee_amount, platform_fee_percentage, deposit_amount, remaining_amount, delivery_fee, created_at, status')
         .gte('created_at', thirtyDaysAgo.toISOString())
-        .eq('status', 'COMPLETED');
+        .in('status', ['COMPLETED', 'CONFIRMED']);
 
-      if (bookingsDataError) console.warn('Bookings data fetch error:', bookingsDataError);
+      if (bookingsDataError) {
+        console.warn('[AdminDashboard] Bookings data fetch error:', bookingsDataError);
+      }
 
-      // Calculate revenue from completed bookings
+      // Calculate platform fee revenue from bookings
+      // This is the actual revenue the platform earns (not total booking value)
       let totalRevenue = 0;
-      if (bookingsData) {
+      if (bookingsData && bookingsData.length > 0) {
+        console.log('[AdminDashboard] Found bookings:', bookingsData.length);
         totalRevenue = bookingsData.reduce((sum, booking) => {
-          const deposit = booking.deposit_amount || 0;
-          const remaining = booking.remaining_amount || 0;
-          const deliveryFee = booking.delivery_fee || 0;
-          return sum + deposit + remaining + deliveryFee;
+          let platformFee = booking.platform_fee_amount || 0;
+          
+          // If platform_fee_amount is not set, calculate it from the booking amounts
+          if (platformFee === 0 && booking.platform_fee_percentage) {
+            const deposit = booking.deposit_amount || 0;
+            const remaining = booking.remaining_amount || 0;
+            const deliveryFee = booking.delivery_fee || 0;
+            const totalAmount = deposit + remaining + deliveryFee;
+            platformFee = totalAmount * (booking.platform_fee_percentage / 100);
+            console.log('[AdminDashboard] Calculated platform fee:', {
+              totalAmount,
+              percentage: booking.platform_fee_percentage,
+              platformFee
+            });
+          }
+          
+          return sum + platformFee;
         }, 0);
+        console.log('[AdminDashboard] Total platform revenue:', totalRevenue);
+      } else {
+        console.log('[AdminDashboard] No bookings found in last 30 days');
       }
 
       // Fallback: Also try to get revenue from payments table if bookings data is not available
@@ -205,7 +225,24 @@ export default function AdminDashboardScreen() {
   }, [currentPage]);
 
   const handleApproveApplication = async (applicationId: string) => {
+    console.log('[Admin] ===== handleApproveApplication CALLED =====');
+    console.log('[Admin] Application ID:', applicationId);
+    console.log('[Admin] Current user:', user?.email, 'Role:', user?.role);
+    console.log('[Admin] Supabase client:', !!supabase);
     try {
+      // First, get the current application to see its status
+      const { data: currentApp, error: fetchError } = await supabase
+        .from('partner_applications')
+        .select('status')
+        .eq('id', applicationId)
+        .single();
+      
+      if (fetchError) {
+        console.error('[Admin] Error fetching current application:', fetchError);
+      } else {
+        console.log('[Admin] Current application status:', currentApp?.status);
+      }
+      
       console.log('[Admin] Attempting to approve application:', applicationId);
       
       const { data, error } = await supabase
@@ -238,7 +275,6 @@ export default function AdminDashboardScreen() {
         Alert.alert('Warning', 'Update may have succeeded but could not verify. Please refresh the page.');
       } else {
         console.log('[Admin] Successfully approved application:', data.id, 'New status:', data.status);
-        // ADD THIS: Show success message
         Alert.alert('Success', 'Application approved successfully!');
       }
       
@@ -252,6 +288,19 @@ export default function AdminDashboardScreen() {
 
   const handleRejectApplication = async (applicationId: string) => {
     try {
+      // First, get the current application to see its status
+      const { data: currentApp, error: fetchError } = await supabase
+        .from('partner_applications')
+        .select('status')
+        .eq('id', applicationId)
+        .single();
+      
+      if (fetchError) {
+        console.error('[Admin] Error fetching current application:', fetchError);
+      } else {
+        console.log('[Admin] Current application status:', currentApp?.status);
+      }
+      
       console.log('[Admin] Attempting to reject application:', applicationId);
       
       const { data, error } = await supabase
@@ -284,6 +333,7 @@ export default function AdminDashboardScreen() {
         Alert.alert('Warning', 'Update may have succeeded but could not verify. Please refresh the page.');
       } else {
         console.log('[Admin] Successfully rejected application:', data.id, 'New status:', data.status);
+        Alert.alert('Success', 'Application rejected successfully!');
       }
       
       // Trigger refresh of the recruitment page
@@ -355,11 +405,11 @@ export default function AdminDashboardScreen() {
               <View style={[styles.statCard, styles.statCardInfo]}>
                 <View style={styles.statCardContent}>
                   <View style={styles.statCardLeft}>
-                    <Text style={styles.statLabel}>REVENUE</Text>
+                    <Text style={styles.statLabel}>PLATFORM REVENUE</Text>
                     <Text style={[styles.statValue, { color: COLORS.info }]}>
                       {dashboardStats.loading ? '...' : `₱${dashboardStats.revenue.toLocaleString()}`}
                     </Text>
-                    <Text style={styles.statSub}>Last 30 days</Text>
+                    <Text style={styles.statSub}>Platform fees (last 30 days)</Text>
                   </View>
                   <View style={[styles.statIconContainer, { backgroundColor: '#E0F2FE' }]}>
                     <Ionicons name="cash" size={24} color={COLORS.info} />

@@ -285,31 +285,37 @@ export default function ServiceDetails({ route, navigation }: any) {
                       <Card.Content>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                           <Text style={styles.pkgTitle}>{pkg.name}</Text>
-                          <Text style={styles.pkgPrice}>{`₱ ${pkg.pricePerHead}`}</Text>
+                          {(pkg.pricePerHead ?? 0) > 0 && (
+                            <Text style={styles.pkgPrice}>{`₱ ${pkg.pricePerHead}`}</Text>
+                          )}
                         </View>
-
-                        {/* Package type indicator */}
-                        {selectionMode === 'FIXED_MENU' && (
-                          <View style={{ marginBottom: 8 }}>
-                            <Text style={{ fontSize: 12, color: '#3b82f6', fontWeight: '600' }}>
-                              Fixed Menu Package
-                            </Text>
-                          </View>
-                        )}
 
                         {/* Display sections (food categories with dishes) */}
                         {sections.length > 0 && (
                           <>
-                            {sections.map((section: any, sectionIdx: number) => (
+                            {selectionMode === 'FIXED_MENU' ? (
+                              // For FIXED_MENU: Show all dishes in a flat list without category headers
+                              <View style={{ marginTop: 8 }}>
+                                {sections.map((section: any, sectionIdx: number) => 
+                                  section.dishes && section.dishes.length > 0
+                                    ? section.dishes.map((dish: string, dishIdx: number) => (
+                                        <View key={`${sectionIdx}_${dishIdx}`} style={styles.dishRow}>
+                                          <Text style={styles.dishText}>• {dish}</Text>
+                                        </View>
+                                      ))
+                                    : null
+                                )}
+                              </View>
+                            ) : (
+                              // For CHOICE_BASED: Show category names only (no dishes)
+                              sections.map((section: any, sectionIdx: number) => (
                               <View key={sectionIdx} style={styles.sectionBlock}>
                                 <Text style={styles.packageSectionTitle}>
-                                  {selectionMode === 'FIXED_MENU'
-                                    ? `${String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}`
-                                    : `Choice of ${String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}`}
+                                    Choice of {String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}
                                 </Text>
-                                {/* Dish options are intentionally hidden on the card. They will be shown in the customization flow. */}
                               </View>
-                            ))}
+                              ))
+                            )}
                           </>
                         )}
 

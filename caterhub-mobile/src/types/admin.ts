@@ -14,6 +14,7 @@ export type BusinessLocation = {
   country: string;
   province: string;
   city: string;
+  barangay?: string;
   postalCode: string;
   address: string;
   latitude?: number;

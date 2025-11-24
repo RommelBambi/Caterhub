@@ -131,7 +131,7 @@ export interface Database {
           delivery_fee: number | null; // numeric(10, 2), default 0
           delivery_fee_set_by_caterer: boolean | null; // default false
           // Platform fee system
-          platform_fee_percentage: number | null; // numeric(5, 2), default 15.00
+          platform_fee_percentage: number | null; // numeric(5, 2), default 3.00 (tiered: BASE=3%, TIER_1=2%, TIER_2=1%)
           platform_fee_amount: number | null; // numeric(10, 2)
           caterer_payout_amount: number | null; // numeric(10, 2)
         };
@@ -427,64 +427,6 @@ export interface Database {
           updated_at?: string;
         };
       };
-      terms_conditions: {
-        Row: {
-          id: number; // bigserial
-          version: string; // varchar(20), unique
-          title: string; // varchar(255)
-          content: string; // text
-          effective_date: string; // date
-          is_active: boolean | null; // default true
-          created_at: string; // timestamp without time zone
-          updated_at: string; // timestamp without time zone
-        };
-        Insert: {
-          id?: number;
-          version: string;
-          title: string;
-          content: string;
-          effective_date: string;
-          is_active?: boolean | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: number;
-          version?: string;
-          title?: string;
-          content?: string;
-          effective_date?: string;
-          is_active?: boolean | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      user_terms_acceptance: {
-        Row: {
-          id: number; // bigserial
-          user_id: string | null; // UUID
-          terms_id: number | null; // bigint
-          accepted_at: string; // timestamp without time zone, default now()
-          ip_address: string | null; // varchar(45)
-          user_agent: string | null; // text
-        };
-        Insert: {
-          id?: number;
-          user_id?: string | null;
-          terms_id?: number | null;
-          accepted_at?: string;
-          ip_address?: string | null;
-          user_agent?: string | null;
-        };
-        Update: {
-          id?: number;
-          user_id?: string | null;
-          terms_id?: number | null;
-          accepted_at?: string;
-          ip_address?: string | null;
-          user_agent?: string | null;
-        };
-      };
       payment_webhooks: {
         Row: {
           id: number; // bigserial
@@ -531,7 +473,7 @@ export interface Database {
           total_gmv: number | null; // numeric(12, 2), default 0
           completed_orders: number | null; // integer, default 0
           next_month_fee_tier: string | null; // varchar(20), default 'BASE'
-          next_month_fee_percentage: number | null; // numeric(5, 2), default 15.00
+          next_month_fee_percentage: number | null; // numeric(5, 2), default 3.00 (tiered: BASE=3%, TIER_1=2%, TIER_2=1%)
           created_at: string | null; // timestamp without time zone, default now()
           updated_at: string | null; // timestamp without time zone, default now()
         };

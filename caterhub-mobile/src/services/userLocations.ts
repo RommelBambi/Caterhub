@@ -20,7 +20,8 @@ export interface CreateLocationData {
   is_primary?: boolean;
 }
 
-// Save a new user location
+// Save a new user location (replaces existing location if one exists)
+// Customers should only have one location - new location replaces the old one
 export async function saveUserLocation(locationData: CreateLocationData): Promise<UserLocation> {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   
@@ -28,6 +29,45 @@ export async function saveUserLocation(locationData: CreateLocationData): Promis
     throw new Error('User not authenticated');
   }
 
+  // Check if user already has a location
+  const { data: existingLocations, error: checkError } = await supabase
+    .from('user_locations')
+    .select('id')
+    .eq('user_id', user.id)
+    .limit(1);
+
+  if (checkError) {
+    throw new Error(`Failed to check existing locations: ${checkError.message}`);
+  }
+
+  // If user has an existing location, update it instead of creating a new one
+  if (existingLocations && existingLocations.length > 0) {
+    const existingLocationId = existingLocations[0].id;
+    
+    const { data, error } = await supabase
+      .from('user_locations')
+      .update({
+        latitude: locationData.latitude,
+        longitude: locationData.longitude,
+        address: locationData.address,
+        location_name: locationData.location_name || null,
+        is_primary: locationData.is_primary !== undefined ? locationData.is_primary : true, // Default to primary
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existingLocationId)
+      .eq('user_id', user.id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to update location: ${error.message}`);
+    }
+
+    console.log('[saveUserLocation] Updated existing location:', existingLocationId);
+    return data;
+  }
+
+  // No existing location, create a new one
   const { data, error } = await supabase
     .from('user_locations')
     .insert({
@@ -36,7 +76,7 @@ export async function saveUserLocation(locationData: CreateLocationData): Promis
       longitude: locationData.longitude,
       address: locationData.address,
       location_name: locationData.location_name || null,
-      is_primary: locationData.is_primary || false,
+      is_primary: locationData.is_primary !== undefined ? locationData.is_primary : true, // Default to primary
     })
     .select()
     .single();
@@ -45,6 +85,7 @@ export async function saveUserLocation(locationData: CreateLocationData): Promis
     throw new Error(`Failed to save location: ${error.message}`);
   }
 
+  console.log('[saveUserLocation] Created new location');
   return data;
 }
 
@@ -160,7 +201,19 @@ export async function deleteUserLocation(locationId: string): Promise<void> {
 }
 
 // Save location and set as primary (convenience function)
+// This will replace existing location if one exists
 export async function saveAndSetPrimaryLocation(locationData: CreateLocationData): Promise<UserLocation> {
+  // First, unset is_primary on any existing locations (saveUserLocation will handle replacement)
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  
+  if (!authError && user) {
+    // Unset primary flag on all existing locations (saveUserLocation will update the existing one)
+    await supabase
+      .from('user_locations')
+      .update({ is_primary: false })
+      .eq('user_id', user.id);
+  }
+  
   const location = await saveUserLocation({
     ...locationData,
     is_primary: true,

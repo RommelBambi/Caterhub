@@ -17,7 +17,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../store/auth';
-import { getMyFavorites } from '../../services/services';
 import { supabase } from '../../services/supabase';
 import {
   getUserLocations,
@@ -36,7 +35,7 @@ type SnackbarState = {
   type: 'success' | 'error';
 };
 
-type TabType = 'profile' | 'locations' | 'security' | 'stats';
+type TabType = 'profile' | 'locations' | 'security';
 
 export default function AccountScreen() {
   const { user, logout, updateMe, changePassword, refreshUser } = useAuth();
@@ -88,9 +87,6 @@ export default function AccountScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
-  // Stats state
-  const [favCount, setFavCount] = useState<number>(0);
-  const [loadingFavs, setLoadingFavs] = useState<boolean>(false);
   
   // Snackbar state
   const [snackbar, setSnackbar] = useState<SnackbarState>({
@@ -124,7 +120,6 @@ export default function AccountScreen() {
       loadLocations();
       
       // Load favorites count
-      loadFavoritesCount();
     }, [user?.id, user?.profile_image_url])
   );
 
@@ -136,7 +131,8 @@ export default function AccountScreen() {
     try {
       setLoadingLocations(true);
       const userLocations = await getUserLocations();
-      setLocations(userLocations);
+      // Only show the latest location (first one since ordered by created_at desc)
+      setLocations(userLocations.length > 0 ? [userLocations[0]] : []);
     } catch (error) {
       console.error('Error loading locations:', error);
     } finally {
@@ -144,21 +140,6 @@ export default function AccountScreen() {
     }
   };
 
-  const loadFavoritesCount = async () => {
-    try {
-      setLoadingFavs(true);
-      if (!user) {
-        setFavCount(0);
-        return;
-      }
-      const ids = await getMyFavorites();
-      setFavCount(ids.length);
-    } catch {
-      setFavCount(0);
-    } finally {
-      setLoadingFavs(false);
-    }
-  };
 
   const showSnackbar = (message: string, type: 'success' | 'error') => {
     setSnackbar({ visible: true, message, type });
@@ -317,6 +298,7 @@ export default function AccountScreen() {
   };
 
   // Location management
+  // Customers should only have one location - new location replaces existing one
   const handleLocationSelect = async (location: { latitude: number; longitude: number; address: string }) => {
     if (!user?.id) return;
     
@@ -330,15 +312,16 @@ export default function AccountScreen() {
           address: location.address,
         });
         showSnackbar('Location updated successfully.', 'success');
-      } else if (addingNewLocation) {
-        // Add new location
+      } else {
+        // Always replace existing location (saveUserLocation now handles this automatically)
+        // If no location exists, it creates one; if one exists, it updates it
         await saveUserLocation({
           latitude: location.latitude,
           longitude: location.longitude,
           address: location.address,
-          is_primary: locations.length === 0, // Set as primary if it's the first location
+          is_primary: true, // Always set as primary since there's only one location
         });
-        showSnackbar('Location added successfully.', 'success');
+        showSnackbar('Location saved successfully.', 'success');
       }
       
       await loadLocations();
@@ -760,19 +743,6 @@ export default function AccountScreen() {
             Security
           </Text>
         </Pressable>
-        <Pressable
-          style={[styles.tab, activeTab === 'stats' && styles.tabActive]}
-          onPress={() => setActiveTab('stats')}
-        >
-          <Ionicons
-            name={activeTab === 'stats' ? 'stats-chart' : 'stats-chart-outline'}
-            size={18}
-            color={activeTab === 'stats' ? COLORS.primary : COLORS.textLight}
-          />
-          <Text style={[styles.tabText, activeTab === 'stats' && styles.tabTextActive]}>
-            Stats
-          </Text>
-        </Pressable>
       </View>
 
       {/* Content */}
@@ -963,7 +933,7 @@ export default function AccountScreen() {
                   <Ionicons name="location-outline" size={48} color={COLORS.textLight} />
                   <Text style={styles.emptyStateText}>No locations saved yet</Text>
                   <Text style={styles.emptyStateSubtext}>
-                    Add a location to make booking faster
+                    Set your location to make booking faster
                   </Text>
                 </View>
               ) : (
@@ -990,14 +960,6 @@ export default function AccountScreen() {
                       </View>
                     </View>
                     <View style={styles.locationItemActions}>
-                      {!location.is_primary && (
-                        <Pressable
-                          onPress={() => handleSetPrimary(location.id)}
-                          style={styles.locationActionButton}
-                        >
-                          <Ionicons name="star-outline" size={18} color={COLORS.primary} />
-                        </Pressable>
-                      )}
                       <Pressable
                         onPress={() => {
                           setEditingLocationIndex(index);
@@ -1027,7 +989,9 @@ export default function AccountScreen() {
                 }}
               >
                 <Ionicons name="add-circle" size={20} color={COLORS.primary} />
-                <Text style={styles.addLocationButtonText}>Add New Location</Text>
+                <Text style={styles.addLocationButtonText}>
+                  {locations.length > 0 ? 'Update Location' : 'Set Location'}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -1237,42 +1201,6 @@ export default function AccountScreen() {
           </View>
         )}
 
-        {/* Stats Tab */}
-        {activeTab === 'stats' && (
-          <View style={styles.tabContent}>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Account Statistics</Text>
-              <Text style={styles.cardSubtitle}>Your account activity overview</Text>
-
-              <View style={styles.statItem}>
-                <View style={styles.statItemLeft}>
-                  <View style={styles.statIconContainer}>
-                    <Ionicons name="heart" size={24} color={COLORS.primary} />
-                  </View>
-                  <View style={styles.statInfo}>
-                    <Text style={styles.statLabel}>Saved Caterers</Text>
-                    <Text style={styles.statValue}>
-                      {loadingFavs ? 'Loading...' : `${favCount} caterers`}
-                    </Text>
-                  </View>
-                </View>
-                {loadingFavs && <ActivityIndicator size="small" color={COLORS.primary} />}
-              </View>
-
-              <View style={styles.statItem}>
-                <View style={styles.statItemLeft}>
-                  <View style={styles.statIconContainer}>
-                    <Ionicons name="location" size={24} color={COLORS.primary} />
-                  </View>
-                  <View style={styles.statInfo}>
-                    <Text style={styles.statLabel}>Saved Locations</Text>
-                    <Text style={styles.statValue}>{locations.length} locations</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          </View>
-        )}
       </ScrollView>
 
       {/* Map Picker Modal */}

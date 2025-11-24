@@ -10,12 +10,16 @@ import DateTimePicker, {
   DateTimePickerAndroid,
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { calculateDeliveryFeeFromAddresses, getClosestCatererLocation } from '../../services/deliveryFee';
+import { calculateDeliveryFeeFromAddresses, getClosestCatererLocation, calculateDeliveryFeeFromCoordinates } from '../../services/deliveryFee';
+import { calculateDistance } from '../../services/location';
+import { getPrimaryLocation } from '../../services/userLocations';
+import { geocodeAddress } from '../../services/geocoding';
 
 type FormVals = {
   date: string;
   guests: string;
   address: string;
+  eventPlaceDetails: string;
   notes: string;
   paymentOption: 'deposit' | 'full';
   agreeToTerms: boolean;
@@ -56,11 +60,46 @@ export default function BookingForm({ route, navigation }: any) {
       date: '',
       guests: '50',
       address: '',
+      eventPlaceDetails: '',
       notes: initialNotes ?? '',
       paymentOption: 'deposit',
       agreeToTerms: false,
     },
   });
+
+  // Saved location state (for using coordinates directly)
+  const [savedLocation, setSavedLocation] = React.useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Load saved location and auto-fill address
+  React.useEffect(() => {
+    const loadSavedLocation = async () => {
+      if (!user) return;
+      
+      try {
+        const location = await getPrimaryLocation();
+        if (location && location.address) {
+          setValue('address', location.address);
+          // Store coordinates for direct use in delivery fee calculation
+          if (location.latitude && location.longitude) {
+            setSavedLocation({
+              latitude: location.latitude,
+              longitude: location.longitude
+            });
+            console.log('[BookingForm] Loaded saved location with coordinates:', {
+              address: location.address,
+              lat: location.latitude,
+              lng: location.longitude
+            });
+          }
+        }
+      } catch (error) {
+        console.error('[BookingForm] Error loading saved location:', error);
+        // Silently fail - user can still enter address manually
+      }
+    };
+
+    loadSavedLocation();
+  }, [user, setValue]);
 
   const [showTermsModal, setShowTermsModal] = React.useState(false);
 
@@ -144,8 +183,64 @@ export default function BookingForm({ route, navigation }: any) {
           return;
         }
 
-        // Get closest caterer location
-        const closestLocation = await getClosestCatererLocation(address, catererLocations);
+        let customerLat: number;
+        let customerLng: number;
+        let closestLocation: { location: { latitude: number; longitude: number }; distance: number } | null;
+
+        // Strategy 1: Use saved location coordinates if available and address matches
+        if (savedLocation && address.trim()) {
+          console.log('[BookingForm] Using saved location coordinates for delivery fee calculation');
+          customerLat = savedLocation.latitude;
+          customerLng = savedLocation.longitude;
+          
+          // Find closest caterer location using saved coordinates
+          let minDistance = Infinity;
+          let closestLoc: { latitude: number; longitude: number } | null = null;
+          
+          for (const loc of catererLocations) {
+            if (loc.latitude && loc.longitude) {
+              const distance = calculateDistance(
+                customerLat,
+                customerLng,
+                loc.latitude,
+                loc.longitude
+              );
+              
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestLoc = { latitude: loc.latitude, longitude: loc.longitude };
+              }
+            }
+          }
+          
+          if (closestLoc) {
+            closestLocation = { location: closestLoc, distance: minDistance };
+          } else {
+            closestLocation = null;
+          }
+        } else {
+          // Strategy 2: Geocode the address (with improved fallback)
+          console.log('[BookingForm] Geocoding address for delivery fee calculation');
+          closestLocation = await getClosestCatererLocation(address, catererLocations);
+          
+          if (!closestLocation) {
+            setDeliveryFee(0);
+            setDeliveryFeeError('Could not determine distance. Please check your address.');
+            return;
+          }
+          
+          // Geocode customer address to get coordinates
+          const geocodeResult = await geocodeAddress(address);
+          
+          if (!geocodeResult) {
+            setDeliveryFee(0);
+            setDeliveryFeeError('Could not locate address. Please check your address or try using barangay/city.');
+            return;
+          }
+          
+          customerLat = geocodeResult.latitude;
+          customerLng = geocodeResult.longitude;
+        }
 
         if (!closestLocation) {
           setDeliveryFee(0);
@@ -153,19 +248,20 @@ export default function BookingForm({ route, navigation }: any) {
           return;
         }
 
-        // Calculate delivery fee
-        const fee = await calculateDeliveryFeeFromAddresses(
-          address,
+        // Calculate delivery fee using coordinates (more reliable than geocoding again)
+        const fee = calculateDeliveryFeeFromCoordinates(
+          customerLat,
+          customerLng,
           closestLocation.location.latitude,
           closestLocation.location.longitude,
           guests
         );
 
-        if (fee === null) {
-          setDeliveryFee(0);
-          setDeliveryFeeError('Failed to calculate delivery fee');
-          return;
-        }
+        console.log('[BookingForm] Delivery fee calculated:', {
+          distance: closestLocation.distance.toFixed(2) + ' km',
+          guests,
+          fee
+        });
 
         setDeliveryFee(fee);
         setDeliveryFeeError(null);
@@ -225,6 +321,7 @@ export default function BookingForm({ route, navigation }: any) {
         packageId: pkg?.id,
         picks,
         address: d.address, // Store in notes until migration is run
+        eventPlaceDetails: d.eventPlaceDetails || '', // Include event place details
         extra: d.notes,
         allergies: allergies || '', // Include allergy/dietary restriction information
       });
@@ -533,6 +630,26 @@ export default function BookingForm({ route, navigation }: any) {
             )}
           />
           {errors.address && <Text style={styles.errorText}>{errors.address.message}</Text>}
+        </View>
+
+        {/* Event Place Details */}
+        <View style={styles.inputSection}>
+          <Text style={styles.label}>Event Place Details</Text>
+          <Controller
+            control={control}
+            name="eventPlaceDetails"
+            render={({ field: { onChange, value } }) => (
+              <TextInput
+                label="Event Place Details (e.g., building name, floor, room number, landmarks)"
+                value={value}
+                onChangeText={onChange}
+                multiline
+                numberOfLines={3}
+                style={[styles.input, { minHeight: 80 }]}
+                placeholder="Enter additional details about the event location..."
+              />
+            )}
+          />
         </View>
 
         {/* Payment Option */}

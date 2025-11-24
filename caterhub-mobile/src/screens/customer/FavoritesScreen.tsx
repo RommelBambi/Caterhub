@@ -119,7 +119,9 @@ export default function FavoritesScreen({ navigation }: any) {
               />
               <View style={{ padding: 8 }}>
                 <Text style={styles.name}>{svc.name}</Text>
-                <Text style={styles.meta}>₱{svc.pricePerHead} / head</Text>
+                {(svc.pricePerHead ?? 0) > 0 && (
+                  <Text style={styles.meta}>₱{svc.pricePerHead} / head</Text>
+                )}
                 <View style={{ flexDirection: 'row', marginTop: 4 }}>
                   <Ionicons name="star" size={14} color="#f59e0b" />
                   <Text style={styles.rating}>

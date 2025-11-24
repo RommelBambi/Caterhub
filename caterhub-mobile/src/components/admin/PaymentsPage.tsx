@@ -59,68 +59,85 @@ export default function PaymentsPage() {
           packages:package_id (
             id,
             name,
-            price
+            price,
+            caterer_id
           )
         `)
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching payments:', error);
+        console.error('[PaymentsPage] Error fetching payments:', error);
         Alert.alert('Error', error?.message || 'Failed to load payments. Please check your connection and try again.');
         setPayments([]);
         return;
       }
 
-      console.log(`Found ${bookings?.length || 0} bookings to process for payments`);
+      console.log(`[PaymentsPage] Found ${bookings?.length || 0} bookings to process for payments`);
 
-      // Transform bookings into payment records with real Xendit data
-      const transformedPayments: Payment[] = (bookings || []).map((booking: any) => {
-        let amount = 0;
-        if (booking.packages?.price) {
-          const priceMatch = booking.packages.price.match(/(\d+(?:,\d+)*(?:\.\d+)?)/);
-          if (priceMatch) {
-            amount = parseFloat(priceMatch[1].replace(/,/g, ''));
-          }
-        } else {
-          // If no package, calculate based on a default rate or use 0
-          // You may want to add a default price logic here
-          amount = 0;
-        }
+      // Transform bookings into payment records with real payment data
+      const transformedPayments: Payment[] = [];
+      
+      (bookings || []).forEach((booking: any) => {
+        // Calculate total amount from actual payment fields
+        const depositAmount = booking.deposit_amount || 0;
+        const remainingAmount = booking.remaining_amount || 0;
+        const deliveryFee = booking.delivery_fee || 0;
+        const totalAmount = depositAmount + remainingAmount + deliveryFee;
 
         // Use actual payment_status from database (set by Xendit integration)
-        let paymentStatus: 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED' = 
-          booking.payment_status || 'PENDING';
+        // Map database status to component status
+        let paymentStatus: 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED' = 'PENDING';
+        if (booking.payment_status) {
+          const status = booking.payment_status.toUpperCase();
+          if (status === 'COMPLETED' || status === 'PAID') {
+            paymentStatus = 'COMPLETED';
+          } else if (status === 'FAILED' || status === 'CANCELLED') {
+            paymentStatus = 'FAILED';
+          } else if (status === 'REFUNDED') {
+            paymentStatus = 'REFUNDED';
+          } else {
+            paymentStatus = 'PENDING';
+          }
+        }
 
         // Get payment method from database (gcash, grab_pay, cash, etc.)
         const paymentMethod = booking.payment_method 
-          ? booking.payment_method.toUpperCase() 
-          : 'Cash';
+          ? booking.payment_method.toUpperCase().replace('_', ' ')
+          : 'CASH';
 
-        // Use actual transaction_id or payment_intent_id
-        const transactionId = booking.transaction_id 
+        // Use actual Xendit transaction IDs (prioritize these)
+        const transactionId = booking.xendit_invoice_id 
+          || booking.xendit_charge_id 
+          || booking.xendit_external_id
+          || booking.transaction_id 
           || booking.payment_intent_id 
           || `TXN-${booking.id}`;
 
-        return {
-          id: booking.id,
-          booking_id: booking.id,
-          amount,
-          payment_method: paymentMethod,
-          payment_status: paymentStatus,
-          transaction_id: transactionId,
-          created_at: booking.paid_at || booking.created_at,
-          booking: {
+        // Create payment record for the booking
+        // If there are separate deposit and remaining payments, we could create two records
+        // For now, we'll create one record with the total amount
+        if (totalAmount > 0 || booking.payment_method) {
+          transformedPayments.push({
             id: booking.id,
-            users: booking.users,
-            packages: booking.packages,
-          },
-        };
+            booking_id: booking.id,
+            amount: totalAmount,
+            payment_method: paymentMethod,
+            payment_status: paymentStatus,
+            transaction_id: transactionId,
+            created_at: booking.paid_at || booking.created_at,
+            booking: {
+              id: booking.id,
+              users: booking.users,
+              packages: booking.packages,
+            },
+          });
+        }
       });
 
       setPayments(transformedPayments);
-      console.log(`Processed ${transformedPayments.length} payment records`);
+      console.log(`[PaymentsPage] Processed ${transformedPayments.length} payment records`);
     } catch (error) {
-      console.error('Error:', error);
+      console.error('[PaymentsPage] Error:', error);
       Alert.alert('Error', 'Failed to load payments');
     } finally {
       setLoading(false);
@@ -189,8 +206,8 @@ export default function PaymentsPage() {
   const completedPayments = payments.filter(p => p.payment_status === 'COMPLETED');
   const pendingPayments = payments.filter(p => p.payment_status === 'PENDING');
   const failedPayments = payments.filter(p => p.payment_status === 'FAILED');
-  const totalRevenue = completedPayments.reduce((sum, p) => sum + p.amount, 0);
-  const pendingAmount = pendingPayments.reduce((sum, p) => sum + p.amount, 0);
+  const totalRevenue = completedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const pendingAmount = pendingPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
   return (
     <View style={styles.container}>
@@ -297,7 +314,7 @@ export default function PaymentsPage() {
                   {payment.booking?.packages?.name || 'N/A'}
                 </Text>
                 <Text style={[styles.cellText, styles.colAmount, styles.amountText]}>
-                  ₱{payment.amount.toLocaleString()}
+                  ₱{(payment.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
                 <Text style={[styles.cellText, styles.colMethod]}>{payment.payment_method}</Text>
                 <View style={[styles.cell, styles.colStatus]}>

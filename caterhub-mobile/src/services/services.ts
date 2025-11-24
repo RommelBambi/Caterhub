@@ -41,6 +41,7 @@ export type ServiceLocation = {
   address?: string;
   country?: string;
   province?: string;
+  barangay?: string;
   postalCode?: string;
   latitude?: number;
   longitude?: number;
@@ -139,8 +140,8 @@ export async function fetchServices(): Promise<Service[]> {
           
           // If coordinates are missing, try to geocode the address
           if ((!lat || !lng) && loc.address) {
-            // Create cache key from address components
-            const cacheKey = `${loc.address}, ${loc.city || ''}, ${loc.province || ''}, ${loc.country || 'Philippines'}`.toLowerCase();
+            // Create cache key from address components (include barangay for better cache accuracy)
+            const cacheKey = `${loc.address}, ${loc.barangay || ''}, ${loc.city || ''}, ${loc.province || ''}, ${loc.postalCode || ''}, ${loc.country || 'Philippines'}`.toLowerCase();
             
             // Check cache first
             const cached = geocodeCache.get(cacheKey);
@@ -154,7 +155,9 @@ export async function fetchServices(): Promise<Service[]> {
                 loc.address,
                 loc.city,
                 loc.province,
-                loc.country || 'Philippines'
+                loc.country || 'Philippines',
+                loc.barangay,
+                loc.postalCode
               );
               
               if (geocodeResult) {
@@ -444,7 +447,7 @@ export async function fetchFeaturedServices(limit = 6): Promise<Service[]> {
 export async function fetchTopServices(by: 'likes' | 'bookings', limit = 8): Promise<Service[]> {
   console.log(`[fetchTopServices] Fetching top ${limit} services by ${by}...`);
   
-  // Fetch all services (from partner_applications) and sort
+  // Fetch all services (from partner_applications)
   const allServices = await fetchServices();
   
   if (allServices.length === 0) {
@@ -452,34 +455,63 @@ export async function fetchTopServices(by: 'likes' | 'bookings', limit = 8): Pro
     return [];
   }
   
-  // Sort by the requested metric
-  // Since we don't have favorites_count or bookings_count from applications,
-  // we'll use a simple approach: return first N services, trying to get variety
-  const sorted = [...allServices];
-  
-  // Try to get variety by caterer
-  const uniqueCaterers = new Set<string>();
-  const result: Service[] = [];
-  
-  // First pass: get services from different caterers
-  for (const svc of sorted) {
-    if (result.length >= limit) break;
-    if (svc.user_id && !uniqueCaterers.has(svc.user_id)) {
-      uniqueCaterers.add(svc.user_id);
-      result.push(svc);
+  if (by === 'bookings') {
+    // Count bookings per caterer
+    try {
+      const { data: bookings, error: bookingsError } = await supabase
+        .from('bookings')
+        .select(`
+          package_id,
+          packages:package_id (
+            caterer_id
+          )
+        `);
+      
+      if (bookingsError) {
+        console.error('[fetchTopServices] Error fetching bookings:', bookingsError);
+        // Fallback: return services without booking counts
+        return allServices.slice(0, limit);
+      }
+      
+      // Count bookings per caterer_id
+      const bookingCounts: { [catererId: string]: number } = {};
+      
+      bookings?.forEach((booking: any) => {
+        const catererId = booking.packages?.caterer_id;
+        if (catererId) {
+          bookingCounts[catererId] = (bookingCounts[catererId] || 0) + 1;
+        }
+      });
+      
+      console.log('[fetchTopServices] Booking counts per caterer:', bookingCounts);
+      
+      // Add booking counts to services
+      const servicesWithCounts = allServices.map(service => ({
+        ...service,
+        bookingsCount: service.user_id ? (bookingCounts[service.user_id] || 0) : 0
+      }));
+      
+      // Sort by booking count (descending), then filter to only show services with bookings > 0
+      const sorted = servicesWithCounts
+        .filter(service => service.bookingsCount > 0) // Only show caterers with bookings
+        .sort((a, b) => b.bookingsCount - a.bookingsCount);
+      
+      // Limit results
+      const result = sorted.slice(0, limit);
+      
+      console.log(`[fetchTopServices] Selected ${result.length} services with bookings (out of ${sorted.length} total with bookings)`);
+      console.log('[fetchTopServices] Top services:', result.map(s => ({ name: s.name, bookings: s.bookingsCount })));
+      
+      return result;
+    } catch (error) {
+      console.error('[fetchTopServices] Error processing bookings:', error);
+      // Fallback: return services without booking counts
+      return allServices.slice(0, limit);
     }
+  } else {
+    // For 'likes', we don't have a favorites system yet, so return services in order
+    return allServices.slice(0, limit);
   }
-  
-  // Second pass: fill remaining slots with any services
-  for (const svc of sorted) {
-    if (result.length >= limit) break;
-    if (!result.find(r => r.id === svc.id)) {
-      result.push(svc);
-    }
-  }
-  
-  console.log(`[fetchTopServices] Selected ${result.length} services from ${uniqueCaterers.size} unique caterers`);
-  return result;
 }
 
 

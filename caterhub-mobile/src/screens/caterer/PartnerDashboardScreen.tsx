@@ -21,6 +21,7 @@ export default function PartnerDashboardScreen() {
   const { user } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [applicationStatus, setApplicationStatus] = useState<'Pending' | 'Approved' | 'Rejected' | null>(null);
   const [kpis, setKpis] = useState([
     { label: "New Orders (7d)", value: "0", sub: "Last 7 days" },
     { label: "Revenue (₱)", value: "0", sub: "Last 30 days" },
@@ -35,6 +36,20 @@ export default function PartnerDashboardScreen() {
     }
 
     try {
+      // Fetch application status
+      const { data: applications, error: appError } = await supabase
+        .from('partner_applications')
+        .select('status')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      if (applications && applications.length > 0 && !appError) {
+        setApplicationStatus(applications[0].status as 'Pending' | 'Approved' | 'Rejected');
+      } else {
+        setApplicationStatus(null);
+      }
+
       // Get packages for this caterer
       const { data: packages, error: packagesError } = await supabase
         .from('packages')
@@ -268,6 +283,44 @@ export default function PartnerDashboardScreen() {
               </View>
             </View>
 
+            {/* Application Status Banner */}
+            {applicationStatus && (
+              <View style={[
+                styles.statusBanner,
+                applicationStatus === 'Approved' && styles.statusBannerApproved,
+                applicationStatus === 'Rejected' && styles.statusBannerRejected,
+                applicationStatus === 'Pending' && styles.statusBannerPending,
+              ]}>
+                <View style={styles.statusBannerContent}>
+                  <Ionicons 
+                    name={
+                      applicationStatus === 'Approved' ? 'checkmark-circle' :
+                      applicationStatus === 'Rejected' ? 'close-circle' :
+                      'time-outline'
+                    } 
+                    size={24} 
+                    color={
+                      applicationStatus === 'Approved' ? '#10b981' :
+                      applicationStatus === 'Rejected' ? '#ef4444' :
+                      '#f59e0b'
+                    } 
+                  />
+                  <View style={styles.statusBannerText}>
+                    <Text style={styles.statusBannerTitle}>
+                      {applicationStatus === 'Approved' ? 'Account Approved' :
+                       applicationStatus === 'Rejected' ? 'Account Rejected' :
+                       'Application Pending'}
+                    </Text>
+                    <Text style={styles.statusBannerSubtitle}>
+                      {applicationStatus === 'Approved' ? 'Your account has been approved. You can now receive bookings and manage your catering business.' :
+                       applicationStatus === 'Rejected' ? 'Your application has been rejected. Please contact support for more information.' :
+                       'Your application is being reviewed by our admin team. You will be notified once a decision is made.'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {/* Stats Grid */}
             <View style={styles.statsGrid}>
               <View style={[styles.statCard, styles.statCardPrimary]}>
@@ -476,6 +529,43 @@ export default function PartnerDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  statusBanner: {
+    marginBottom: 20,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+  },
+  statusBannerApproved: {
+    backgroundColor: '#10b98115',
+    borderColor: '#10b981',
+  },
+  statusBannerRejected: {
+    backgroundColor: '#ef444415',
+    borderColor: '#ef4444',
+  },
+  statusBannerPending: {
+    backgroundColor: '#f59e0b15',
+    borderColor: '#f59e0b',
+  },
+  statusBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  statusBannerText: {
+    flex: 1,
+  },
+  statusBannerTitle: {
+    fontSize: Platform.OS === 'web' ? 16 : 17,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  statusBannerSubtitle: {
+    fontSize: Platform.OS === 'web' ? 13 : 14,
+    color: '#4b5563',
+    lineHeight: Platform.OS === 'web' ? 18 : 20,
+  },
   screen: {
     flex: 1,
     flexDirection: Platform.OS === 'web' ? "row" : "column",

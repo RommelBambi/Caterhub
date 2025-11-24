@@ -12,7 +12,6 @@ export default function LandingScreen() {
   const HERO_BG = "https://unsplash.com/photos/PfSWf6safqs/download?force=true&q=80&w=2000&auto=format&fit=crop";
   const PATTERN_BG = "https://unsplash.com/photos/3vwaxiyWLc0/download?force=true&q=80&w=1600&auto=format&fit=crop";
 
-  const categories = ["Breakfast", "Lunch", "Snacks", "Desserts", "Corporate", "Wedding", "Healthy", "Kids party"];
 
   const goPartners = () => {
     navigation.navigate('Login');
@@ -123,16 +122,8 @@ export default function LandingScreen() {
             <View style={styles.heroButtons}>
               <View style={{ marginRight: 12, marginBottom: 12 }}>
                 <SquareButton
-                  label="Explore Caterers"
-                  onPress={() => Alert.alert("Coming Soon", "Mobile app coming soon!")}
-                  size="lg"
-                />
-              </View>
-              <View style={{ marginRight: 12, marginBottom: 12 }}>
-                <SquareButton
                   label="Partner With Us"
-                  variant="outline"
-                  invert
+                  variant="solid"
                   onPress={goPartners}
                   size="lg"
                 />
@@ -211,28 +202,6 @@ export default function LandingScreen() {
                 </Card>
               ))}
             </View>
-
-            <View style={{ height: 40 }} />
-
-            {/* Categories Section */}
-            <Card pad={28} style={styles.sectionCard}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Browse by Category</Text>
-                <Text style={styles.sectionSubtitleSmall}>Find the perfect cuisine for your event</Text>
-              </View>
-              <View style={styles.categoriesGrid}>
-                {categories.map((c) => (
-                  <View key={c} style={{ marginRight: 10, marginBottom: 10 }}>
-                    <SquareButton
-                      label={c}
-                      variant="outline"
-                      onPress={() => Alert.alert(c, "Browse coming soon")}
-                      size="sm"
-                    />
-                  </View>
-                ))}
-              </View>
-            </Card>
 
             <View style={{ height: 40 }} />
 

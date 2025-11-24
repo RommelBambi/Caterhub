@@ -106,7 +106,7 @@ export default function CustomizePackage({ route, navigation }: any) {
                 </View>
               ))}
               <Text style={styles.muted}>
-                This package includes all listed dishes. No customization needed.
+                This is a fixed menu package. All listed dishes are included and cannot be changed. Continue to booking to proceed.
               </Text>
             </Card.Content>
           </Card>
