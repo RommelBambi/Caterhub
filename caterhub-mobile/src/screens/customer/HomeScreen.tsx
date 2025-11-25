@@ -521,42 +521,46 @@ export default function HomeScreen({ navigation }: any) {
 
 
             {/* Most popular */}
-            <Text style={styles.sectionTitle}>
-              Most popular
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
-            >
-              {mostBooked.map((svc) => (
-                <TouchableOpacity
-                  key={svc.id}
-                  onPress={() => goToDetails(svc)}
-                  activeOpacity={0.8}
+            {mostBooked.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>
+                  Most popular
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 16, paddingRight: 4 }}
                 >
-                  <Card style={styles.smallCard}>
-                    <Image
-                      source={{
-                        uri:
-                          svc.imageUrl ||
-                          svc.logoUrl ||
-                          'https://picsum.photos/300/200',
-                      }}
-                      style={styles.smallImg}
-                    />
-                    <View style={{ padding: 8 }}>
-                      <Text style={styles.smallName} numberOfLines={1}>
-                        {svc.name}
-                      </Text>
-                      <Text style={styles.metaText}>
-                        {svc.bookingsCount ?? 0} bookings
-                      </Text>
-                    </View>
-                  </Card>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                  {mostBooked.filter((svc) => svc && svc.name).map((svc) => (
+                    <TouchableOpacity
+                      key={svc.id}
+                      onPress={() => goToDetails(svc)}
+                      activeOpacity={0.8}
+                    >
+                      <Card style={styles.smallCard}>
+                        <Image
+                          source={{
+                            uri:
+                              svc.imageUrl ||
+                              svc.logoUrl ||
+                              'https://picsum.photos/300/200',
+                          }}
+                          style={styles.smallImg}
+                        />
+                        <View style={{ padding: 8 }}>
+                          <Text style={styles.smallName} numberOfLines={1}>
+                            {svc.name}
+                          </Text>
+                          <Text style={styles.metaText}>
+                            {svc.bookingsCount ?? 0} bookings
+                          </Text>
+                        </View>
+                      </Card>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
 
              {/* Nearby Services (when location is set) */}
              {userLocation && (

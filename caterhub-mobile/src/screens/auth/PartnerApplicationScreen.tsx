@@ -169,11 +169,13 @@ function Step1({
   setForm,
   back,
   next,
+  onCreateAccount,
 }: {
   form: PartnerForm;
   setForm: React.Dispatch<React.SetStateAction<PartnerForm>>;
   back: () => void;
   next: () => void;
+  onCreateAccount?: () => Promise<void>;
 }) {
   const [mapPickerVisible, setMapPickerVisible] = useState(false);
   const [editingLocationIndex, setEditingLocationIndex] = useState<number | null>(null);
@@ -227,12 +229,31 @@ function Step1({
     );
   }, [form.businessName, form.locations]);
 
-  const handleNext = () => {
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false);
+
+  const handleNext = async () => {
     if (!canProceed) {
-      Alert.alert("Step 1", "Please complete all required fields.");
+      Alert.alert("Step 1", "Please complete all required fields including at least one location.");
       return;
     }
-    next();
+    
+    // Create account if onCreateAccount is provided
+    if (onCreateAccount) {
+      try {
+        setIsCreatingAccount(true);
+        await onCreateAccount();
+        // Account created, proceed to next step
+        next();
+      } catch (error) {
+        // Error is already handled in onCreateAccount
+        console.error('Account creation failed:', error);
+      } finally {
+        setIsCreatingAccount(false);
+      }
+    } else {
+      // No account creation needed, just proceed
+      next();
+    }
   };
 
   return (
@@ -358,17 +379,11 @@ function Step1({
 
         <View style={styles.navButtons}>
           <SquareNavButton
-            label="Next"
-            onPress={() => {
-              if (!canProceed) {
-                Alert.alert("Step 1", "Please complete all required fields including at least one location.");
-                return;
-              }
-              next();
-            }}
-            icon="arrow-forward"
+            label={isCreatingAccount ? "Creating Account..." : "Create Account & Submit"}
+            onPress={handleNext}
+            icon={isCreatingAccount ? undefined : "checkmark-circle"}
             iconPosition="right"
-            disabled={!canProceed}
+            disabled={!canProceed || isCreatingAccount}
           />
         </View>
       </Card>
@@ -1657,7 +1672,26 @@ export default function PartnerApplicationScreen() {
               <Stepper current={stepNumber} />
             </View>
           )}
-          {step === "step1" && <Step1 form={form} setForm={setForm} back={back} next={next} />}
+          {step === "step1" && (
+            <Step1 
+              form={form} 
+              setForm={setForm} 
+              back={back} 
+              next={next}
+              onCreateAccount={async () => {
+                if (!accountEmail || !accountPassword) {
+                  Alert.alert(
+                    "Account Required",
+                    "Please complete the Account Creation step first to set your email and password."
+                  );
+                  // Navigate back to account step
+                  setStep("step6");
+                  throw new Error("Account credentials not set");
+                }
+                await handleAccountCreation(accountEmail, accountPassword);
+              }}
+            />
+          )}
           {step === "step2" && <Step2 form={form} setForm={setForm} back={back} next={next} />}
           {step === "step4" && <Step3Compliance form={form} setForm={setForm} back={back} next={next} />}
           {step === "step5" && (

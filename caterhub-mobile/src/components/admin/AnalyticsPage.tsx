@@ -126,8 +126,8 @@ export default function AnalyticsPage() {
         // Also include CONFIRMED bookings that might have platform fees calculated
         if (booking.status === 'COMPLETED' || booking.status === 'CONFIRMED') {
           // Only add to total revenue if completed
-          if (booking.status === 'COMPLETED') {
-            totalRevenue += amount;
+        if (booking.status === 'COMPLETED') {
+          totalRevenue += amount;
           }
 
           // Calculate platform fee revenue using current tier percentage (3% for BASE)
@@ -147,13 +147,13 @@ export default function AnalyticsPage() {
 
           // Track by service (get business name from caterer_id) - only for completed
           if (booking.status === 'COMPLETED') {
-            const catererId = booking.packages?.caterer_id;
-            const serviceName = catererId ? (catererNameMap.get(catererId) || 'Unknown Service') : 'Unknown Service';
-            if (!serviceRevenue[serviceName]) {
-              serviceRevenue[serviceName] = { count: 0, revenue: 0 };
-            }
-            serviceRevenue[serviceName].count++;
-            serviceRevenue[serviceName].revenue += amount;
+          const catererId = booking.packages?.caterer_id;
+          const serviceName = catererId ? (catererNameMap.get(catererId) || 'Unknown Service') : 'Unknown Service';
+          if (!serviceRevenue[serviceName]) {
+            serviceRevenue[serviceName] = { count: 0, revenue: 0 };
+          }
+          serviceRevenue[serviceName].count++;
+          serviceRevenue[serviceName].revenue += amount;
 
             // Track by month (use updated_at for completed bookings to get completion month)
             const completionDate = booking.updated_at || booking.created_at;
@@ -164,7 +164,7 @@ export default function AnalyticsPage() {
               monthlyRevenue[monthKey] = { revenue: 0, label: monthLabel };
             }
             monthlyRevenue[monthKey].revenue += amount;
-          }
+        }
         }
       });
 

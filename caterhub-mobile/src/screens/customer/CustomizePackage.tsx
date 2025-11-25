@@ -17,25 +17,29 @@ export default function CustomizePackage({ route, navigation }: any) {
   const [allergyDetails, setAllergyDetails] = React.useState('');
 
   // Get sections from raw package data (database format) or categories (legacy format)
-  const sections = pkg._raw?.sections || [];
-  const categories = pkg.categories || [];
-  const selectionMode = pkg._raw?.selection_mode || 'CHOICE_BASED';
+  const sections = ((pkg?._raw?.sections || []) as any[]).filter((s: any) => s); // Filter out null sections
+  const categories = ((pkg?.categories || []) as PackageCategory[]).filter((c: any) => c && c.name); // Filter out null/invalid categories
+  const selectionMode = pkg?._raw?.selection_mode || 'CHOICE_BASED';
 
   // If FIXED_MENU, show all dishes as a fixed list (no selection needed)
   // If CHOICE_BASED, convert to category-like structure for selection
   const selectionCategories: PackageCategory[] = selectionMode === 'FIXED_MENU'
     ? [] // No selection needed for fixed menu
     : sections.length > 0
-    ? sections.map((section: any, idx: number) => ({
-        id: `section_${idx}`,
-        name: section.category || 'Category',
-        options: (section.dishes || []).map((dish: string, dishIdx: number) => ({
-          id: `dish_${idx}_${dishIdx}`,
-          name: dish,
-        })),
-        required: true,
-        pick: 1,
-      }))
+    ? sections
+        .filter((section: any) => section && (section.category || section.dishes))
+        .map((section: any, idx: number) => ({
+          id: `section_${idx}`,
+          name: section?.category || 'Category',
+          options: ((section?.dishes || []) as string[])
+            .filter((dish: any) => dish && typeof dish === 'string')
+            .map((dish: string, dishIdx: number) => ({
+              id: `dish_${idx}_${dishIdx}`,
+              name: dish,
+            })),
+          required: true,
+          pick: 1,
+        }))
     : categories;
 
   const select = (categoryId: string, optionId: string) => {
@@ -50,15 +54,17 @@ export default function CustomizePackage({ route, navigation }: any) {
       );
 
   const goNext = () => {
-    const picked = selectionCategories.map((cat: PackageCategory) => {
-      const opt = cat.options.find((o: DishOption) => o.id === choices[cat.id]);
-      return {
-        categoryId: cat.id,
-        categoryName: cat.name,
-        optionId: opt?.id ?? '',
-        optionName: opt?.name ?? '',
-      };
-    });
+    const picked = selectionCategories
+      .filter((cat: PackageCategory) => cat && cat.id && cat.name)
+      .map((cat: PackageCategory) => {
+        const opt = (cat.options || []).find((o: DishOption) => o && o.id === choices[cat.id]);
+        return {
+          categoryId: cat.id || '',
+          categoryName: cat.name || 'Category',
+          optionId: opt?.id ?? '',
+          optionName: opt?.name ?? '',
+        };
+      });
 
     navigation.navigate('BookingForm', { 
       service, 
@@ -80,61 +86,69 @@ export default function CustomizePackage({ route, navigation }: any) {
         </View>
 
         <Text style={styles.title}>
-          {pkg.name} • {typeof pkg._raw?.price === 'string' ? pkg._raw.price : `₱${pkg.pricePerHead} / head`}
+          {pkg?.name || 'Package'} • {typeof pkg?._raw?.price === 'string' ? pkg._raw.price : `₱${pkg?.pricePerHead || 0} / head`}
         </Text>
-        <Text style={styles.subtitle}>{service.name}</Text>
+        <Text style={styles.subtitle}>{service?.name || 'Service'}</Text>
 
         {/* Show fixed menu for FIXED_MENU packages */}
         {selectionMode === 'FIXED_MENU' && sections.length > 0 ? (
           <Card style={styles.catCard}>
             <Card.Content>
               <Text style={styles.catTitle}>Fixed Menu - All Dishes Included</Text>
-              {sections.map((section: any, sectionIdx: number) => (
-                <View key={sectionIdx} style={styles.fixedMenuSection}>
-                  <Text style={styles.fixedMenuCategory}>
-                    {String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}
-                  </Text>
-                  {section.dishes && section.dishes.length > 0 ? (
-                    <View style={styles.fixedMenuDishes}>
-                      {section.dishes.map((dish: string, dishIdx: number) => (
-                        <View key={dishIdx} style={styles.fixedMenuDish}>
-                          <Text style={styles.fixedMenuDishText}>• {dish}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
-              ))}
+              {sections
+                .filter((section: any) => section && (section.category || section.dishes))
+                .map((section: any, sectionIdx: number) => (
+                  <View key={sectionIdx} style={styles.fixedMenuSection}>
+                    <Text style={styles.fixedMenuCategory}>
+                      {String(section?.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}
+                    </Text>
+                    {section?.dishes && Array.isArray(section.dishes) && section.dishes.length > 0 ? (
+                      <View style={styles.fixedMenuDishes}>
+                        {section.dishes
+                          .filter((dish: any) => dish && typeof dish === 'string')
+                          .map((dish: string, dishIdx: number) => (
+                            <View key={dishIdx} style={styles.fixedMenuDish}>
+                              <Text style={styles.fixedMenuDishText}>• {dish}</Text>
+                            </View>
+                          ))}
+                      </View>
+                    ) : null}
+                  </View>
+                ))}
               <Text style={styles.muted}>
                 This is a fixed menu package. All listed dishes are included and cannot be changed. Continue to booking to proceed.
               </Text>
             </Card.Content>
           </Card>
         ) : selectionCategories.length > 0 ? (
-          selectionCategories.map((cat: PackageCategory) => (
-            <Card key={cat.id} style={styles.catCard}>
-              <Card.Content>
-                <Text style={styles.catTitle}>
-                  {`Choice of ${String(cat.name).replace(/^\w/, (c) => c.toUpperCase())}`} {cat.required !== false ? '(required)' : '(optional)'}
-                </Text>
+          selectionCategories
+            .filter((cat: PackageCategory) => cat && cat.id && cat.name && cat.options)
+            .map((cat: PackageCategory) => (
+              <Card key={cat.id} style={styles.catCard}>
+                <Card.Content>
+                  <Text style={styles.catTitle}>
+                    {`Choice of ${String(cat?.name || 'Category').replace(/^\w/, (c) => c.toUpperCase())}`} {cat.required !== false ? '(required)' : '(optional)'}
+                  </Text>
 
-                <RadioButton.Group
-                  onValueChange={(val: string) => select(cat.id, val)}
-                  value={choices[cat.id]}
-                >
-                  {cat.options.map((opt: DishOption) => (
-                    <RadioButton.Item
-                      key={opt.id}
-                      value={opt.id}
-                      label={opt.name}
-                      position="leading"
-                      style={styles.radioItem}
-                      labelStyle={styles.radioLabel}
-                      color="#FF8000"
-                      uncheckedColor="#9ca3af"
-                    />
-                  ))}
-                </RadioButton.Group>
+                  <RadioButton.Group
+                    onValueChange={(val: string) => select(cat.id, val)}
+                    value={choices[cat.id]}
+                  >
+                    {(cat.options || [])
+                      .filter((opt: DishOption) => opt && opt.id && opt.name)
+                      .map((opt: DishOption) => (
+                        <RadioButton.Item
+                          key={opt.id}
+                          value={opt.id}
+                          label={opt.name || 'Option'}
+                          position="leading"
+                          style={styles.radioItem}
+                          labelStyle={styles.radioLabel}
+                          color="#FF8000"
+                          uncheckedColor="#9ca3af"
+                        />
+                      ))}
+                  </RadioButton.Group>
 
                 <Divider style={{ marginTop: 6 }} />
               </Card.Content>

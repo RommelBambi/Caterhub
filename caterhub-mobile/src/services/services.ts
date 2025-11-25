@@ -551,18 +551,22 @@ export async function fetchPackagesForService(serviceUserId: string): Promise<Se
   }
 
   // Transform database packages to ServicePackage format
-  return (data || []).map((pkg: any) => {
+  return (data || []).filter((pkg: any) => pkg && pkg.name).map((pkg: any) => {
     // Convert sections to categories format
-    const categories: PackageCategory[] = (pkg.sections || []).map((section: any, idx: number) => ({
-      id: `section_${idx}`,
-      name: section.category || 'Category',
-      options: (section.dishes || []).map((dish: string, dishIdx: number) => ({
-        id: `dish_${idx}_${dishIdx}`,
-        name: dish,
-      })),
-      required: true,
-      pick: 1,
-    }));
+    const categories: PackageCategory[] = (pkg.sections || [])
+      .filter((section: any) => section && (section.category || section.dishes))
+      .map((section: any, idx: number) => ({
+        id: `section_${idx}`,
+        name: section?.category || 'Category',
+        options: ((section?.dishes || []) as string[])
+          .filter((dish: any) => dish && typeof dish === 'string')
+          .map((dish: string, dishIdx: number) => ({
+            id: `dish_${idx}_${dishIdx}`,
+            name: dish,
+          })),
+        required: true,
+        pick: 1,
+      }));
 
     // Extract price per head from price string (e.g., "₱250/head" or "250")
     let pricePerHead = 0;

@@ -125,7 +125,10 @@ export default function ServiceDetails({ route, navigation }: any) {
   };
 
   const selectPackage = (pkg: ServicePackage) => {
-    if (!service) return;
+    if (!service || !pkg || !pkg.name) {
+      console.error('[ServiceDetails] Cannot select package: missing service or package data', { service: !!service, pkg: !!pkg, pkgName: pkg?.name });
+      return;
+    }
     navigation.navigate('CustomizePackage', { service, pkg });
   };
 
@@ -208,12 +211,12 @@ export default function ServiceDetails({ route, navigation }: any) {
 
             <View style={styles.titleRow}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{service.name}</Text>
+                <Text style={styles.name}>{service?.name || 'Service'}</Text>
                 <TouchableOpacity 
                   style={styles.ratingRow}
                   onPress={() => navigation.navigate('AllReviews', {
                     catererId: (service as any)?.user_id,
-                    catererName: service?.name
+                    catererName: service?.name || 'Service'
                   })}
                   activeOpacity={0.7}
                 >
@@ -273,18 +276,24 @@ export default function ServiceDetails({ route, navigation }: any) {
                 </Card>
               )}
               {(service.packages ?? []).length > 0 && (
-                service.packages!.map((pkg) => {
-                  // Display sections (from database packages) or categories (from old format)
-                  const sections = (pkg as any)._raw?.sections || [];
-                  const inclusions = (pkg as any)._raw?.inclusions || [];
-                  const categories = pkg.categories || [];
-                  const selectionMode = (pkg as any)._raw?.selection_mode || 'CHOICE_BASED';
-                  
-                  return (
-                    <Card key={pkg.id} style={styles.pkgCard}>
+                service.packages!
+                  .filter((pkg) => pkg && pkg.id && pkg.name)
+                  .map((pkg) => {
+                    if (!pkg || !pkg.id || !pkg.name) {
+                      console.warn('[ServiceDetails] Skipping invalid package:', pkg);
+                      return null;
+                    }
+                    // Display sections (from database packages) or categories (from old format)
+                    const sections = (pkg as any)._raw?.sections || [];
+                    const inclusions = (pkg as any)._raw?.inclusions || [];
+                    const categories = pkg.categories || [];
+                    const selectionMode = (pkg as any)._raw?.selection_mode || 'CHOICE_BASED';
+                    
+                    return (
+                      <Card key={pkg.id} style={styles.pkgCard}>
                       <Card.Content>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Text style={styles.pkgTitle}>{pkg.name}</Text>
+                          <Text style={styles.pkgTitle}>{pkg.name || 'Unnamed Package'}</Text>
                           {(pkg.pricePerHead ?? 0) > 0 && (
                             <Text style={styles.pkgPrice}>{`₱ ${pkg.pricePerHead}`}</Text>
                           )}
@@ -296,9 +305,9 @@ export default function ServiceDetails({ route, navigation }: any) {
                             {selectionMode === 'FIXED_MENU' ? (
                               // For FIXED_MENU: Show all dishes in a flat list without category headers
                               <View style={{ marginTop: 8 }}>
-                                {sections.map((section: any, sectionIdx: number) => 
+                                {sections.filter((section: any) => section && section.dishes).map((section: any, sectionIdx: number) => 
                                   section.dishes && section.dishes.length > 0
-                                    ? section.dishes.map((dish: string, dishIdx: number) => (
+                                    ? section.dishes.filter((dish: any) => dish && typeof dish === 'string').map((dish: string, dishIdx: number) => (
                                         <View key={`${sectionIdx}_${dishIdx}`} style={styles.dishRow}>
                                           <Text style={styles.dishText}>• {dish}</Text>
                                         </View>
@@ -308,10 +317,10 @@ export default function ServiceDetails({ route, navigation }: any) {
                               </View>
                             ) : (
                               // For CHOICE_BASED: Show category names only (no dishes)
-                              sections.map((section: any, sectionIdx: number) => (
+                              sections.filter((section: any) => section).map((section: any, sectionIdx: number) => (
                               <View key={sectionIdx} style={styles.sectionBlock}>
                                 <Text style={styles.packageSectionTitle}>
-                                    Choice of {String(section.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}
+                                    Choice of {String(section?.category || 'Category').replace(/^\w/, (c) => c.toUpperCase())}
                                 </Text>
                               </View>
                               ))
@@ -322,10 +331,10 @@ export default function ServiceDetails({ route, navigation }: any) {
                         {/* Display categories (old format - for backward compatibility) */}
                         {categories.length > 0 && sections.length === 0 && (
                           <>
-                            {categories.map((cat) => (
-                              <View key={cat.id} style={styles.inclusionRow}>
+                            {categories.filter((cat) => cat && cat.name && cat.id).map((cat, catIdx) => (
+                              <View key={cat.id || `cat-${catIdx}`} style={styles.inclusionRow}>
                                 <Ionicons name="checkmark-circle" size={16} color="#10b981" />
-                                <Text style={styles.inclusionText}>{cat.name}</Text>
+                                <Text style={styles.inclusionText}>{cat.name || 'Category'}</Text>
                               </View>
                             ))}
                           </>
@@ -335,11 +344,11 @@ export default function ServiceDetails({ route, navigation }: any) {
                         {inclusions.length > 0 && (
                           <>
                             <Text style={styles.inclusionsTitle}>Inclusions:</Text>
-                            {inclusions.map((inc: any, incIdx: number) => (
+                            {inclusions.filter((inc: any) => inc && inc.name).map((inc: any, incIdx: number) => (
                               <View key={incIdx} style={styles.inclusionRow}>
                                 <Ionicons name="add-circle" size={14} color="#9333ea" />
                                 <Text style={styles.inclusionText}>
-                                  {inc.name} {inc.price ? `(${inc.price})` : ''}
+                                  {inc?.name || 'Inclusion'} {inc?.price ? `(${inc.price})` : ''}
                                 </Text>
                               </View>
                             ))}
@@ -355,8 +364,9 @@ export default function ServiceDetails({ route, navigation }: any) {
                         </Button>
                       </Card.Content>
                     </Card>
-                  );
-                })
+                    );
+                  })
+                  .filter(Boolean) // Remove any null entries
               )}
             </View>
           </>
